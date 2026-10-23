@@ -282,6 +282,10 @@ table "nodes" {
     type = varchar(64)
     null = true
   }
+  column "api_token_hash" {
+    type = varchar(64)
+    null = true
+  }
   column "created_at" {
     type = timestamptz
     null = false
@@ -297,6 +301,10 @@ table "nodes" {
   }
   index "nodes_status_idx" {
     columns = [column.status]
+  }
+  index "nodes_api_token_hash_key" {
+    unique = true
+    columns = [column.api_token_hash]
   }
   check "nodes_type_check" {
     expr = "node_type IN ('A', 'B')"
@@ -412,6 +420,14 @@ table "tasks" {
     type = text
     null = true
   }
+  column "lease_until" {
+    type = timestamptz
+    null = true
+  }
+  column "lease_token" {
+    type = uuid
+    null = true
+  }
   column "created_at" {
     type = timestamptz
     null = false
@@ -445,6 +461,10 @@ table "tasks" {
   }
   index "tasks_status_priority_created_idx" {
     columns = [column.status, column.priority, column.created_at]
+  }
+  index "tasks_lease_token_key" {
+    unique = true
+    columns = [column.lease_token]
   }
   check "tasks_priority_check" {
     expr = "priority BETWEEN 0 AND 5"

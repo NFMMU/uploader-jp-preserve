@@ -55,7 +55,7 @@ func main() {
 	}
 
 	handler := api.New(db, cfg, logger)
-	srv := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 90 * time.Second}
+	srv := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 90 * time.Second}
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("api_starting", "address", cfg.Address, "environment", cfg.Environment)

@@ -15,6 +15,39 @@ services:
       timeout: 3s
       retries: 20
 
+  # Prepare persistent named volumes for the non-root distroless containers.
+  staging-data-init:
+    image: alpine:3.20
+    command:
+      [
+        "sh",
+        "-ec",
+        "mkdir -p /data/staging && chown -R 65532:65532 /data/staging",
+      ]
+    volumes:
+      - staging_data:/data/staging
+    restart: "no"
+
+  node-data-init:
+    image: alpine:3.20
+    command:
+      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
+    volumes:
+      - node_data:/data
+    restart: "no"
+
+  # Atlas's container is distroless and has no /bin/sh. Keep commands as
+  # direct Atlas invocations instead of wrapping them in a shell.
+  # Development convenience: refresh the checksum before applying migrations.
+  # In production/CI, commit atlas.sum and verify it rather than re-hashing on deploy.
+  migration-hash:
+    image: arigaio/atlas:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["migrate", "hash", "--dir", "file://atlas/migrations"]
+    restart: "no"
+
   migrate:
     image: arigaio/atlas:latest
     working_dir: /workspace
@@ -26,6 +59,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migration-hash:
+        condition: service_completed_successfully
     restart: "no"
 
   api:
@@ -38,12 +73,41 @@ services:
       JWT_TTL_HOURS: ${JWT_TTL_HOURS:-12}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      STAGING_DIR: /data/staging
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      - staging_data:/data/staging
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      staging-data-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  node-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    environment:
+      CENTRAL_API_URL: http://api:8080
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_NAME: ${NODE_NAME:-local-node-a}
+      NODE_TYPE: ${NODE_TYPE:-A}
+      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+      - node_data:/data
+    depends_on:
+      api:
+        condition: service_started
+      node-data-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  staging_data:
+  node_data:
