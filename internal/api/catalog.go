@@ -1,0 +1,405 @@
+package api
+
+import (
+	"encoding/csv"
+	"errors"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"gorm.io/gorm"
+)
+
+var preservationStatuses = map[string]bool{
+	"uncollected": true, "queued": true, "stored": true, "verified": true,
+	"degraded": true, "missing": true, "error": true,
+}
+
+var redistributionPolicies = map[string]bool{
+	"allowed": true, "restricted": true, "in_progress": true, "pending": true, "unknown": true,
+}
+
+func (s *Server) listArtifacts(c *gin.Context) {
+	page, limit := pagination(c)
+	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		pattern := "%" + q + "%"
+		query = query.Where("title ILIKE ? OR creator_name ILIKE ? OR source_url ILIKE ?", pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
+		return
+	}
+	var artifacts []model.Artifact
+	if err := query.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": artifacts, "page": page, "limit": limit, "total": total})
+}
+
+func (s *Server) createArtifact(c *gin.Context) {
+	var req struct {
+		Title       string  `json:"title" binding:"required,min=1,max=500"`
+		CreatorName *string `json:"creator_name" binding:"omitempty,max=255"`
+		SourceURL   string  `json:"source_url" binding:"required,max=4096"`
+		Description *string `json:"description" binding:"omitempty,max=20000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title and a valid uploader.jp source_url are required"})
+		return
+	}
+	source, err := validateUploaderURL(req.SourceURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
+		return
+	}
+	artifact := model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
+	if err := s.db.WithContext(c.Request.Context()).Create(&artifact).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
+		return
+	}
+	actor, _ := currentUser(c)
+	s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
+	c.JSON(http.StatusCreated, artifact)
+}
+
+func (s *Server) getArtifact(c *gin.Context) {
+	var artifact model.Artifact
+	err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error
+	if err != nil {
+		notFoundOrError(c, err, "artifact")
+		return
+	}
+	var files []model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ?", artifact.ID).Order("created_at DESC").Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files})
+}
+
+func (s *Server) createFileObject(c *gin.Context) {
+	var req struct {
+		OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
+		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
+		SHA256               *string `json:"sha256" binding:"omitempty,len=64"`
+		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
+		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
+		Representative       *string `json:"representative" binding:"omitempty,uuid"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file object payload"})
+		return
+	}
+	var artifact model.Artifact
+	if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "artifact")
+		return
+	}
+	policy := strings.TrimSpace(req.RedistributionPolicy)
+	if policy == "" {
+		policy = "unknown"
+	}
+	if !redistributionPolicies[policy] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
+		return
+	}
+	if req.SHA256 != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.SHA256))
+		if !isHexDigest(value) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sha256 must be 64 hexadecimal characters"})
+			return
+		}
+		req.SHA256 = &value
+	}
+	if req.Representative != nil {
+		var reviewer model.User
+		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
+			return
+		}
+	}
+	file := model.FileObject{
+		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
+		SHA256: req.SHA256, MediaType: trimOptional(req.MediaType), PreservationStatus: "uncollected",
+		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
+	}
+	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})
+		return
+	}
+	actor, _ := currentUser(c)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
+	c.JSON(http.StatusCreated, file)
+}
+
+func (s *Server) listFiles(c *gin.Context) {
+	page, limit := pagination(c)
+	query := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{})
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		query = query.Where("original_filename ILIKE ? OR sha256 ILIKE ?", "%"+q+"%", "%"+q+"%")
+	}
+	if status := c.Query("preservation_status"); status != "" {
+		if !preservationStatuses[status] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid preservation_status"})
+			return
+		}
+		query = query.Where("preservation_status = ?", status)
+	}
+	if policy := c.Query("redistribution_policy"); policy != "" {
+		if !redistributionPolicies[policy] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
+			return
+		}
+		query = query.Where("redistribution_policy = ?", policy)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
+		return
+	}
+	var files []model.FileObject
+	if err := query.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": files, "page": page, "limit": limit, "total": total})
+}
+
+func (s *Server) getFileObject(c *gin.Context) {
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	var policies []model.Policy
+	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load policy history"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"file": file, "policy_history": policies})
+}
+
+func (s *Server) updateFilePolicy(c *gin.Context) {
+	var req struct {
+		RedistributionPolicy string  `json:"redistribution_policy" binding:"required"`
+		Representative       *string `json:"representative" binding:"omitempty,uuid"`
+		EvidenceURL          *string `json:"evidence_url" binding:"omitempty,max=4096"`
+		EvidenceNote         *string `json:"evidence_note" binding:"omitempty,max=20000"`
+		Reason               string  `json:"reason" binding:"required,min=3,max=2000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || !redistributionPolicies[req.RedistributionPolicy] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid redistribution_policy and reason are required"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	actor, _ := currentUser(c)
+	if req.Representative != nil {
+		var reviewer model.User
+		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
+			return
+		}
+	}
+	var evidenceURL *string
+	if req.EvidenceURL != nil {
+		if strings.TrimSpace(*req.EvidenceURL) != "" {
+			if _, err := validateHTTPURL(*req.EvidenceURL); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "evidence_url must be an http(s) URL"})
+				return
+			}
+		}
+		evidenceURL = trimOptional(req.EvidenceURL)
+	}
+	checkedAt := time.Now().UTC()
+	var checkedAtPtr *time.Time
+	var checkedBy *string
+	if req.RedistributionPolicy == "allowed" || req.RedistributionPolicy == "restricted" {
+		checkedAtPtr = &checkedAt
+		checkedBy = &actor.ID
+	}
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]any{"redistribution_policy": req.RedistributionPolicy}
+		if req.Representative != nil {
+			updates["representative"] = *req.Representative
+		}
+		if req.RedistributionPolicy != "allowed" {
+			// Fail closed immediately when a policy is no longer explicitly allowed.
+			updates["public_download_enabled"] = false
+		}
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		record := model.Policy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, EvidenceURL: evidenceURL, EvidenceNote: trimOptional(req.EvidenceNote), CheckedAt: checkedAtPtr, CheckedBy: checkedBy}
+		return tx.Create(&record).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update policy"})
+		return
+	}
+	file.RedistributionPolicy = req.RedistributionPolicy
+	if req.Representative != nil {
+		file.Representative = req.Representative
+	}
+	if req.RedistributionPolicy != "allowed" {
+		file.PublicDownloadEnabled = false
+	}
+	s.audit(c, &actor, "file_object", file.ID, "file_object.policy.update", "success", &req.Reason)
+	c.JSON(http.StatusOK, gin.H{"file": file, "policy": req.RedistributionPolicy})
+}
+
+func (s *Server) updatePublicationFlag(c *gin.Context) {
+	var req struct {
+		Enabled *bool  `json:"enabled" binding:"required"`
+		Reason  string `json:"reason" binding:"required,min=3,max=2000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled and reason are required"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	if *req.Enabled && file.RedistributionPolicy != "allowed" {
+		c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless redistribution_policy is allowed"})
+		return
+	}
+	actor, _ := currentUser(c)
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update publication flag"})
+		return
+	}
+	file.PublicDownloadEnabled = *req.Enabled
+	s.audit(c, &actor, "file_object", file.ID, "file_object.publication_flag.update", "success", &req.Reason)
+	c.JSON(http.StatusOK, gin.H{"file": file})
+}
+
+func (s *Server) exportCatalog(c *gin.Context) {
+	format := strings.ToLower(c.DefaultQuery("format", "json"))
+	var artifacts []model.Artifact
+	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+		return
+	}
+	var files []model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
+		return
+	}
+	actor, _ := currentUser(c)
+	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
+	if format == "json" {
+		c.JSON(http.StatusOK, gin.H{"artifacts": artifacts, "files": files, "exported_at": time.Now().UTC()})
+		return
+	}
+	if format != "csv" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=archive-catalog.csv")
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"record_type", "id", "artifact_id", "title", "creator_name", "source_url", "original_filename", "size_bytes", "sha256", "preservation_status", "redistribution_policy", "public_download_enabled", "created_at"})
+	for _, a := range artifacts {
+		_ = writer.Write([]string{"artifact", a.ID, "", csvSafe(a.Title), csvSafe(deref(a.CreatorName)), csvSafe(a.SourceURL), "", "", "", "", "", "", a.CreatedAt.UTC().Format(time.RFC3339)})
+	}
+	for _, f := range files {
+		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.SHA256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
+	}
+	writer.Flush()
+}
+
+func pagination(c *gin.Context) (int, int) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit
+}
+
+func validateUploaderURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" {
+		return "", errInvalidURL
+	}
+	host := strings.ToLower(u.Hostname())
+	if host != "uploader.jp" && !strings.HasSuffix(host, ".uploader.jp") {
+		return "", errInvalidURL
+	}
+	return u.String(), nil
+}
+
+func validateHTTPURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Hostname() == "" {
+		return "", errInvalidURL
+	}
+	return u.String(), nil
+}
+
+func trimOptional(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func csvSafe(value string) string {
+	trimmed := strings.TrimLeft(value, "\t\r\n ")
+	if len(trimmed) > 0 && strings.ContainsRune("=+-@", rune(trimmed[0])) {
+		return "'" + value
+	}
+	return value
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func isHexDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func notFoundOrError(c *gin.Context, err error, label string) {
+	if err == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": label + " not found"})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load " + label})
+}
+
+var errInvalidURL = errors.New("invalid URL")

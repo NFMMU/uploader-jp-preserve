@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: archive
+      POSTGRES_USER: archive
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-archive-dev-password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U archive -d archive"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: arigaio/atlas:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["migrate", "apply", "--env", "local"]
+    environment:
+      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_ADDR: :8080
+      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_TTL_HOURS: ${JWT_TTL_HOURS:-12}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
