@@ -1,0 +1,30 @@
+services:
+  node-agent:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    image: archive-node-agent:local
+    environment:
+      CENTRAL_API_URL: ${CENTRAL_API_URL:?Set CENTRAL_API_URL in the participant .env file}
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:?Set NODE_ENROLLMENT_TOKEN in the participant .env file}
+      NODE_NAME: ${NODE_NAME:?Set NODE_NAME in the participant .env file}
+      NODE_TYPE: ${NODE_TYPE:-B}
+      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
+    volumes:
+      - participant_node_data:/data
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    stop_grace_period: 30s
+
+volumes:
+  participant_node_data:
+    name: ${NODE_DATA_VOLUME:-uploader-jp-preservation-node-data}

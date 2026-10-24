@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run tests
+        run: go test ./...
+
+  web-build:
+    name: Web build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Build web application
+        working-directory: web
+        run: npm run build
+
+  compose-config:
+    name: Validate Docker Compose configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Prepare local environment file
+        run: cp .env.example .env
+      - name: Validate main Compose file
+        run: docker compose config --quiet
+      - name: Validate participant node Compose file
+        run: docker compose --env-file deploy/participant-node/.env.example -f deploy/participant-node/compose.yaml config --quiet
+      - name: Validate participant GHCR Compose file
+        run: docker compose --env-file deploy/participant-node/.env.example -f deploy/participant-node/compose.ghcr.yaml config --quiet
+      - name: Validate Node Manager GHCR Compose file
+        run: docker compose --env-file deploy/node-manager/.env.example -f deploy/node-manager/compose.ghcr.yaml config --quiet

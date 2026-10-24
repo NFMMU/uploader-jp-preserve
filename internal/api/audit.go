@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 func (s *Server) audit(c *gin.Context, actor *model.User, targetType, targetID, action, result string, reason *string) {

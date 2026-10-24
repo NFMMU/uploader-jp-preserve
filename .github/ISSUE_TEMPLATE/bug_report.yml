@@ -1,0 +1,31 @@
+name: 不具合報告
+description: 再現可能な不具合を報告する
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        トークン、Cookie、秘密 URL、個人情報、保全ファイル本体は記載しないでください。セキュリティ問題は SECURITY.md の連絡先へ非公開で報告してください。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 発生した問題
+      description: 期待した動作と実際の動作
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 再現手順
+      placeholder: 1. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: コミット ID / バージョン
+  - type: textarea
+    id: logs
+    attributes:
+      label: 関連ログ（秘密情報を除去）

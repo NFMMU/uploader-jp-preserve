@@ -1,0 +1,496 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	xhtml "golang.org/x/net/html"
+	"gorm.io/gorm"
+)
+
+const maxUploaderHTMLBytes = 8 << 20
+
+type uploaderForm struct {
+	Action string
+	Method string
+	Values url.Values
+}
+
+func (s *Server) ingestSourceFile(c *gin.Context) {
+	fileID := c.Param("id")
+	if _, err := uuid.Parse(fileID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file id"})
+		return
+	}
+	var req struct {
+		SourceURL   string `json:"source_url" binding:"omitempty,max=4096"`
+		AcceptTerms bool   `json:"accept_terms"`
+		Priority    *int   `json:"priority" binding:"omitempty,min=0,max=5"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid source-ingest request"})
+		return
+	}
+	if !req.AcceptTerms {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "confirm the uploader.jp terms before starting the download"})
+		return
+	}
+	priority := 3
+	if req.Priority != nil {
+		priority = *req.Priority
+	}
+
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	if file.PreservationStatus == "verified" {
+		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; create a new file object for another version"})
+		return
+	}
+	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
+		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
+		return
+	}
+	var activeTasks int64
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing tasks"})
+		return
+	}
+	if activeTasks > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "a preservation task is already active for this file"})
+		return
+	}
+
+	sourceURL := strings.TrimSpace(req.SourceURL)
+	if sourceURL == "" && file.SourceURL != nil {
+		sourceURL = strings.TrimSpace(*file.SourceURL)
+	}
+	validatedURL, err := validateUploaderURL(sourceURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provide an HTTPS uploader.jp/getuploader.com download-page URL"})
+		return
+	}
+	if _, err := s.selectNodesForCapacity(c, 0, 2); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "保存先として使えるオンラインノードが2台必要です: " + err.Error()})
+		return
+	}
+	var node model.Node
+	if err := s.db.WithContext(c.Request.Context()).Where("status = 'online' AND agent_version LIKE '0.5.%'").Order("random()").First(&node).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "取得タスクに対応したオンライン agent がありません。全ノードの agent を再ビルド・再起動してください"})
+		return
+	}
+	taskID := uuid.NewString()
+	task := model.Task{ID: taskID, TaskType: "source_fetch", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"source_url": validatedURL, "preservation_status": "queued"}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&task).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not queue source-fetch task"})
+		return
+	}
+	actor, _ := currentUser(c)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.source_fetch.queued", "success", stringPtr("agent="+node.Name))
+	c.JSON(http.StatusAccepted, gin.H{
+		"file_object_id":    file.ID,
+		"source_fetch_task": gin.H{"task_id": task.ID, "task_type": task.TaskType, "node_id": node.ID, "node_name": node.Name, "status": task.Status},
+		"tasks":             []any{},
+		"status":            "queued",
+		"message":           "取得タスクを agent に登録しました。agent ごとの取得間隔を空けてからダウンロードし、成功後に保存タスクを作成します。",
+	})
+}
+
+func safeSourceFilename(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	value = filepath.Base(value)
+	value = strings.TrimSpace(strings.Trim(value, "."))
+	if value == "" || value == ".." || len(value) > 500 || strings.ContainsRune(value, 0) {
+		return ""
+	}
+	return value
+}
+
+func htmlText(node *xhtml.Node) string {
+	var b strings.Builder
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.TextNode {
+			b.WriteString(n.Data)
+			b.WriteByte(' ')
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	return b.String()
+}
+
+func attr(node *xhtml.Node, key string) string {
+	for _, a := range node.Attr {
+		if strings.EqualFold(a.Key, key) {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func hasPasswordInput(root *xhtml.Node) bool {
+	found := false
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode && n.Data == "input" && strings.EqualFold(attr(n, "type"), "password") {
+			found = true
+		}
+		for child := n.FirstChild; child != nil && !found; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return found
+}
+
+func hasCaptcha(root *xhtml.Node, pageText string) bool {
+	if strings.Contains(pageText, "recaptcha") || strings.Contains(pageText, "hcaptcha") || strings.Contains(pageText, "captcha") || strings.Contains(pageText, "文字認証") || strings.Contains(pageText, "画像認証") {
+		return true
+	}
+	found := false
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode {
+			v := strings.ToLower(attr(n, "name") + " " + attr(n, "id") + " " + attr(n, "class"))
+			if strings.Contains(v, "captcha") {
+				found = true
+			}
+		}
+		for child := n.FirstChild; child != nil && !found; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return found
+}
+
+func findDirectDownloadLink(root *xhtml.Node, base *url.URL) string {
+	best := ""
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode && n.Data == "a" {
+			href := strings.TrimSpace(attr(n, "href"))
+			if href != "" {
+				resolved, err := base.Parse(href)
+				if err == nil && resolved.String() != base.String() {
+					if _, err := validateUploaderURL(resolved.String()); err == nil {
+						host := strings.ToLower(resolved.Hostname())
+						label := strings.ToLower(htmlText(n))
+						// getuploader commonly exposes files through download1.getuploader.com/g/...
+						directHost := (strings.HasPrefix(host, "dl") || strings.HasPrefix(host, "download")) && strings.HasSuffix(host, ".getuploader.com")
+						if directHost && strings.Contains(strings.ToLower(resolved.Path), "/g/") {
+							best = resolved.String()
+							return
+						}
+						// The normal hand-off endpoint is sometimes named downloadx.
+						if strings.Contains(strings.ToLower(resolved.String()), "downloadx") {
+							best = resolved.String()
+							return
+						}
+						if best == "" && (strings.Contains(label, "ダウンロード") || strings.Contains(label, "download")) {
+							best = resolved.String()
+						}
+					}
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil && best == ""; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return best
+}
+
+func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (uploaderForm, bool) {
+	var result uploaderForm
+	var walk func(*xhtml.Node) bool
+	walk = func(n *xhtml.Node) bool {
+		if n.Type == xhtml.ElementNode && n.Data == "form" {
+			form := uploaderForm{Action: attr(n, "action"), Method: strings.ToUpper(strings.TrimSpace(attr(n, "method"))), Values: url.Values{}}
+			if form.Method == "" {
+				form.Method = http.MethodGet
+			}
+			if form.Action == "" {
+				form.Action = base.String()
+			} else if parsed, err := base.Parse(form.Action); err == nil {
+				form.Action = parsed.String()
+			}
+			var findControls func(*xhtml.Node)
+			buttonFound := false
+			tokenFound := false
+			findControls = func(node *xhtml.Node) {
+				if node.Type == xhtml.ElementNode {
+					switch node.Data {
+					case "input":
+						name, typ, value := attr(node, "name"), strings.ToLower(attr(node, "type")), attr(node, "value")
+						// Submit inputs often have no name. Their label still identifies the
+						// normal download action, so inspect it before checking the name.
+						if typ == "submit" || typ == "button" || typ == "image" {
+							label := strings.ToLower(value + " " + attr(node, "alt") + " " + attr(node, "title") + " " + attr(node, "aria-label"))
+							if strings.Contains(label, "ダウンロード") || strings.Contains(label, "download") {
+								buttonFound = true
+								if name != "" {
+									form.Values.Add(name, value)
+								}
+							}
+						}
+						if name != "" {
+							if strings.EqualFold(name, "token") && strings.TrimSpace(value) != "" {
+								tokenFound = true
+							}
+							switch typ {
+							case "submit", "button", "image", "password", "file":
+								// Submit values were handled above; never send password/file inputs.
+							case "checkbox", "radio":
+								fieldHint := strings.ToLower(name + " " + attr(node, "id") + " " + value)
+								termsField := strings.Contains(fieldHint, "agree") || strings.Contains(fieldHint, "kiyaku") || strings.Contains(fieldHint, "terms") || strings.Contains(fieldHint, "rule")
+								if attr(node, "checked") != "" || (acceptTerms && termsField) {
+									if value == "" {
+										value = "on"
+									}
+									form.Values.Add(name, value)
+								}
+							default:
+								form.Values.Add(name, value)
+							}
+						}
+					case "button":
+						label := strings.ToLower(htmlText(node) + " " + attr(node, "title") + " " + attr(node, "aria-label"))
+						if strings.Contains(label, "ダウンロード") || strings.Contains(label, "download") {
+							name := attr(node, "name")
+							if name != "" {
+								form.Values.Add(name, attr(node, "value"))
+							}
+							buttonFound = true
+						}
+					}
+				}
+				for child := node.FirstChild; child != nil; child = child.NextSibling {
+					findControls(child)
+				}
+			}
+			findControls(n)
+			// The standard getuploader handshake can be a same-host POST form with a
+			// hidden token and an unnamed submit input. Password/CAPTCHA pages are
+			// rejected before this helper is called; no authentication is bypassed.
+			baseURL, baseErr := url.Parse(base.String())
+			formURL, formErr := url.Parse(form.Action)
+			sameHostTokenForm := tokenFound && form.Method == http.MethodPost && baseErr == nil && formErr == nil && strings.EqualFold(baseURL.Hostname(), formURL.Hostname())
+			if (buttonFound || sameHostTokenForm) && (form.Method == http.MethodGet || form.Method == http.MethodPost) {
+				if form.Action != "" {
+					result = form
+					return true
+				}
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			if walk(child) {
+				return true
+			}
+		}
+		return false
+	}
+	ok := walk(root)
+	return result, ok
+}
+
+// uploaderListingCandidate is a public download page discovered on one uploader listing.
+type uploaderListingCandidate struct {
+	URL   string `json:"url"`
+	Label string `json:"label"`
+}
+
+const (
+	maxUploaderListingPages      = 10
+	maxUploaderListingCandidates = 100
+)
+
+// discoverUploaderFiles previews file links from a specific uploader page. It does not
+// download file bodies; the administrator explicitly selects candidates for serial ingest.
+func (s *Server) discoverUploaderFiles(c *gin.Context) {
+	artifactID := c.Param("id")
+	if _, err := uuid.Parse(artifactID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact id"})
+		return
+	}
+	var artifact model.Artifact
+	if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", artifactID).Error; err != nil {
+		notFoundOrError(c, err, "artifact")
+		return
+	}
+	var req struct {
+		ListingURL  string `json:"listing_url" binding:"required,max=4096"`
+		AcceptTerms bool   `json:"accept_terms"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || !req.AcceptTerms {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a listing URL and confirmation of uploader.jp terms are required"})
+		return
+	}
+	listingURL, err := validateUploaderURL(req.ListingURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provide an HTTPS uploader.jp/getuploader.com listing URL"})
+		return
+	}
+	candidates, pages, err := discoverUploaderListing(c.Request.Context(), listingURL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	actor, _ := currentUser(c)
+	s.audit(c, &actor, "artifact", artifact.ID, "artifact.source_discover", "success", stringPtr(fmt.Sprintf("pages=%d candidates=%d", pages, len(candidates))))
+	c.JSON(http.StatusOK, gin.H{"listing_url": listingURL, "pages_scanned": pages, "limit": maxUploaderListingCandidates, "truncated": len(candidates) >= maxUploaderListingCandidates, "items": candidates})
+}
+
+func discoverUploaderListing(ctx context.Context, listingURL string) ([]uploaderListingCandidate, int, error) {
+	start, err := url.Parse(listingURL)
+	if err != nil {
+		return nil, 0, errors.New("invalid uploader.jp listing URL")
+	}
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects while reading uploader listing")
+			}
+			if _, err := validateUploaderURL(req.URL.String()); err != nil {
+				return errors.New("uploader listing redirected to an unsupported host")
+			}
+			return nil
+		},
+	}
+	queue := []string{start.String()}
+	seenPages := map[string]bool{}
+	seenCandidates := map[string]bool{}
+	items := make([]uploaderListingCandidate, 0, 32)
+	pagesScanned := 0
+	for len(queue) > 0 && pagesScanned < maxUploaderListingPages && len(items) < maxUploaderListingCandidates {
+		pageURL := queue[0]
+		queue = queue[1:]
+		parsedPage, parseErr := url.Parse(pageURL)
+		if parseErr != nil || seenPages[pageURL] || parsedPage.Hostname() != start.Hostname() {
+			continue
+		}
+		seenPages[pageURL] = true
+		pageReq, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+		if reqErr != nil {
+			return nil, pagesScanned, errors.New("could not create uploader listing request")
+		}
+		pageReq.Header.Set("User-Agent", "uploader-jp-archive/1.0 (preservation listing preview)")
+		pageReq.Header.Set("Accept", "text/html,application/xhtml+xml")
+		resp, doErr := client.Do(pageReq)
+		if doErr != nil {
+			return nil, pagesScanned, fmt.Errorf("uploader.jp の一覧を読み込めませんでした: %w", doErr)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			return nil, pagesScanned, fmt.Errorf("uploader.jp の一覧が HTTP %d を返しました", resp.StatusCode)
+		}
+		contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+		if !strings.Contains(contentType, "text/html") && !strings.Contains(contentType, "application/xhtml+xml") {
+			resp.Body.Close()
+			return nil, pagesScanned, errors.New("指定URLはHTMLの一覧ページではありません。個別ファイルURLなら直接取得を選んでください")
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxUploaderHTMLBytes+1))
+		resp.Body.Close()
+		if readErr != nil || len(body) > maxUploaderHTMLBytes {
+			return nil, pagesScanned, errors.New("一覧ページが大きすぎるか、読み込めませんでした")
+		}
+		doc, htmlErr := xhtml.Parse(bytes.NewReader(body))
+		if htmlErr != nil {
+			return nil, pagesScanned, errors.New("一覧ページを解析できませんでした")
+		}
+		pageText := strings.ToLower(htmlText(doc))
+		if hasPasswordInput(doc) || hasCaptcha(doc, pageText) || strings.Contains(pageText, "ログインしてください") {
+			return nil, pagesScanned, errors.New("一覧ページにログイン・パスワード・認証が必要です。自動で回避しません")
+		}
+		pagesScanned++
+		baseURL := resp.Request.URL
+		var walk func(*xhtml.Node)
+		walk = func(n *xhtml.Node) {
+			if n.Type == xhtml.ElementNode && n.Data == "a" {
+				href := strings.TrimSpace(attr(n, "href"))
+				if href != "" {
+					resolved, e := baseURL.Parse(href)
+					if e == nil {
+						resolved.Fragment = ""
+						if normalized, e := validateUploaderURL(resolved.String()); e == nil {
+							if isUploaderDownloadPage(normalized) && !seenCandidates[normalized] {
+								seenCandidates[normalized] = true
+								label := strings.TrimSpace(htmlText(n))
+								if label == "" || len(label) > 300 {
+									label = safeSourceFilename(path.Base(resolved.Path))
+								}
+								items = append(items, uploaderListingCandidate{URL: normalized, Label: label})
+							}
+							if isUploaderPaginationLink(normalized, attr(n, "rel"), strings.TrimSpace(htmlText(n)), baseURL) && len(queue)+pagesScanned < maxUploaderListingPages && !seenPages[normalized] {
+								queue = append(queue, normalized)
+							}
+						}
+					}
+				}
+			}
+			for child := n.FirstChild; child != nil && len(items) < maxUploaderListingCandidates; child = child.NextSibling {
+				walk(child)
+			}
+		}
+		walk(doc)
+	}
+	return items, pagesScanned, nil
+}
+
+func isUploaderDownloadPage(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	p := strings.ToLower(u.Path)
+	if strings.Contains(p, "/download/") {
+		return true
+	}
+	host := strings.ToLower(u.Hostname())
+	return strings.HasPrefix(host, "dl") && strings.Contains(host, "getuploader.com") && strings.Contains(p, "/g/")
+}
+
+func isUploaderPaginationLink(raw, rel, label string, base *url.URL) bool {
+	u, err := url.Parse(raw)
+	if err != nil || base == nil || u.Hostname() != base.Hostname() || u.String() == base.String() || isUploaderDownloadPage(raw) {
+		return false
+	}
+	rel = strings.ToLower(rel)
+	label = strings.ToLower(strings.TrimSpace(label))
+	if strings.Contains(rel, "next") || strings.Contains(label, "次へ") || strings.Contains(label, "次のページ") || strings.Contains(label, "next") || strings.Contains(label, "older") || label == ">" || label == "次" || label == "›" || label == "»" {
+		return true
+	}
+	q := u.Query()
+	for key := range q {
+		key = strings.ToLower(key)
+		if (key == "page" || key == "p" || key == "offset" || key == "start") && q.Get(key) != "" {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(u.Path), "/page/")
+}

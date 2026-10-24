@@ -1,1 +1,29 @@
+# Local secrets and environment files
 .env
+.env.*
+!.env.example
+
+# JavaScript / frontend
+node_modules/
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+npm-debug.log*
+
+# Go build/test outputs
+/bin/
+*.test
+coverage.out
+
+# Editors / operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local logs and temporary files
+*.log
+.tmp/
+tmp/

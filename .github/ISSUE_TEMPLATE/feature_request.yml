@@ -1,0 +1,23 @@
+name: 機能提案
+description: 改善案や新機能を提案する
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解決したい課題
+      description: どんな困りごとがあるか
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案内容
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: 影響・リスク
+      description: セキュリティ、権利、プライバシー、外部サイトへの負荷など

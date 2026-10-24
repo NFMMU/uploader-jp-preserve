@@ -122,6 +122,10 @@ table "file_objects" {
     type = varchar(255)
     null = true
   }
+  column "source_url" {
+    type = text
+    null = true
+  }
   column "preservation_status" {
     type = varchar(32)
     null = false
@@ -146,6 +150,14 @@ table "file_objects" {
     null = false
     default = sql("now()")
   }
+  column "deletion_requested_at" {
+    type = timestamptz
+    null = true
+  }
+  column "deleted_at" {
+    type = timestamptz
+    null = true
+  }
   primary_key {
     columns = [column.id]
   }
@@ -166,6 +178,9 @@ table "file_objects" {
   }
   index "file_objects_redistribution_policy_idx" {
     columns = [column.redistribution_policy]
+  }
+  index "file_objects_deleted_at_idx" {
+    columns = [column.deleted_at]
   }
   check "file_objects_preservation_status_check" {
     expr = "preservation_status IN ('uncollected', 'queued', 'stored', 'verified', 'degraded', 'missing', 'error')"
@@ -566,6 +581,18 @@ table "public_requests" {
     type = uuid
     null = true
   }
+  column "title" {
+    type = varchar(500)
+    null = true
+  }
+  column "creator_name" {
+    type = varchar(255)
+    null = true
+  }
+  column "source_url" {
+    type = text
+    null = true
+  }
   column "submitter_name" {
     type = varchar(255)
     null = true
@@ -625,6 +652,177 @@ table "public_requests" {
     columns = [column.status, column.created_at]
   }
   check "public_requests_type_check" {
-    expr = "request_type IN ('takedown', 'deletion', 'external_publication')"
+    expr = "request_type IN ('takedown', 'deletion', 'external_publication', 'preservation')"
+  }
+}
+
+table "download_jobs" {
+  schema = schema.public
+  column "id" {
+    type = uuid
+    null = false
+    default = sql("gen_random_uuid()")
+  }
+  column "file_object_id" {
+    type = uuid
+    null = false
+  }
+  column "selected_node_id" {
+    type = uuid
+    null = true
+  }
+  column "status" {
+    type = varchar(16)
+    null = false
+    default = "queued"
+  }
+  column "access_token_hash" {
+    type = varchar(64)
+    null = false
+  }
+  column "lease_token" {
+    type = uuid
+    null = true
+  }
+  column "lease_until" {
+    type = timestamptz
+    null = true
+  }
+  column "attempt_count" {
+    type = integer
+    null = false
+    default = 0
+  }
+  column "size_bytes" {
+    type = bigint
+    null = true
+  }
+  column "sha256" {
+    type = varchar(64)
+    null = true
+  }
+  column "last_error" {
+    type = text
+    null = true
+  }
+  column "expires_at" {
+    type = timestamptz
+    null = false
+    default = sql("now() + interval '30 minutes'")
+  }
+  column "created_at" {
+    type = timestamptz
+    null = false
+    default = sql("now()")
+  }
+  column "updated_at" {
+    type = timestamptz
+    null = false
+    default = sql("now()")
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "download_jobs_file_object_id_fkey" {
+    columns = [column.file_object_id]
+    ref_columns = [table.file_objects.column.id]
+    on_update = NO_ACTION
+    on_delete = CASCADE
+  }
+  foreign_key "download_jobs_selected_node_id_fkey" {
+    columns = [column.selected_node_id]
+    ref_columns = [table.nodes.column.id]
+    on_update = NO_ACTION
+    on_delete = SET_NULL
+  }
+  index "download_jobs_status_created_idx" {
+    columns = [column.status, column.created_at]
+  }
+  index "download_jobs_file_idx" {
+    columns = [column.file_object_id]
+  }
+  index "download_jobs_expiry_idx" {
+    columns = [column.expires_at]
+  }
+  check "download_jobs_status_check" {
+    expr = "status IN ('queued','running','ready','failed','expired')"
+  }
+  check "download_jobs_attempt_count_check" {
+    expr = "attempt_count >= 0"
+  }
+}
+
+table "download_audit_logs" {
+  schema = schema.public
+  column "id" {
+    type = uuid
+    null = false
+    default = sql("gen_random_uuid()")
+  }
+  column "download_job_id" {
+    type = uuid
+    null = true
+  }
+  column "file_object_id" {
+    type = uuid
+    null = true
+  }
+  column "selected_node_id" {
+    type = uuid
+    null = true
+  }
+  column "action" {
+    type = varchar(32)
+    null = false
+  }
+  column "result" {
+    type = varchar(16)
+    null = false
+  }
+  column "reason" {
+    type = text
+    null = true
+  }
+  column "bytes_sent" {
+    type = bigint
+    null = false
+    default = 0
+  }
+  column "duration_ms" {
+    type = bigint
+    null = false
+    default = 0
+  }
+  column "created_at" {
+    type = timestamptz
+    null = false
+    default = sql("now()")
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "download_audit_logs_download_job_id_fkey" {
+    columns = [column.download_job_id]
+    ref_columns = [table.download_jobs.column.id]
+    on_update = NO_ACTION
+    on_delete = SET_NULL
+  }
+  foreign_key "download_audit_logs_file_object_id_fkey" {
+    columns = [column.file_object_id]
+    ref_columns = [table.file_objects.column.id]
+    on_update = NO_ACTION
+    on_delete = SET_NULL
+  }
+  foreign_key "download_audit_logs_selected_node_id_fkey" {
+    columns = [column.selected_node_id]
+    ref_columns = [table.nodes.column.id]
+    on_update = NO_ACTION
+    on_delete = SET_NULL
+  }
+  index "download_audit_logs_created_idx" {
+    columns = [column.created_at]
+  }
+  index "download_audit_logs_job_idx" {
+    columns = [column.download_job_id]
   }
 }

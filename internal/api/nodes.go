@@ -17,7 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -197,7 +197,19 @@ func (s *Server) listNodes(c *gin.Context) {
 }
 
 func (s *Server) listTasks(c *gin.Context) {
-	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{})
+	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).
+		// Hide failed source-fetch/store tasks that are obsolete because their
+		// file object has since been verified. These historical failures cannot
+		// be retried and should not clutter the operational task list.
+		Where(`NOT (
+			tasks.status = 'failed'
+			AND tasks.task_type IN ('source_fetch', 'store')
+			AND EXISTS (
+				SELECT 1 FROM file_objects
+				WHERE file_objects.id = tasks.file_object_id
+				AND file_objects.preservation_status = 'verified'
+			)
+		)`)
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -233,12 +245,16 @@ func (s *Server) ingestFile(c *gin.Context) {
 		return
 	}
 	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", fileID).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
 	if file.PreservationStatus == "verified" {
 		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; create a new file object to ingest a different version"})
+		return
+	}
+	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
+		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
 		return
 	}
 	var activeTasks int64
@@ -280,11 +296,6 @@ func (s *Server) ingestFile(c *gin.Context) {
 	filename := strings.TrimSpace(filepath.Base(strings.ReplaceAll(fh.Filename, "\\", "/")))
 	if filename == "" || len(filename) > 500 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
-		return
-	}
-	nodes, err := s.selectNodesForCapacity(c, fh.Size, 2)
-	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "required_placements": 2})
 		return
 	}
 	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
@@ -329,6 +340,23 @@ func (s *Server) ingestFile(c *gin.Context) {
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
 	}
+	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, priority, file.SourceURL, "", "", "")
+
+}
+
+// queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
+// The temporary file is removed on every exit path.
+func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) {
+	defer os.Remove(tmpName)
+	nodes, err := s.selectNodesForCapacity(c, written, 2)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "required_placements": 2})
+		return
+	}
+	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
+		return
+	}
 	tasks := make([]model.Task, 0, len(nodes))
 	placements := make([]model.Placement, 0, len(nodes))
 	stagePaths := make([]string, 0, len(nodes))
@@ -337,7 +365,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 		stagePath := filepath.Join(s.cfg.StagingDir, taskID)
 		if i == 0 {
 			if err := os.Rename(tmpName, stagePath); err != nil {
-				cleanupTmp()
+				_ = os.Remove(tmpName)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize staging file"})
 				return
 			}
@@ -345,7 +373,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 			for _, existing := range stagePaths {
 				_ = os.Remove(existing)
 			}
-			cleanupTmp()
+			_ = os.Remove(tmpName)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare staged replica"})
 			return
 		}
@@ -356,11 +384,17 @@ func (s *Server) ingestFile(c *gin.Context) {
 		tasks = append(tasks, task)
 		placements = append(placements, placement)
 	}
+	now := time.Now().UTC()
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{
 			"original_filename": filename, "size_bytes": written, "sha256": sha, "media_type": mediaType, "preservation_status": "queued", "public_download_enabled": false,
 		}).Error; err != nil {
 			return err
+		}
+		if sourceURL != nil {
+			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_url", *sourceURL).Error; err != nil {
+				return err
+			}
 		}
 		for i, task := range tasks {
 			if err := tx.Create(&task).Error; err != nil {
@@ -380,6 +414,15 @@ func (s *Server) ingestFile(c *gin.Context) {
 				return err
 			}
 		}
+		if sourceFetchTaskID != "" {
+			var sourceTask model.Task
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_type = 'source_fetch' AND status = 'running' AND target_node_id = ? AND lease_token = ? AND lease_until > now()", sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease).First(&sourceTask).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Task{}).Where("id = ?", sourceFetchTaskID).Updates(map[string]any{"status": "completed", "lease_until": nil, "lease_token": nil, "last_error": nil, "updated_at": now}).Error; err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -389,8 +432,12 @@ func (s *Server) ingestFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create preservation tasks"})
 		return
 	}
-	actor, _ := currentUser(c)
-	s.audit(c, &actor, "file_object", file.ID, "file_object.ingest.queued", "success", stringPtr("File uploaded to temporary staging and queued for two-node storage"))
+	actor, hasActor := currentUser(c)
+	var actorPtr *model.User
+	if hasActor {
+		actorPtr = &actor
+	}
+	s.audit(c, actorPtr, "file_object", file.ID, "file_object.ingest.queued", "success", stringPtr("File staged and queued for two-node storage"))
 	taskViews := make([]gin.H, 0, len(tasks))
 	nodeViews := make([]gin.H, 0, len(nodes))
 	for i := range tasks {
@@ -444,8 +491,8 @@ func (s *Server) retryTask(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "only failed tasks can be retried"})
 		return
 	}
-	if task.TaskType != "store" || task.TargetNodeID == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "only failed storage tasks with a target node can be retried"})
+	if (task.TaskType != "store" && task.TaskType != "source_fetch") || task.TargetNodeID == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "only failed source-fetch or storage tasks with a target node can be retried"})
 		return
 	}
 
@@ -456,6 +503,35 @@ func (s *Server) retryTask(c *gin.Context) {
 	}
 	if file.PreservationStatus == "verified" {
 		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; this failed historical task will not be retried"})
+		return
+	}
+	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
+		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before retrying preservation"})
+		return
+	}
+	if task.TaskType == "source_fetch" {
+		if file.SourceURL == nil || strings.TrimSpace(*file.SourceURL) == "" {
+			c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task has no source URL; start preservation again from the file or request"})
+			return
+		}
+		var node model.Node
+		if err := s.db.WithContext(c.Request.Context()).Where("status = 'online' AND agent_version LIKE '0.5.%'").Order("random()").First(&node).Error; err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "no online source-fetch-capable agent is available; rebuild and restart the node agents"})
+			return
+		}
+		now := time.Now().UTC()
+		if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&model.Task{}).Where("id = ? AND status = 'failed' AND task_type = 'source_fetch'", task.ID).Updates(map[string]any{"status": "queued", "target_node_id": node.ID, "attempt_count": 0, "last_error": nil, "lease_token": nil, "lease_until": nil, "updated_at": now}).Error; err != nil {
+				return err
+			}
+			return tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not requeue source-fetch task"})
+			return
+		}
+		actor, _ := currentUser(c)
+		s.audit(c, &actor, "task", task.ID, "task.source_fetch.retry", "success", stringPtr("agent="+node.Name))
+		c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "task_type": task.TaskType, "status": "queued", "node_id": node.ID, "node_name": node.Name})
 		return
 	}
 	if file.SHA256 == nil || len(*file.SHA256) != 64 {
@@ -664,7 +740,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`UPDATE tasks SET status = 'failed', lease_until = NULL, lease_token = NULL,
 			last_error = COALESCE(last_error, 'task lease expired after maximum attempts'), updated_at = now()
-			WHERE ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			WHERE ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
 			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
@@ -673,7 +749,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			return err
 		}
 		err := tx.Raw(`SELECT id, task_type, file_object_id, source_node_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at
-			FROM tasks WHERE ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			FROM tasks WHERE ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
 			AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
 			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
@@ -708,6 +784,18 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	var file model.FileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", claimed.Task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
+		return
+	}
+	if claimed.Task.TaskType == "source_fetch" {
+		if file.SourceURL == nil || strings.TrimSpace(*file.SourceURL) == "" {
+			c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task has no source URL"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken,
+			"file_object_id": file.ID, "source_url": *file.SourceURL, "attempt_count": claimed.Task.AttemptCount,
+			"target_node_id": claimed.Task.TargetNodeID,
+		})
 		return
 	}
 	placementNodeID := node.ID
@@ -784,12 +872,16 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		return
 	}
 	var task model.Task
-	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
 		notFoundOrError(c, err, "task")
 		return
 	}
 	if task.Status != "running" {
 		c.JSON(http.StatusConflict, gin.H{"error": "task is not running"})
+		return
+	}
+	if task.TaskType == "source_fetch" && req.Status == "success" {
+		c.JSON(http.StatusConflict, gin.H{"error": "source-fetch tasks must upload the fetched content to the source-content endpoint"})
 		return
 	}
 	var leaseToken string
@@ -810,7 +902,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		req.Status = "failure"
 		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.SHA256), req.SizeBytes, req.SHA256)
 	}
-	terminal := req.Status == "failure" && task.AttemptCount >= maxTaskAttempts
+	terminal := req.Status == "failure" && (task.AttemptCount >= maxTaskAttempts || (task.TaskType == "source_fetch" && sourceFetchFailureIsPermanent(req.Error)))
 	nextStatus := "queued"
 	if req.Status == "success" {
 		nextStatus = "completed"
@@ -848,6 +940,21 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 				return err
 			}
 		}
+		if task.TaskType == "delete" && req.Status == "success" && file.DeletionRequestedAt != nil {
+			var remaining int64
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND status <> 'deleted'", file.ID).Count(&remaining).Error; err != nil {
+				return err
+			}
+			if remaining == 0 {
+				if err := tx.Model(&model.FileObject{}).Where("id = ? AND deleted_at IS NULL", file.ID).Update("deleted_at", now).Error; err != nil {
+					return err
+				}
+				entry := model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "file_object", TargetID: &file.ID, Action: "file_object.deletion.completed", Result: "success", Reason: stringPtr("All known placements reported successful deletion")}
+				if err := tx.Create(&entry).Error; err != nil {
+					return err
+				}
+			}
+		}
 		if task.TaskType == "replicate" && terminal && (strings.Contains(req.Error, "source placement failed verification") || strings.Contains(req.Error, "could not read source placement") || strings.Contains(req.Error, "source replica failed size or SHA-256 validation")) {
 			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Update("status", "error").Error; err != nil {
 				return err
@@ -877,6 +984,87 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	var updatedFile model.FileObject
 	_ = s.db.WithContext(c.Request.Context()).Select("preservation_status").First(&updatedFile, "id = ?", file.ID).Error
 	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": updatedFile.PreservationStatus})
+}
+
+func (s *Server) receiveSourceFetchContent(c *gin.Context) {
+	node, ok := currentNode(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "node authentication required"})
+		return
+	}
+	taskID := c.Param("taskID")
+	if _, err := uuid.Parse(taskID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		return
+	}
+	lease := c.Query("lease_token")
+	if _, err := uuid.Parse(lease); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid lease_token is required"})
+		return
+	}
+	var task model.Task
+	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND task_type = 'source_fetch' AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&task).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task lease is no longer valid"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load source file"})
+		return
+	}
+	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
+		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; source content was not accepted"})
+		return
+	}
+	if strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "text/html") {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "agent uploaded an HTML page instead of file content"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxIngestBytes+1)
+	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
+		return
+	}
+	tmp, err := os.CreateTemp(s.cfg.StagingDir, ".source-agent-")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create source staging file"})
+		return
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+	hasher := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(c.Request.Body, maxIngestBytes+1))
+	if copyErr != nil || written > maxIngestBytes {
+		_ = tmp.Close()
+		cleanup()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source content upload failed, was empty, or exceeded the 5 GiB limit"})
+		return
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not sync source staging file"})
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not close source staging file"})
+		return
+	}
+	filename := safeSourceFilename(c.GetHeader("X-Source-Filename"))
+	if filename == "" {
+		filename = safeSourceFilename(file.OriginalFilename)
+	}
+	if filename == "" || filename == "取得待ち" {
+		filename = "uploader-download.bin"
+	}
+	mediaType := strings.TrimSpace(strings.ToLower(c.GetHeader("X-Source-Media-Type")))
+	if mediaType == "" || strings.Contains(mediaType, "text/html") {
+		mediaType = "application/octet-stream"
+	}
+	sha := hex.EncodeToString(hasher.Sum(nil))
+	sourceURL := file.SourceURL
+	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, int(task.Priority), sourceURL, task.ID, node.ID, lease)
 }
 
 func (s *Server) replicaContent(c *gin.Context) {
@@ -983,6 +1171,21 @@ func (s *Server) replicaContent(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "task_type": "store", "target_node_id": task.TargetNodeID, "status": "queued", "sha256": gotSHA, "size_bytes": written})
+}
+
+func sourceFetchFailureIsPermanent(message string) bool {
+	value := strings.ToLower(strings.TrimSpace(message))
+	for _, marker := range []string{
+		"パスワード", "画像認証", "追加の確認操作", "自動判定できません", "ログインしてください",
+		"source file exceeds", "exceeded the 5 gib limit", "returned http 400", "returned http 401",
+		"returned http 403", "returned http 404", "returned http 410", "http 400", "http 401", "http 403", "http 404", "http 410", "source content upload returned 409",
+		"need 2 online nodes", "no online nodes", "容量", "保存先として使えるオンラインノード",
+	} {
+		if strings.Contains(value, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }
 
 func recomputeFilePreservation(tx *gorm.DB, fileID string) error {

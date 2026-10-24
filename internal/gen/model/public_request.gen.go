@@ -10,6 +10,9 @@ type PublicRequest struct {
 	Status        string     `gorm:"column:status;not null" json:"status"`
 	ArtifactID    *string    `gorm:"column:artifact_id" json:"artifact_id,omitempty"`
 	FileObjectID  *string    `gorm:"column:file_object_id" json:"file_object_id,omitempty"`
+	Title         *string    `gorm:"column:title" json:"title,omitempty"`
+	CreatorName   *string    `gorm:"column:creator_name" json:"creator_name,omitempty"`
+	SourceURL     *string    `gorm:"column:source_url" json:"source_url,omitempty"`
 	SubmitterName *string    `gorm:"column:submitter_name" json:"submitter_name,omitempty"`
 	Contact       *string    `gorm:"column:contact" json:"contact,omitempty"`
 	Details       string     `gorm:"column:details;not null" json:"details"`

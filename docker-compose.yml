@@ -28,6 +28,14 @@ services:
       - staging_data:/data/staging
     restart: "no"
 
+  delivery-data-init:
+    image: alpine:3.20
+    command:
+      ["sh", "-ec", "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery"]
+    volumes:
+      - delivery_data:/data/delivery
+    restart: "no"
+
   node-data-init:
     image: alpine:3.20
     command:
@@ -99,14 +107,18 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
       STAGING_DIR: /data/staging
+      DELIVERY_DIR: /data/delivery
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - staging_data:/data/staging
+      - delivery_data:/data/delivery
     depends_on:
       migrate:
         condition: service_completed_successfully
       staging-data-init:
+        condition: service_completed_successfully
+      delivery-data-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
@@ -122,6 +134,7 @@ services:
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}
       NODE_STORAGE_PATH: /data/objects
       NODE_STATE_PATH: /data/node-credentials.json
+      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
     volumes:
       - node_data:/data
     depends_on:
@@ -143,6 +156,7 @@ services:
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_B:-10737418240}
       NODE_STORAGE_PATH: /data/objects
       NODE_STATE_PATH: /data/node-credentials.json
+      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
     volumes:
       - node_data_b:/data
     depends_on:
@@ -164,6 +178,7 @@ services:
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_C:-10737418240}
       NODE_STORAGE_PATH: /data/objects
       NODE_STATE_PATH: /data/node-credentials.json
+      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
     volumes:
       - node_data_c:/data
     depends_on:
@@ -185,6 +200,7 @@ services:
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_D:-10737418240}
       NODE_STORAGE_PATH: /data/objects
       NODE_STATE_PATH: /data/node-credentials.json
+      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
     volumes:
       - node_data_d:/data
     depends_on:
@@ -194,8 +210,18 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  web:
+    build: ./web
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  delivery_data:
   staging_data:
   node_data:
   node_data_b:

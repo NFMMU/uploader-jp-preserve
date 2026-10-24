@@ -23,16 +23,17 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const agentVersion = "0.4.0"
+const agentVersion = "0.5.0"
 
 type config struct {
-	APIURL      string
-	Enrollment  string
-	Name        string
-	NodeType    string
-	Requested   int64
-	StoragePath string
-	StatePath   string
+	APIURL              string
+	Enrollment          string
+	Name                string
+	NodeType            string
+	Requested           int64
+	StoragePath         string
+	StatePath           string
+	UploaderMinInterval time.Duration
 }
 
 type credentials struct {
@@ -52,13 +53,15 @@ type task struct {
 	SHA256           *string `json:"sha256"`
 	StorageKey       string  `json:"storage_key"`
 	AttemptCount     int32   `json:"attempt_count"`
+	SourceURL        string  `json:"source_url"`
 }
 
 type agent struct {
-	cfg    config
-	creds  credentials
-	client *http.Client
-	log    *slog.Logger
+	cfg               config
+	creds             credentials
+	client            *http.Client
+	log               *slog.Logger
+	lastUploaderFetch time.Time
 }
 
 func main() {
@@ -78,6 +81,7 @@ func main() {
 		os.Exit(1)
 	}
 	a := &agent{cfg: cfg, creds: creds, client: &http.Client{}, log: logger}
+	a.loadUploaderFetchTimestamp()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -85,7 +89,7 @@ func main() {
 		logger.Warn("initial_heartbeat_failed", "error", err)
 	}
 	go a.heartbeatLoop(ctx)
-	logger.Info("node_agent_started", "node_id", creds.NodeID, "node_name", cfg.Name, "storage_path", cfg.StoragePath)
+	logger.Info("node_agent_started", "node_id", creds.NodeID, "node_name", cfg.Name, "storage_path", cfg.StoragePath, "uploader_fetcher_version", uploaderFetcherVersion)
 	poll := time.NewTicker(5 * time.Second)
 	defer poll.Stop()
 	for {
@@ -97,18 +101,22 @@ func main() {
 			if err := a.claimAndProcess(ctx); err != nil {
 				logger.Warn("task_poll_failed", "error", err)
 			}
+			if err := a.claimAndProcessDelivery(ctx); err != nil {
+				logger.Warn("delivery_poll_failed", "error", err)
+			}
 		}
 	}
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
-		APIURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("CENTRAL_API_URL")), "/"),
-		Enrollment:  strings.TrimSpace(os.Getenv("NODE_ENROLLMENT_TOKEN")),
-		Name:        strings.TrimSpace(os.Getenv("NODE_NAME")),
-		NodeType:    strings.TrimSpace(os.Getenv("NODE_TYPE")),
-		StoragePath: strings.TrimSpace(os.Getenv("NODE_STORAGE_PATH")),
-		StatePath:   strings.TrimSpace(os.Getenv("NODE_STATE_PATH")),
+		APIURL:              strings.TrimRight(strings.TrimSpace(os.Getenv("CENTRAL_API_URL")), "/"),
+		Enrollment:          strings.TrimSpace(os.Getenv("NODE_ENROLLMENT_TOKEN")),
+		Name:                strings.TrimSpace(os.Getenv("NODE_NAME")),
+		NodeType:            strings.TrimSpace(os.Getenv("NODE_TYPE")),
+		StoragePath:         strings.TrimSpace(os.Getenv("NODE_STORAGE_PATH")),
+		StatePath:           strings.TrimSpace(os.Getenv("NODE_STATE_PATH")),
+		UploaderMinInterval: 30 * time.Second,
 	}
 	if cfg.APIURL == "" || cfg.Enrollment == "" || cfg.Name == "" {
 		return config{}, errors.New("CENTRAL_API_URL, NODE_ENROLLMENT_TOKEN, and NODE_NAME are required")
@@ -128,6 +136,13 @@ func loadConfig() (config, error) {
 	}
 	if cfg.StatePath == "" {
 		cfg.StatePath = "/data/node-credentials.json"
+	}
+	if intervalText := strings.TrimSpace(os.Getenv("NODE_UPLOADER_MIN_INTERVAL")); intervalText != "" {
+		interval, parseErr := time.ParseDuration(intervalText)
+		if parseErr != nil || interval < 0 {
+			return config{}, errors.New("NODE_UPLOADER_MIN_INTERVAL must be a non-negative duration such as 30s or 1m")
+		}
+		cfg.UploaderMinInterval = interval
 	}
 	quotaText := strings.TrimSpace(os.Getenv("NODE_CAPACITY_BYTES"))
 	if quotaText != "" {
@@ -291,10 +306,24 @@ func (a *agent) claimAndProcess(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
 		return err
 	}
-	if t.TaskID == "" || t.LeaseToken == "" || t.StorageKey == "" || t.SHA256 == nil {
-		return errors.New("central API returned an incomplete storage task")
+	if t.TaskID == "" || t.LeaseToken == "" || t.FileObjectID == "" {
+		return errors.New("central API returned an incomplete task")
 	}
 	a.log.Info("task_claimed", "task_id", t.TaskID, "task_type", t.TaskType, "file_object_id", t.FileObjectID, "attempt", t.AttemptCount)
+	if t.TaskType == "source_fetch" {
+		if t.SourceURL == "" {
+			return a.reportResult(ctx, t, map[string]any{"lease_token": t.LeaseToken, "status": "failure", "error": "source-fetch task has no source URL"})
+		}
+		if err := a.fetchAndUploadSource(ctx, t); err != nil {
+			a.log.Warn("source_fetch_failed", "task_id", t.TaskID, "uploader_fetcher_version", uploaderFetcherVersion, "error", err)
+			return a.reportResult(ctx, t, map[string]any{"lease_token": t.LeaseToken, "status": "failure", "error": truncate(err.Error(), 1900)})
+		}
+		a.log.Info("source_fetch_uploaded", "task_id", t.TaskID, "file_object_id", t.FileObjectID)
+		return nil
+	}
+	if t.StorageKey == "" || t.SHA256 == nil {
+		return errors.New("central API returned an incomplete storage task")
+	}
 	if t.TaskType == "replicate" {
 		if err := a.uploadReplica(ctx, t); err != nil {
 			a.log.Warn("replica_upload_failed", "task_id", t.TaskID, "error", err)
@@ -332,6 +361,85 @@ func (a *agent) claimAndProcess(ctx context.Context) error {
 	if err := a.heartbeat(ctx); err != nil {
 		a.log.Warn("post_task_heartbeat_failed", "error", err)
 	}
+	return nil
+}
+
+func (a *agent) fetchAndUploadSource(ctx context.Context, t task) error {
+	validatedURL, err := validateAgentUploaderURL(t.SourceURL)
+	if err != nil {
+		return err
+	}
+	fetched, err := fetchUploaderFileWithLimiter(ctx, validatedURL, true, a.waitForUploaderInterval)
+	if err != nil {
+		return err
+	}
+	defer fetched.Body.Close()
+	if fetched.Size > maxAgentSourceBytes {
+		return fmt.Errorf("source file exceeds the 5 GiB limit")
+	}
+	if strings.Contains(strings.ToLower(fetched.MediaType), "text/html") {
+		return fmt.Errorf("uploader.jp returned an HTML page instead of file content")
+	}
+	endpoint := a.cfg.APIURL + "/api/v1/nodes/" + a.creds.NodeID + "/tasks/" + t.TaskID + "/source-content?lease_token=" + url.QueryEscape(t.LeaseToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, fetched.Body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+a.creds.Token)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Source-Filename", safeSourceFilename(fetched.Filename))
+	req.Header.Set("X-Source-Media-Type", fetched.MediaType)
+	if fetched.Size >= 0 {
+		req.ContentLength = fetched.Size
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("upload fetched content to central API: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("source content upload returned %s: %s", resp.Status, strings.TrimSpace(string(payload)))
+	}
+	return nil
+}
+
+func (a *agent) loadUploaderFetchTimestamp() {
+	path := a.cfg.StatePath + ".uploader-last-fetch"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(b)))
+	if err == nil {
+		a.lastUploaderFetch = parsed
+	}
+}
+
+func (a *agent) persistUploaderFetchTimestamp() {
+	path := a.cfg.StatePath + ".uploader-last-fetch"
+	if err := os.WriteFile(path, []byte(a.lastUploaderFetch.UTC().Format(time.RFC3339Nano)), 0o600); err != nil {
+		a.log.Warn("uploader_rate_limit_state_write_failed", "error", err)
+	}
+}
+
+func (a *agent) waitForUploaderInterval(ctx context.Context) error {
+	interval := a.cfg.UploaderMinInterval
+	if !a.lastUploaderFetch.IsZero() {
+		wait := interval - time.Since(a.lastUploaderFetch)
+		if wait > 0 {
+			a.log.Info("uploader_rate_limit_wait", "wait", wait.String(), "minimum_interval", interval.String())
+			timer := time.NewTimer(wait)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	a.lastUploaderFetch = time.Now()
+	a.persistUploaderFetchTimestamp()
 	return nil
 }
 
@@ -549,4 +657,83 @@ func truncate(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+type deliveryJob struct {
+	JobID      string  `json:"job_id"`
+	LeaseToken *string `json:"lease_token"`
+	StorageKey string  `json:"storage_key"`
+	SizeBytes  int64   `json:"size_bytes"`
+	SHA256     *string `json:"sha256"`
+}
+
+func (a *agent) claimAndProcessDelivery(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.APIURL+"/api/v1/nodes/"+a.creds.NodeID+"/delivery-jobs/claim", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+a.creds.Token)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return fmt.Errorf("claim delivery job: status %d", resp.StatusCode)
+	}
+	var job deliveryJob
+	if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+		return err
+	}
+	if job.JobID == "" || job.LeaseToken == nil || *job.LeaseToken == "" {
+		return errors.New("delivery job response missing lease")
+	}
+	path, err := safeStoragePath(a.cfg.StoragePath, job.StorageKey)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() != job.SizeBytes {
+		return fmt.Errorf("delivery source size mismatch")
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	if job.SHA256 == nil || hex.EncodeToString(h.Sum(nil)) != strings.ToLower(*job.SHA256) {
+		return fmt.Errorf("delivery source sha256 mismatch")
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	u := a.cfg.APIURL + "/api/v1/nodes/" + a.creds.NodeID + "/delivery-jobs/" + job.JobID + "/content?lease_token=" + url.QueryEscape(*job.LeaseToken)
+	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, u, f)
+	if err != nil {
+		return err
+	}
+	upload.Header.Set("Authorization", "Bearer "+a.creds.Token)
+	upload.Header.Set("Content-Type", "application/octet-stream")
+	upload.ContentLength = job.SizeBytes
+	upResp, err := a.client.Do(upload)
+	if err != nil {
+		return err
+	}
+	defer upResp.Body.Close()
+	_, _ = io.Copy(io.Discard, upResp.Body)
+	if upResp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("upload delivery content: status %d", upResp.StatusCode)
+	}
+	return nil
 }

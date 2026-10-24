@@ -18,6 +18,7 @@ type Config struct {
 	BootstrapAdminPassword string
 	NodeEnrollmentToken    string
 	StagingDir             string
+	DeliveryDir            string
 }
 
 func Load() (Config, error) {
@@ -30,6 +31,7 @@ func Load() (Config, error) {
 		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
 		NodeEnrollmentToken:    strings.TrimSpace(os.Getenv("NODE_ENROLLMENT_TOKEN")),
 		StagingDir:             env("STAGING_DIR", "./data/staging"),
+		DeliveryDir:            env("DELIVERY_DIR", "./data/delivery"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -50,6 +52,9 @@ func Load() (Config, error) {
 	}
 	if cfg.NodeEnrollmentToken != "" && len(cfg.NodeEnrollmentToken) < 32 {
 		return Config{}, fmt.Errorf("NODE_ENROLLMENT_TOKEN must contain at least 32 characters when enabled")
+	}
+	if strings.TrimSpace(cfg.DeliveryDir) == "" {
+		return Config{}, fmt.Errorf("DELIVERY_DIR must not be empty")
 	}
 	if strings.TrimSpace(cfg.StagingDir) == "" {
 		return Config{}, fmt.Errorf("STAGING_DIR must not be empty")

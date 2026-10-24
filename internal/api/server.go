@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uploader-jp/uploader-archive/internal/config"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
-	"github.com/uploader-jp/uploader-archive/internal/security"
+	"github.com/nfmmu/uploader-archive/internal/config"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/security"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -30,12 +30,20 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	r.GET("/healthz", s.health)
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/login", s.login)
+	v1.GET("/public/artifacts", s.listPublicArtifacts)
+	v1.GET("/public/artifacts/:id", s.getPublicArtifact)
 	v1.POST("/public-requests", s.submitPublicRequest)
+	v1.POST("/public/files/:id/downloads", s.createDownloadJob)
+	v1.GET("/public/downloads/:id", s.getDownloadJob)
+	v1.GET("/public/downloads/:id/content", s.downloadContent)
+	v1.POST("/nodes/:id/delivery-jobs/claim", s.authenticateNode(), s.claimDeliveryJob)
+	v1.POST("/nodes/:id/delivery-jobs/:jobID/content", s.authenticateNode(), s.receiveDeliveryContent)
 	v1.POST("/nodes/register", s.registerNode)
 	v1.POST("/nodes/:id/heartbeat", s.authenticateNode(), s.nodeHeartbeat)
 	v1.POST("/nodes/:id/tasks/claim", s.authenticateNode(), s.claimNodeTask)
 	v1.GET("/nodes/:id/tasks/:taskID/content", s.authenticateNode(), s.nodeTaskContent)
 	v1.POST("/nodes/:id/tasks/:taskID/result", s.authenticateNode(), s.nodeTaskResult)
+	v1.POST("/nodes/:id/tasks/:taskID/source-content", s.authenticateNode(), s.receiveSourceFetchContent)
 	v1.POST("/nodes/:id/tasks/:taskID/replica-content", s.authenticateNode(), s.replicaContent)
 
 	auth := v1.Group("")
@@ -43,13 +51,19 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.GET("/me", s.me)
 	auth.GET("/artifacts", s.listArtifacts)
 	auth.POST("/artifacts", s.requireRoles("admin"), s.createArtifact)
+	auth.PATCH("/artifacts/:id", s.requireRoles("admin", "reviewer"), s.updateArtifactMetadata)
 	auth.GET("/artifacts/:id", s.getArtifact)
 	auth.POST("/artifacts/:id/files", s.requireRoles("admin"), s.createFileObject)
 	auth.GET("/files", s.listFiles)
 	auth.GET("/files/:id", s.getFileObject)
+	auth.PATCH("/files/:id/metadata", s.requireRoles("admin", "reviewer"), s.updateFileMetadata)
+	auth.POST("/files/bulk-action", s.requireRoles("admin", "reviewer"), s.bulkFileAction)
+	auth.POST("/admin/deletion-requests", s.requireRoles("admin"), s.createAdminDeletionRequests)
 	auth.GET("/files/:id/placements", s.requireRoles("admin", "reviewer"), s.listPlacements)
 	auth.POST("/files/:id/replicate", s.requireRoles("admin"), s.requestReplica)
 	auth.POST("/files/:id/ingest", s.requireRoles("admin"), s.ingestFile)
+	auth.POST("/files/:id/ingest-source", s.requireRoles("admin"), s.ingestSourceFile)
+	auth.POST("/artifacts/:id/discover-source-files", s.requireRoles("admin"), s.discoverUploaderFiles)
 	auth.GET("/nodes", s.requireRoles("admin", "reviewer"), s.listNodes)
 	auth.GET("/tasks", s.requireRoles("admin", "reviewer"), s.listTasks)
 	auth.POST("/admin/placements/reconcile", s.requireRoles("admin"), s.reconcileNow)
@@ -64,6 +78,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.PATCH("/admin/users/:id", s.requireRoles("admin"), s.updateUser)
 	auth.GET("/admin/audit-logs", s.requireRoles("admin"), s.listAuditLogs)
 	go s.runPlacementReconciler()
+	go s.runDownloadCleanup()
 	return r
 }
 

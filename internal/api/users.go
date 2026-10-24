@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

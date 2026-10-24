@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -73,7 +73,7 @@ func (s *Server) requestReplica(c *gin.Context) {
 		return
 	}
 	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", fileID).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Server) reconcilePlacements(ctx context.Context) error {
 		return err
 	}
 	var fileIDs []string
-	if err := db.Raw("SELECT id FROM file_objects WHERE preservation_status IN ('verified','degraded','missing','error','queued','stored') ORDER BY created_at ASC LIMIT 10000").Scan(&fileIDs).Error; err != nil {
+	if err := db.Raw("SELECT id FROM file_objects WHERE deleted_at IS NULL AND deletion_requested_at IS NULL AND preservation_status IN ('verified','degraded','missing','error','queued','stored') ORDER BY created_at ASC LIMIT 10000").Scan(&fileIDs).Error; err != nil {
 		return err
 	}
 	for _, fileID := range fileIDs {
@@ -231,6 +231,10 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
 			return err
+		}
+		if file.DeletionRequestedAt != nil || file.DeletedAt != nil {
+			reason = "file deletion is requested or already complete"
+			return nil
 		}
 		cutoff := time.Now().UTC().Add(-2 * time.Minute)
 		var placements []model.Placement

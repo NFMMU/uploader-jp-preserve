@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/google/uuid"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +22,13 @@ var preservationStatuses = map[string]bool{
 
 var redistributionPolicies = map[string]bool{
 	"allowed": true, "restricted": true, "in_progress": true, "pending": true, "unknown": true,
+}
+
+// pending is the explicit "unconfirmed" state. Other policy states may be
+// preserved, but public redistribution still requires the separate allowed
+// policy and publication checks.
+func isUnconfirmedRedistributionPolicy(policy string) bool {
+	return policy == "pending"
 }
 
 func (s *Server) listArtifacts(c *gin.Context) {
@@ -77,7 +85,7 @@ func (s *Server) getArtifact(c *gin.Context) {
 		return
 	}
 	var files []model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ?", artifact.ID).Order("created_at DESC").Find(&files).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND deleted_at IS NULL", artifact.ID).Order("created_at DESC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
 		return
 	}
@@ -90,6 +98,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
 		SHA256               *string `json:"sha256" binding:"omitempty,len=64"`
 		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
+		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
 		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
 		Representative       *string `json:"representative" binding:"omitempty,uuid"`
 	}
@@ -110,6 +119,14 @@ func (s *Server) createFileObject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
 		return
 	}
+	if req.SourceURL != nil {
+		validated, err := validateUploaderURL(*req.SourceURL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
+			return
+		}
+		req.SourceURL = &validated
+	}
 	if req.SHA256 != nil {
 		value := strings.ToLower(strings.TrimSpace(*req.SHA256))
 		if !isHexDigest(value) {
@@ -127,7 +144,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 	}
 	file := model.FileObject{
 		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
-		SHA256: req.SHA256, MediaType: trimOptional(req.MediaType), PreservationStatus: "uncollected",
+		SHA256: req.SHA256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
 		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
@@ -139,11 +156,33 @@ func (s *Server) createFileObject(c *gin.Context) {
 	c.JSON(http.StatusCreated, file)
 }
 
+type fileListItem struct {
+	model.FileObject
+	ArtifactTitle       string  `json:"artifact_title"`
+	ArtifactSourceURL   string  `json:"artifact_source_url"`
+	CreatorName         *string `json:"creator_name,omitempty"`
+	ArtifactDescription *string `json:"artifact_description,omitempty"`
+}
+
 func (s *Server) listFiles(c *gin.Context) {
 	page, limit := pagination(c)
-	query := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{})
+	db := s.db.WithContext(c.Request.Context())
+	query := db.Model(&model.FileObject{})
+	if c.Query("include_deleted") != "true" {
+		query = query.Where("deleted_at IS NULL")
+	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		query = query.Where("original_filename ILIKE ? OR sha256 ILIKE ?", "%"+q+"%", "%"+q+"%")
+		pattern := "%" + q + "%"
+		query = query.Where(`(original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ? OR artifact_id IN (
+			SELECT id FROM artifacts WHERE title ILIKE ? OR COALESCE(creator_name, '') ILIKE ?
+		))`, pattern, pattern, pattern, pattern)
+	}
+	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
+		if _, err := uuid.Parse(artifactID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact_id"})
+			return
+		}
+		query = query.Where("artifact_id = ?", artifactID)
 	}
 	if status := c.Query("preservation_status"); status != "" {
 		if !preservationStatuses[status] {
@@ -159,6 +198,27 @@ func (s *Server) listFiles(c *gin.Context) {
 		}
 		query = query.Where("redistribution_policy = ?", policy)
 	}
+	if publication := c.Query("publication"); publication != "" {
+		switch publication {
+		case "public":
+			cutoff := time.Now().UTC().Add(-2 * time.Minute)
+			query = query.Where(`public_download_enabled = TRUE AND redistribution_policy = 'allowed' AND preservation_status = 'verified' AND sha256 ~ '^[0-9a-fA-F]{64}$' AND EXISTS (
+				SELECT 1 FROM placements p JOIN nodes n ON n.id = p.node_id
+				WHERE p.file_object_id = file_objects.id AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?
+			)`, cutoff)
+		case "private":
+			query = query.Where("public_download_enabled = FALSE")
+		case "restricted":
+			query = query.Where("redistribution_policy = 'restricted'")
+		case "pending":
+			query = query.Where("redistribution_policy = 'pending'")
+		case "unknown":
+			query = query.Where("redistribution_policy = 'unknown'")
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid publication filter"})
+			return
+		}
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
@@ -169,12 +229,36 @@ func (s *Server) listFiles(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": files, "page": page, "limit": limit, "total": total})
+	artifactIDs := make([]string, 0, len(files))
+	seen := map[string]bool{}
+	for _, file := range files {
+		if !seen[file.ArtifactID] {
+			seen[file.ArtifactID] = true
+			artifactIDs = append(artifactIDs, file.ArtifactID)
+		}
+	}
+	artifacts := map[string]model.Artifact{}
+	if len(artifactIDs) > 0 {
+		var records []model.Artifact
+		if err := db.Where("id IN ?", artifactIDs).Find(&records).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file metadata"})
+			return
+		}
+		for _, artifact := range records {
+			artifacts[artifact.ID] = artifact
+		}
+	}
+	items := make([]fileListItem, 0, len(files))
+	for _, file := range files {
+		artifact := artifacts[file.ArtifactID]
+		items = append(items, fileListItem{FileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
 }
 
 func (s *Server) getFileObject(c *gin.Context) {
 	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
@@ -199,7 +283,7 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		return
 	}
 	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
@@ -268,13 +352,25 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		return
 	}
 	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", c.Param("id")).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
-	if *req.Enabled && file.RedistributionPolicy != "allowed" {
-		c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless redistribution_policy is allowed"})
-		return
+	if *req.Enabled {
+		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.SHA256 == nil || !isHexDigest(*file.SHA256) {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless policy is allowed, preservation is verified, and a valid SHA-256 is recorded"})
+			return
+		}
+		cutoff := time.Now().UTC().Add(-2 * time.Minute)
+		var healthy int64
+		if err := s.db.WithContext(c.Request.Context()).Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check healthy placements"})
+			return
+		}
+		if healthy == 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download without a healthy verified placement"})
+			return
+		}
 	}
 	actor, _ := currentUser(c)
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
@@ -294,7 +390,7 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		return
 	}
 	var files []model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&files).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Where("deleted_at IS NULL").Order("created_at ASC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
 		return
 	}
@@ -338,11 +434,13 @@ func pagination(c *gin.Context) (int, int) {
 
 func validateUploaderURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" {
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || (u.Port() != "" && u.Port() != "443") {
 		return "", errInvalidURL
 	}
-	host := strings.ToLower(u.Hostname())
-	if host != "uploader.jp" && !strings.HasSuffix(host, ".uploader.jp") {
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	allowed := host == "uploader.jp" || strings.HasSuffix(host, ".uploader.jp") ||
+		host == "getuploader.com" || strings.HasSuffix(host, ".getuploader.com")
+	if !allowed {
 		return "", errInvalidURL
 	}
 	return u.String(), nil

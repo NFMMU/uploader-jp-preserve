@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 func currentUser(c *gin.Context) (model.User, bool) {

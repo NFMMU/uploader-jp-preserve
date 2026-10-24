@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/uploader-jp/uploader-archive/internal/api"
-	"github.com/uploader-jp/uploader-archive/internal/config"
-	"github.com/uploader-jp/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/api"
+	"github.com/nfmmu/uploader-archive/internal/config"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
