@@ -162,6 +162,27 @@ func main() {
 			logger.Error("agent_reconcile_failed", "error", err)
 		}
 	}
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				45*time.Second,
+			)
+
+			err := m.reconcile(ctx)
+			cancel()
+
+			if err != nil {
+				m.setError(err)
+				logger.Error("agent_reconcile_failed", "error", err)
+			} else {
+				m.setError(nil)
+			}
+		}
+	}()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
