@@ -77,6 +77,29 @@ func TestFindDownloadFormAcceptsGetUploaderTokenHandshake(t *testing.T) {
 	}
 }
 
+func TestFindDownloadFormIncludesProvidedPassword(t *testing.T) {
+	base, _ := url.Parse("https://uu.getuploader.com/name/download/123")
+	doc, err := xhtml.Parse(strings.NewReader(`<html><body><form method="post" action="/name/download/123"><input type="hidden" name="token" value="abc"><input type="password" name="download_pass"><button type="submit">認証</button></form></body></html>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formWithoutPassword, ok := findDownloadForm(doc, base, true)
+	if !ok || formWithoutPassword.Values.Get("download_pass") != "" {
+		t.Fatal("password field should remain unset when no password was supplied")
+	}
+	form, ok := findDownloadForm(doc, base, true, "correct horse")
+	if !ok {
+		t.Fatal("expected password-protected download form to be detected")
+	}
+	if form.Values.Get("download_pass") != "correct horse" {
+		t.Fatalf("password field was not populated: %v", form.Values)
+	}
+	values := uploaderFormSubmissionValues(form)
+	if values.Get("token") != "abc" || values.Get("download_pass") != "correct horse" {
+		t.Fatalf("expected token and supplied password, got %v", values)
+	}
+}
+
 func TestUploaderFormSubmissionUsesOnlyToken(t *testing.T) {
 	form := uploaderForm{Values: url.Values{"token": []string{"secret-token"}, "md5": []string{"abc123"}, "agree": []string{"yes"}}}
 	got := uploaderFormSubmissionValues(form)

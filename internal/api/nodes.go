@@ -415,16 +415,16 @@ func (s *Server) ingestFile(c *gin.Context) {
 
 // queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
 // The temporary file is removed on every exit path.
-func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) {
+func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
 	defer os.Remove(tmpName)
 	nodes, err := s.selectNodesForCapacity(c, written, 2)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "required_placements": 2})
-		return
+		return false
 	}
 	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
-		return
+		return false
 	}
 	tasks := make([]model.Task, 0, len(nodes))
 	placements := make([]model.Placement, 0, len(nodes))
@@ -436,7 +436,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			if err := os.Rename(tmpName, stagePath); err != nil {
 				_ = os.Remove(tmpName)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize staging file"})
-				return
+				return false
 			}
 		} else if err := copyLocalFile(stagePaths[0], stagePath); err != nil {
 			for _, existing := range stagePaths {
@@ -444,7 +444,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			}
 			_ = os.Remove(tmpName)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare staged replica"})
-			return
+			return false
 		}
 		stagePaths = append(stagePaths, stagePath)
 		task := model.Task{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
@@ -462,6 +462,11 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		}
 		if sourceURL != nil {
 			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_url", *sourceURL).Error; err != nil {
+				return err
+			}
+		}
+		if sourceFetchTaskID != "" {
+			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_password_encrypted", nil).Error; err != nil {
 				return err
 			}
 		}
@@ -499,7 +504,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			_ = os.Remove(path)
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create preservation tasks"})
-		return
+		return false
 	}
 	actor, hasActor := currentUser(c)
 	var actorPtr *model.User
@@ -514,6 +519,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		nodeViews = append(nodeViews, gin.H{"id": nodes[i].ID, "name": nodes[i].Name, "node_type": nodes[i].NodeType})
 	}
 	c.JSON(http.StatusAccepted, gin.H{"file_object_id": file.ID, "task_id": tasks[0].ID, "node_id": nodes[0].ID, "tasks": taskViews, "target_nodes": nodeViews, "replication_target": 2, "status": "queued", "size_bytes": written, "sha256": sha})
+	return true
 }
 
 func copyLocalFile(sourcePath, targetPath string) error {
@@ -860,9 +866,14 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task has no source URL"})
 			return
 		}
+		sourcePassword, passwordErr := s.decryptSourcePassword(file.SourcePasswordEncrypted)
+		if passwordErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": passwordErr.Error()})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken,
-			"file_object_id": file.ID, "source_url": *file.SourceURL, "attempt_count": claimed.Task.AttemptCount,
+			"file_object_id": file.ID, "source_url": *file.SourceURL, "source_password": sourcePassword, "attempt_count": claimed.Task.AttemptCount,
 			"target_node_id": claimed.Task.TargetNodeID,
 		})
 		return

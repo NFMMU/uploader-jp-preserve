@@ -5,22 +5,29 @@ package model
 import "time"
 
 type PublicRequest struct {
-	ID            string     `gorm:"column:id;primaryKey;default:gen_random_uuid()" json:"id"`
-	RequestType   string     `gorm:"column:request_type;not null" json:"request_type"`
-	Status        string     `gorm:"column:status;not null" json:"status"`
-	ArtifactID    *string    `gorm:"column:artifact_id" json:"artifact_id,omitempty"`
-	FileObjectID  *string    `gorm:"column:file_object_id" json:"file_object_id,omitempty"`
-	Title         *string    `gorm:"column:title" json:"title,omitempty"`
-	CreatorName   *string    `gorm:"column:creator_name" json:"creator_name,omitempty"`
-	SourceURL     *string    `gorm:"column:source_url" json:"source_url,omitempty"`
-	SubmitterName *string    `gorm:"column:submitter_name" json:"submitter_name,omitempty"`
-	Contact       *string    `gorm:"column:contact" json:"contact,omitempty"`
-	Details       string     `gorm:"column:details;not null" json:"details"`
-	ExternalURL   *string    `gorm:"column:external_url" json:"external_url,omitempty"`
-	ReviewedBy    *string    `gorm:"column:reviewed_by" json:"reviewed_by,omitempty"`
-	ReviewedAt    *time.Time `gorm:"column:reviewed_at" json:"reviewed_at,omitempty"`
-	CreatedAt     time.Time  `gorm:"column:created_at;not null" json:"created_at"`
-	UpdatedAt     time.Time  `gorm:"column:updated_at;not null" json:"updated_at"`
+	ID                      string     `gorm:"column:id;primaryKey;default:gen_random_uuid()" json:"id"`
+	RequestType             string     `gorm:"column:request_type;not null" json:"request_type"`
+	Status                  string     `gorm:"column:status;not null" json:"status"`
+	ArtifactID              *string    `gorm:"column:artifact_id" json:"artifact_id,omitempty"`
+	FileObjectID            *string    `gorm:"column:file_object_id" json:"file_object_id,omitempty"`
+	Title                   *string    `gorm:"column:title" json:"title,omitempty"`
+	CreatorName             *string    `gorm:"column:creator_name" json:"creator_name,omitempty"`
+	SourceURL               *string    `gorm:"column:source_url" json:"source_url,omitempty"`
+	SourcePasswordEncrypted *string    `gorm:"column:source_password_encrypted" json:"-"`
+	RightsHolderContact     *string    `gorm:"column:rights_holder_contact" json:"rights_holder_contact,omitempty"`
+	IntakeFilePath          string     `gorm:"column:intake_file_path" json:"-"`
+	IntakeFileName          *string    `gorm:"column:intake_file_name" json:"intake_file_name,omitempty"`
+	IntakeFileSize          *int64     `gorm:"column:intake_file_size" json:"intake_file_size,omitempty"`
+	IntakeFileSHA256        *string    `gorm:"column:intake_file_sha256" json:"intake_file_sha256,omitempty"`
+	IntakeFileUploadedAt    *time.Time `gorm:"column:intake_file_uploaded_at" json:"intake_file_uploaded_at,omitempty"`
+	SubmitterName           *string    `gorm:"column:submitter_name" json:"submitter_name,omitempty"`
+	Contact                 *string    `gorm:"column:contact" json:"contact,omitempty"`
+	Details                 string     `gorm:"column:details;not null" json:"details"`
+	ExternalURL             *string    `gorm:"column:external_url" json:"external_url,omitempty"`
+	ReviewedBy              *string    `gorm:"column:reviewed_by" json:"reviewed_by,omitempty"`
+	ReviewedAt              *time.Time `gorm:"column:reviewed_at" json:"reviewed_at,omitempty"`
+	CreatedAt               time.Time  `gorm:"column:created_at;not null" json:"created_at"`
+	UpdatedAt               time.Time  `gorm:"column:updated_at;not null" json:"updated_at"`
 }
 
 func (PublicRequest) TableName() string { return "public_requests" }

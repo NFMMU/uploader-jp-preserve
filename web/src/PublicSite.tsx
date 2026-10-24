@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -7,6 +7,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import CopyEmail from "./CopyEmail";
 
 type PublicFile = {
   id: string;
@@ -53,6 +54,133 @@ async function publicAPI<T>(
   return data as T;
 }
 
+type TurnstileOptions = {
+  sitekey: string;
+  theme?: "light" | "dark" | "auto";
+  size?: "normal" | "compact" | "flexible";
+  "response-field"?: boolean;
+  "response-field-name"?: string;
+  "error-callback"?: () => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: TurnstileOptions) => string;
+      remove: (widgetID: string) => void;
+    };
+  }
+}
+
+let turnstileScriptPromise: Promise<void> | null = null;
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  if (!turnstileScriptPromise) {
+    turnstileScriptPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector<HTMLScriptElement>(
+        "script[data-cloudflare-turnstile]",
+      );
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener(
+          "error",
+          () => reject(new Error("Turnstile script failed to load")),
+          { once: true },
+        );
+        return;
+      }
+      const script = document.createElement("script");
+      script.src =
+        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&language=ja";
+      script.async = true;
+      script.defer = true;
+      script.dataset.cloudflareTurnstile = "true";
+      script.onload = () => resolve();
+      script.onerror = () =>
+        reject(new Error("Turnstile script failed to load"));
+      document.head.appendChild(script);
+    });
+  }
+  return turnstileScriptPromise;
+}
+
+function TurnstileField() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [siteKey, setSiteKey] = useState("");
+  const [status, setStatus] = useState<
+    "loading" | "disabled" | "ready" | "error"
+  >("loading");
+
+  useEffect(() => {
+    let active = true;
+    publicAPI<{ turnstile_enabled: boolean; turnstile_site_key?: string }>(
+      "/public/config",
+    )
+      .then((config) => {
+        if (!active) return;
+        if (!config.turnstile_enabled || !config.turnstile_site_key) {
+          setStatus("disabled");
+          return;
+        }
+        setSiteKey(config.turnstile_site_key);
+      })
+      .catch(() => {
+        if (active) setStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!siteKey || !containerRef.current) return;
+    let active = true;
+    let widgetID = "";
+    loadTurnstileScript()
+      .then(() => {
+        if (!active || !window.turnstile || !containerRef.current) return;
+        widgetID = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          theme: "auto",
+          size: "normal",
+          "response-field": true,
+          "response-field-name": "cf-turnstile-response",
+          "error-callback": () => {
+            if (active) setStatus("error");
+          },
+        });
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (active) setStatus("error");
+      });
+    return () => {
+      active = false;
+      if (widgetID && window.turnstile) window.turnstile.remove(widgetID);
+    };
+  }, [siteKey]);
+
+  return (
+    <div className="turnstile-field" aria-label="Cloudflare Turnstile 認証">
+      <div ref={containerRef} />
+      {status === "loading" && (
+        <p className="turnstile-note">認証を準備しています…</p>
+      )}
+      {status === "disabled" && (
+        <p className="turnstile-note">
+          開発環境では Cloudflare Turnstile を無効にしています。
+        </p>
+      )}
+      {status === "error" && (
+        <p className="public-error">
+          Cloudflare Turnstile
+          を読み込めません。通信設定を確認して、ページを再読み込みしてください。
+        </p>
+      )}
+    </div>
+  );
+}
+
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -68,17 +196,21 @@ function formatBytes(size: number) {
 function PublicHeader() {
   return (
     <header className="public-header">
-      <Link className="public-brand" to="/">
-        uploader.jp保全プロジェクト
-      </Link>
-      <nav>
-        <Link to="/">作品一覧</Link>
-        <Link to="/preservation-requests">保全リクエスト</Link>
-        <Link to="/requests">公開停止・削除</Link>
-        <Link to="/relocation-info">移設先情報の提供</Link>
-        <Link to="/participate">ストレージノード参加</Link>
-        <Link to="/admin/login">管理者ログイン</Link>
-      </nav>
+      <div className="public-header-inner">
+        <Link className="public-brand" to="/">
+          uploader.jp保全プロジェクト
+        </Link>
+        <nav aria-label="メインナビゲーション">
+          <Link to="/">作品一覧</Link>
+          <Link to="/preservation-requests">保全リクエスト</Link>
+          <Link to="/redistribution-support">再配布の相談</Link>
+          <Link to="/publisher-support">配布元向け代行</Link>
+          <Link to="/requests">公開停止・削除</Link>
+          <Link to="/relocation-info">移設先情報の提供</Link>
+          <Link to="/participate">ストレージノード参加</Link>
+          <Link to="/admin/login">管理者ログイン</Link>
+        </nav>
+      </div>
     </header>
   );
 }
@@ -95,6 +227,14 @@ export default function PublicSite() {
           <Route
             path="/preservation-requests"
             element={<PreservationRequest />}
+          />
+          <Route
+            path="/redistribution-support"
+            element={<RedistributionAssistancePage mode="redistribution" />}
+          />
+          <Route
+            path="/publisher-support"
+            element={<RedistributionAssistancePage mode="publisher" />}
           />
           <Route path="/relocation-info" element={<RelocationInfoRequest />} />
           <Route path="/participate" element={<NodeParticipationRequest />} />
@@ -116,6 +256,7 @@ export default function PublicSite() {
           <Link to="/disclaimer">免責事項</Link>
           <Link to="/participate">ストレージノード参加</Link>
           <a href="mailto:uploaderjp-archive@udonya.moe">お問い合わせ</a>
+          <CopyEmail email="uploaderjp-archive@udonya.moe" />
         </div>
       </footer>
     </div>
@@ -132,13 +273,14 @@ function LegalLayout({
   return (
     <article className="public-legal">
       <h1>{title}</h1>
-      <p className="legal-updated">制定・最終更新日：2026年10月24日</p>
+      <p className="legal-updated">制定・最終更新日：2026年10月25日</p>
       {children}
       <p className="legal-contact">
         本ページに関するお問い合わせ：
         <a href="mailto:uploaderjp-archive@udonya.moe">
           uploaderjp-archive@udonya.moe
-        </a>
+        </a>{" "}
+        <CopyEmail email="uploaderjp-archive@udonya.moe" />
       </p>
     </article>
   );
@@ -179,29 +321,33 @@ function TermsPage() {
         </li>
         <li>運営者が不適切と判断するその他の行為</li>
       </ul>
-      <h2>第5条（公開停止・削除の申請）</h2>
+      <h2>第5条（再配布相談・配布代行）</h2>
+      <p>
+        利用者は、再配布相談・配布代行のためにファイルを送信できます。送信ファイルは権利関係の確認・問い合わせ・審査のために扱い、送信だけで一般公開・再配布を行うものではありません。運営者は権利者への問い合わせを試みる場合がありますが、連絡や許諾の取得、再配布の実施を保証しません。権利者の許諾や配布条件を確認できない場合、公開・再配布を行いません。申請が却下または終了となった場合、申請添付ファイルは削除します。ただし、障害や法令上の理由等により削除まで時間を要する場合があります。
+      </p>
+      <h2>第6条（公開停止・削除の申請）</h2>
       <p>
         権利者または正当な利害関係を有する方は、本サービスの申請フォームから公開停止・削除を申し出ることができます。運営者は、申請内容、対象の特定可能性、権利関係その他の事情を確認し、必要に応じて追加情報を求めます。申請の受付は、直ちに削除完了を意味しません。公開停止はダウンロードを停止するための措置であり、保存ノード上のデータ削除には各ノードの処理・接続状況に応じて時間を要する場合があります。
       </p>
-      <h2>第6条（保存ノードへの参加）</h2>
+      <h2>第7条（保存ノードへの参加）</h2>
       <p>
         保存ノードの提供者は、参加時に提示される設定・運用上の注意を確認し、保存領域、認証情報、OS・コンテナ環境を適切に管理するものとします。ノードはネットワーク障害、故障、容量不足その他の理由により停止することがあります。
       </p>
-      <h2>第7条（サービスの変更・停止）</h2>
+      <h2>第8条（サービスの変更・停止）</h2>
       <p>
         運営者は、保守、障害、セキュリティ上の必要、法令対応その他の理由により、本サービスの全部または一部を変更・中断・終了することがあります。可能な場合は事前に告知しますが、緊急時はこの限りではありません。
       </p>
-      <h2>第8条（保証の否認）</h2>
+      <h2>第9条（保証の否認）</h2>
       <p>
         本サービスは試験運用版として提供されます。運営者は、データの完全性、継続的な可用性、特定目的への適合性、エラーの不存在、第三者サイトの存続または取得元の内容について、明示・黙示を問わず保証しません。
       </p>
-      <h2>第9条（規約の変更）</h2>
+      <h2>第10条（規約の変更）</h2>
       <p>
         運営者は必要に応じて本規約を変更できます。重要な変更は本サービス上で告知し、変更後の規約は掲載時に定める効力発生日から適用されます。
       </p>
-      <h2>第10条（準拠法）</h2>
+      <h2>第11条（準拠法）</h2>
       <p>
-        本規約は日本法に準拠します。本サービスに関して紛争が生じた場合、適用法令に従い管轄権を有する裁判所を利用します。
+        本規約は日本法に準拠します。本サービスに関して紛争が生じた場合、適用法令に従い管轄権を有する裁判所を利用します。他の法令による制限を受けない場合、本サービスの合意管轄は、津地方裁判所です。
       </p>
     </LegalLayout>
   );
@@ -220,6 +366,9 @@ function PrivacyPage() {
           申請フォームに入力された氏名・表示名、連絡先、申請内容、対象URL、対象ファイル・作品の識別情報
         </li>
         <li>
+          再配布相談・配布代行の申請で送信されたファイル、ファイル名、サイズ、ハッシュ値
+        </li>
+        <li>
           作品・ファイルのメタデータ、保全・公開設定、操作履歴、申請の審査履歴
         </li>
         <li>
@@ -233,7 +382,7 @@ function PrivacyPage() {
       <ul>
         <li>本サービスの提供、運営、保全処理、カタログ管理</li>
         <li>
-          保全・公開停止・削除・移設先情報などの申請受付、本人確認、審査、連絡
+          保全・公開停止・削除・移設先情報・再配布相談・配布代行などの申請受付、本人確認、審査、連絡
         </li>
         <li>不正利用の防止、権限管理、監査、セキュリティ確保、障害調査</li>
         <li>法令・規約違反への対応、権利者からの申告への対応</li>
@@ -241,15 +390,26 @@ function PrivacyPage() {
       </ul>
       <h2>3. 第三者への提供・保存ノードとの共有</h2>
       <p>
-        運営者は、法令に基づく場合、生命・身体・財産の保護に必要な場合、本人の同意がある場合、またはサービス運用上必要な委託を行う場合を除き、個人情報を第三者に提供しません。保全対象ファイルは、保全処理のため参加保存ノードへ転送・複製されることがあります。申請に記載された連絡先などの情報は、対応に必要な権限を持つ担当者に限定して取り扱います。
+        運営者は、法令に基づく場合、生命・身体・財産の保護に必要な場合、本人の同意がある場合、またはサービス運用上必要な委託を行う場合を除き、個人情報を第三者に提供しません。保全対象ファイルは、保全処理のため参加保存ノードへ転送・複製されることがあります。申請に記載された連絡先などの情報は、対応に必要な権限を持つ担当者に限定して取り扱います。公開フォームの不正送信防止には
+        Cloudflare Turnstile を利用します。認証判定に必要な IP
+        アドレスやブラウザー・通信に関する情報等が Cloudflare に送信され、
+        <a
+          href="https://www.cloudflare.com/privacypolicy/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Cloudflare のプライバシーポリシー
+        </a>
+        に従って処理される場合があります。
       </p>
       <h2>4. 委託・国外での処理</h2>
       <p>
         ホスティング、通信、監視その他のインフラを利用する場合、当該サービス提供者が情報を処理することがあります。利用するインフラの所在地や設定によっては、日本国外で情報が処理・保存される可能性があります。運営者は、委託先・利用サービスの構成に応じて適切な管理に努めます。
+        また、このサービスの運営にあたり権利に関する要請やその他お問い合わせに対応するためのボランティアを動員しています。ボランティアの方については秘密保持契約を交わし、適切な情報の管理に努めます。
       </p>
       <h2>5. 保存期間と削除</h2>
       <p>
-        運営者は、利用目的の達成に必要な期間、または法令・セキュリティ・監査上必要な期間、情報を保存します。削除申請に基づくデータ削除では、ノードのオフライン、処理失敗、バックアップ等の事情により、すべての複製が直ちに消去されない場合があります。法令上または正当な業務上保存が必要な記録は、対象データの削除後も一定期間保持されることがあります。
+        運営者は、利用目的の達成に必要な期間、または法令・セキュリティ・監査上必要な期間、情報を保存します。再配布相談で送信されたファイルは、権利確認・問い合わせ・審査のために一時保管し、一般公開はしません。保管期間や削除の相談はお問い合わせ窓口へご連絡ください。削除申請に基づくデータ削除では、ノードのオフライン、処理失敗、バックアップ等の事情により、すべての複製が直ちに消去されない場合があります。法令上または正当な業務上保存が必要な記録は、対象データの削除後も一定期間保持されることがあります。
       </p>
       <h2>6. 安全管理</h2>
       <p>
@@ -315,6 +475,7 @@ function NodeParticipationRequest() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [capacity, setCapacity] = useState("10737418240");
+  const [turnstileReset, setTurnstileReset] = useState(0);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -328,6 +489,7 @@ function NodeParticipationRequest() {
         {
           method: "POST",
           body: JSON.stringify({
+            turnstile_token: String(form.get("cf-turnstile-response") || ""),
             name: String(form.get("name") || "").trim(),
             node_type: String(form.get("node_type") || "B"),
             requested_capacity_bytes: Number(capacity),
@@ -344,6 +506,7 @@ function NodeParticipationRequest() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setTurnstileReset((value) => value + 1);
     }
   }
   return (
@@ -425,6 +588,7 @@ function NodeParticipationRequest() {
               および参加ノード運用上の注意を確認し、ノード参加申請に必要な情報を送信することに同意します。
             </span>
           </label>
+          <TurnstileField key={turnstileReset} />
           {error && <p className="public-error">{error}</p>}
           <button type="submit" disabled={busy}>
             {busy ? "申請中…" : "参加申請を送信"}
@@ -475,6 +639,30 @@ function PublicCatalog() {
   return (
     <>
       <h1>作品一覧</h1>
+      <section
+        className="project-description"
+        aria-labelledby="project-description-title"
+      >
+        <h2 id="project-description-title">このプロジェクトについて</h2>
+        <p>
+          このプロジェクトはUTAU、MMD、YMMなどの制作に用いるアセットを保全するためのプロジェクトです。
+        </p>
+        <p>
+          ゲームに関するアセットについては、受付はいたしますが対応の優先順位が低く対応されにくいことをご了承ください。
+        </p>
+      </section>
+      <section className="public-service-cards" aria-label="再配布支援サービス">
+        <Link to="/redistribution-support" className="public-service-card">
+          <span className="public-service-label">ファイルを持っている方</span>
+          <b>再配布の相談・権利者への問い合わせ代行</b>
+          <span>ファイルを送って、権利確認を依頼する →</span>
+        </Link>
+        <Link to="/publisher-support" className="public-service-card">
+          <span className="public-service-label">配布元・権利者の方</span>
+          <b>配布・再配布の代行を相談する</b>
+          <span>配布先探しや管理の手間を相談する →</span>
+        </Link>
+      </section>
       <p className="public-intro">公開が許可されたファイルを掲載しています。</p>
       <form className="public-search" onSubmit={search}>
         <input
@@ -695,13 +883,18 @@ function PublicRequest() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [submittedID, setSubmittedID] = useState("");
-  async function submit(event: FormEvent) {
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    const turnstileToken = String(
+      new FormData(event.currentTarget).get("cf-turnstile-response") || "",
+    );
     const body: Record<string, string> = {
       request_type: type,
       details: details.trim(),
+      turnstile_token: turnstileToken,
     };
     if (artifactID) body.artifact_id = artifactID;
     if (fileID) body.file_object_id = fileID;
@@ -718,6 +911,7 @@ function PublicRequest() {
       setError(e instanceof Error ? e.message : "送信できませんでした。");
     } finally {
       setBusy(false);
+      setTurnstileReset((value) => value + 1);
     }
   }
   return (
@@ -785,6 +979,7 @@ function PublicRequest() {
               placeholder="メールアドレスなど"
             />
           </label>
+          <TurnstileField key={turnstileReset} />
           {error && <p className="public-error">{error}</p>}
           <button type="submit" disabled={busy}>
             {busy ? "送信中…" : "申請する"}
@@ -806,14 +1001,19 @@ function RelocationInfoRequest() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [submittedID, setSubmittedID] = useState("");
-  async function submit(event: FormEvent) {
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    const turnstileToken = String(
+      new FormData(event.currentTarget).get("cf-turnstile-response") || "",
+    );
     const body: Record<string, string> = {
       request_type: "external_publication",
       external_url: url.trim(),
       details: details.trim() || "移設先情報を提供します。",
+      turnstile_token: turnstileToken,
     };
     if (artifactID) body.artifact_id = artifactID;
     if (fileID) body.file_object_id = fileID;
@@ -829,6 +1029,7 @@ function RelocationInfoRequest() {
       setError(e instanceof Error ? e.message : "送信できませんでした。");
     } finally {
       setBusy(false);
+      setTurnstileReset((value) => value + 1);
     }
   }
   return (
@@ -899,6 +1100,7 @@ function RelocationInfoRequest() {
               placeholder="メールアドレスなど"
             />
           </label>
+          <TurnstileField key={turnstileReset} />
           {error && <p className="public-error">{error}</p>}
           <button type="submit" disabled={busy}>
             {busy ? "送信中…" : "情報を送信する"}
@@ -909,10 +1111,224 @@ function RelocationInfoRequest() {
   );
 }
 
+function RedistributionAssistancePage({
+  mode,
+}: {
+  mode: "redistribution" | "publisher";
+}) {
+  const isPublisher = mode === "publisher";
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [submittedID, setSubmittedID] = useState("");
+  const [submittedMessage, setSubmittedMessage] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    form.set(
+      "turnstile_token",
+      String(form.get("cf-turnstile-response") || ""),
+    );
+    const file = form.get("file");
+    if (file instanceof File && file.size > 100 * 1024 * 1024) {
+      setError("ファイルは100 MiB以下にしてください。");
+      setBusy(false);
+      return;
+    }
+    try {
+      const response = await fetch("/api/v1/public/redistribution-assistance", {
+        method: "POST",
+        body: form,
+      });
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text };
+      }
+      if (!response.ok)
+        throw new Error(
+          data.error || data.message || `HTTP ${response.status}`,
+        );
+      setSubmittedID(data.id || "");
+      setSubmittedMessage(data.message || "申請を受け付けました。");
+      formElement.reset();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "送信できませんでした。");
+    } finally {
+      setBusy(false);
+      setTurnstileReset((value) => value + 1);
+    }
+  }
+  return (
+    <>
+      <Link className="public-text-link" to="/">
+        ← 作品一覧へ戻る
+      </Link>
+      <h1>
+        {isPublisher
+          ? "配布元・権利者向け：配布代行の相談"
+          : "手元にあるファイルの再配布相談"}
+      </h1>
+      {isPublisher ? (
+        <p className="public-intro">
+          配布先を探している、ファイルの置き場所や再配布対応が負担になっている配布元・権利者の方へ。ファイルまたは配布元URLを送っていただければ、保全・配布方法を相談し、対応可能な範囲で代行します。
+        </p>
+      ) : (
+        <p className="public-intro">
+          uploader.jpにあったファイルを手元に持っていて、「良い作品なので再配布したいけれど、権利者への問い合わせが面倒」という方向けの窓口です。ファイルを送っていただければ、運営が権利者への問い合わせを試み、許諾が確認できた場合に限って再配布を検討します。
+        </p>
+      )}
+      <section className="public-process">
+        <h2>利用の流れ</h2>
+        <ol>
+          <li>フォームからファイルや作品情報を送る</li>
+          <li>運営が内容を確認し、必要に応じて権利者・配布元へ問い合わせる</li>
+          <li>
+            許諾や配布条件を確認できた場合に、保全・再配布の可否を相談する
+          </li>
+        </ol>
+        <p>
+          送信しただけで公開・再配布されることはありません。権利者と連絡が取れない場合や許諾が得られない場合は、公開・再配布できないことがあります。
+        </p>
+      </section>
+      {submittedID ? (
+        <div className="public-success">
+          <h2>相談を受け付けました</h2>
+          <p>{submittedMessage}</p>
+          <p className="public-muted">
+            受付番号：<code>{submittedID}</code>
+          </p>
+          <p>運営が内容を確認し、必要に応じて入力された連絡先へ連絡します。</p>
+          <button
+            type="button"
+            onClick={() => {
+              setSubmittedID("");
+              setSubmittedMessage("");
+            }}
+          >
+            別の相談を送る
+          </button>
+        </div>
+      ) : (
+        <form
+          className="public-request-form"
+          onSubmit={submit}
+          encType="multipart/form-data"
+        >
+          <input
+            type="hidden"
+            name="request_type"
+            value={
+              isPublisher ? "publisher_assistance" : "redistribution_assistance"
+            }
+          />
+          <label>
+            作品名・ファイルの名前 *
+            <input
+              name="title"
+              required
+              maxLength={500}
+              placeholder="分かる範囲の作品名やファイル名"
+            />
+          </label>
+          <label>
+            作者・配布元
+            <input
+              name="creator_name"
+              maxLength={255}
+              placeholder="分かる場合"
+            />
+          </label>
+          <label>
+            {isPublisher
+              ? "現在の配布ページURL（任意）"
+              : "元の配布ページURL（任意）"}
+            <input
+              name="source_url"
+              type="url"
+              maxLength={4096}
+              placeholder="https://..."
+            />
+            <small>
+              {isPublisher
+                ? "ファイルを添付しない場合は、配布元URLが必要です。"
+                : "分かれば入力してください。"}
+            </small>
+          </label>
+          <label>
+            権利者への連絡先・関連情報（任意）
+            <input
+              name="rights_holder_contact"
+              maxLength={1000}
+              placeholder="公式サイト、連絡先、SNSなど"
+            />
+          </label>
+          <label>
+            {isPublisher ? "ファイルを添付（任意）" : "手元にあるファイル *"}
+            <input name="file" type="file" required={!isPublisher} />{" "}
+            <small>
+              1ファイル100
+              MiBまで。送信ファイルは権利確認のための一時保管であり、一般公開されません。
+            </small>
+          </label>
+          <label>
+            相談内容 *
+            <textarea
+              name="details"
+              rows={4}
+              required
+              minLength={5}
+              maxLength={10000}
+              placeholder={
+                isPublisher
+                  ? "配布代行を希望する理由、希望する配布方法、条件など"
+                  : "ファイルの由来、再配布したい理由、分かっている権利者情報など"
+              }
+            />
+          </label>
+          <label>
+            お名前・活動名（任意）
+            <input name="submitter_name" maxLength={255} />
+          </label>
+          <label>
+            連絡先 *
+            <input
+              name="contact"
+              required
+              maxLength={500}
+              placeholder="返信を受け取れるメールアドレスなど"
+            />
+          </label>
+          <label className="check-label">
+            <input type="checkbox" name="agree_to_terms" required />{" "}
+            <span>
+              送信ファイルを権利確認のために運営が一時保管・確認すること、権利者の許諾が確認できるまで公開・再配布しないことに同意します。
+            </span>
+          </label>
+          <TurnstileField key={turnstileReset} />
+          {error && <p className="public-error">{error}</p>}
+          <button type="submit" disabled={busy}>
+            {busy ? "送信中…" : "相談を送信する"}
+          </button>
+          <p className="public-footnote">
+            第三者の権利を侵害する目的でファイルを送信しないでください。送信は再配布の許諾を意味せず、運営が再配布を保証するものでもありません。アップロード時の自動ウイルス検査は行いません。連絡先などの情報は、申請への対応に必要な範囲で取り扱います。
+          </p>
+        </form>
+      )}
+    </>
+  );
+}
+
 function PreservationRequest() {
   const [title, setTitle] = useState("");
   const [creator, setCreator] = useState("");
   const [sourceURL, setSourceURL] = useState("");
+  const [sourcePassword, setSourcePassword] = useState("");
   const [details, setDetails] = useState("");
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
@@ -920,10 +1336,14 @@ function PreservationRequest() {
   const [error, setError] = useState("");
   const [submittedID, setSubmittedID] = useState("");
   const [submittedMessage, setSubmittedMessage] = useState("");
-  async function submit(event: FormEvent) {
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    const turnstileToken = String(
+      new FormData(event.currentTarget).get("cf-turnstile-response") || "",
+    );
     try {
       const data = await publicAPI<{
         id?: string;
@@ -932,10 +1352,12 @@ function PreservationRequest() {
       }>("/public-requests", {
         method: "POST",
         body: JSON.stringify({
+          turnstile_token: turnstileToken,
           request_type: "preservation",
           title: title.trim(),
           creator_name: creator.trim(),
           source_url: sourceURL.trim(),
+          source_password: sourcePassword,
           details: details.trim() || "保全を希望します。",
           submitter_name: name.trim(),
           contact: contact.trim(),
@@ -948,10 +1370,12 @@ function PreservationRequest() {
             ? "このURLはすでに登録・申請済みのため、重複リクエストを破棄しました。"
             : "リクエストを受け付けました。"),
       );
+      setSourcePassword("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "送信できませんでした。");
     } finally {
       setBusy(false);
+      setTurnstileReset((value) => value + 1);
     }
   }
   return (
@@ -977,6 +1401,7 @@ function PreservationRequest() {
               setTitle("");
               setCreator("");
               setSourceURL("");
+              setSourcePassword("");
               setDetails("");
             }}
           >
@@ -1019,6 +1444,20 @@ function PreservationRequest() {
             </small>
           </label>
           <label>
+            ダウンロードパスワード（任意）
+            <input
+              type="password"
+              maxLength={1024}
+              autoComplete="off"
+              value={sourcePassword}
+              onChange={(e) => setSourcePassword(e.target.value)}
+              placeholder="パスワードが設定されている場合"
+            />
+            <small>
+              暗号化して保管し、保全時の正規のパスワード入力に使用します。取得担当のノード運営者がファイル内容を扱える点にご注意ください。CAPTCHA等の追加認証は自動処理しません。
+            </small>
+          </label>
+          <label>
             補足
             <textarea
               rows={4}
@@ -1048,6 +1487,7 @@ function PreservationRequest() {
           <p className="public-footnote">
             一覧URLの場合は、管理者が掲載ファイルを確認してから順番に保全します。送信だけで自動取得や一般公開は始まりません。
           </p>
+          <TurnstileField key={turnstileReset} />
           {error && <p className="public-error">{error}</p>}
           <button type="submit" disabled={busy}>
             {busy ? "送信中…" : "保全を依頼する"}

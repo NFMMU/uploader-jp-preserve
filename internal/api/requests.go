@@ -2,7 +2,10 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,24 +14,29 @@ import (
 	"gorm.io/gorm"
 )
 
-var requestTypes = map[string]bool{"takedown": true, "deletion": true, "external_publication": true, "preservation": true}
+var requestTypes = map[string]bool{"takedown": true, "deletion": true, "external_publication": true, "preservation": true, "redistribution_assistance": true, "publisher_assistance": true}
 var requestStatuses = map[string]bool{"pending": true, "in_review": true, "accepted": true, "rejected": true, "closed": true}
 
 func (s *Server) submitPublicRequest(c *gin.Context) {
 	var req struct {
-		RequestType   string  `json:"request_type" binding:"required"`
-		ArtifactID    *string `json:"artifact_id" binding:"omitempty,uuid"`
-		FileObjectID  *string `json:"file_object_id" binding:"omitempty,uuid"`
-		Title         *string `json:"title" binding:"omitempty,max=500"`
-		CreatorName   *string `json:"creator_name" binding:"omitempty,max=255"`
-		SourceURL     *string `json:"source_url" binding:"omitempty,max=4096"`
-		SubmitterName *string `json:"submitter_name" binding:"omitempty,max=255"`
-		Contact       *string `json:"contact" binding:"omitempty,max=500"`
-		Details       string  `json:"details" binding:"required,min=5,max=10000"`
-		ExternalURL   *string `json:"external_url" binding:"omitempty,max=4096"`
+		RequestType    string  `json:"request_type" binding:"required"`
+		TurnstileToken string  `json:"turnstile_token"`
+		ArtifactID     *string `json:"artifact_id" binding:"omitempty,uuid"`
+		FileObjectID   *string `json:"file_object_id" binding:"omitempty,uuid"`
+		Title          *string `json:"title" binding:"omitempty,max=500"`
+		CreatorName    *string `json:"creator_name" binding:"omitempty,max=255"`
+		SourceURL      *string `json:"source_url" binding:"omitempty,max=4096"`
+		SourcePassword string  `json:"source_password" binding:"omitempty,max=1024"`
+		SubmitterName  *string `json:"submitter_name" binding:"omitempty,max=255"`
+		Contact        *string `json:"contact" binding:"omitempty,max=500"`
+		Details        string  `json:"details" binding:"required,min=5,max=10000"`
+		ExternalURL    *string `json:"external_url" binding:"omitempty,max=4096"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || !requestTypes[req.RequestType] {
+	if err := c.ShouldBindJSON(&req); err != nil || !requestTypes[req.RequestType] || req.RequestType == "redistribution_assistance" || req.RequestType == "publisher_assistance" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid request_type and details are required"})
+		return
+	}
+	if !s.verifyTurnstile(c, req.TurnstileToken) {
 		return
 	}
 	if req.RequestType == "preservation" {
@@ -44,6 +52,19 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		req.SourceURL = &validated
 		if req.Title == nil || strings.TrimSpace(*req.Title) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required for preservation requests"})
+			return
+		}
+	}
+	var encryptedSourcePassword *string
+	if req.SourcePassword != "" {
+		if req.RequestType != "preservation" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source_password is only supported for preservation requests"})
+			return
+		}
+		var err error
+		encryptedSourcePassword, err = s.encryptSourcePassword(req.SourcePassword)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 			return
 		}
 	}
@@ -76,7 +97,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 	request := model.PublicRequest{
 		RequestType: req.RequestType, Status: "pending", ArtifactID: req.ArtifactID, FileObjectID: req.FileObjectID,
 		Title: trimOptional(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: trimOptional(req.SourceURL),
-		SubmitterName: trimOptional(req.SubmitterName), Contact: trimOptional(req.Contact), Details: strings.TrimSpace(req.Details), ExternalURL: trimOptional(req.ExternalURL),
+		SubmitterName: trimOptional(req.SubmitterName), Contact: trimOptional(req.Contact), Details: strings.TrimSpace(req.Details), ExternalURL: trimOptional(req.ExternalURL), SourcePasswordEncrypted: encryptedSourcePassword,
 	}
 	if req.RequestType == "preservation" && req.SourceURL != nil {
 		var existingFile model.FileObject
@@ -125,11 +146,27 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		return
 	}
 	s.audit(c, nil, "public_request", request.ID, "public_request.submit", "success", nil)
+	// DuckDuckGo discoveries are inserted by the collector directly and do not pass
+	// through this public submission handler, so only human-submitted requests reach here.
+	if request.RequestType == "preservation" || request.RequestType == "deletion" || request.RequestType == "external_publication" || request.RequestType == "redistribution_assistance" || request.RequestType == "publisher_assistance" {
+		typeLabel := map[string]string{"preservation": "保全リクエスト", "deletion": "削除リクエスト", "external_publication": "移設先情報", "redistribution_assistance": "手元のファイルの再配布相談", "publisher_assistance": "配布元からの配布代行相談"}[request.RequestType]
+		subjectTitle := typeLabel
+		if request.Title != nil && strings.TrimSpace(*request.Title) != "" {
+			subjectTitle += ": " + strings.TrimSpace(*request.Title)
+		}
+		contactName := "申請者"
+		if request.SubmitterName != nil {
+			contactName = *request.SubmitterName
+		}
+		content := fmt.Sprintf("申請種別: %s\n申請ID: %s\n申請者: %s\n連絡先: %s\n対象URL: %s\n移設先URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\n\n申請内容:\n%s", typeLabel, request.ID, contactName, valueOrEmpty(request.Contact), valueOrEmpty(request.SourceURL), valueOrEmpty(request.ExternalURL), valueOrEmpty(request.RightsHolderContact), valueOrEmpty(request.IntakeFileName), request.Details)
+		s.createLibreDeskConversation("public_request", request.ID, subjectTitle, contactName, valueOrEmpty(request.Contact), content)
+	}
 	c.JSON(http.StatusCreated, gin.H{"id": request.ID, "request_type": request.RequestType, "status": request.Status, "created_at": request.CreatedAt})
 }
 
 type publicRequestListItem struct {
 	model.PublicRequest
+	HasSourcePassword   bool   `json:"has_source_password"`
 	LinkedFileName      string `json:"linked_file_name,omitempty"`
 	LinkedArtifactTitle string `json:"linked_artifact_title,omitempty"`
 }
@@ -156,7 +193,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 	}
 	items := make([]publicRequestListItem, 0, len(requests))
 	for _, request := range requests {
-		item := publicRequestListItem{PublicRequest: request}
+		item := publicRequestListItem{PublicRequest: request, HasSourcePassword: request.SourcePasswordEncrypted != nil && *request.SourcePasswordEncrypted != ""}
 		artifactID := request.ArtifactID
 		if request.FileObjectID != nil {
 			var file model.FileObject
@@ -234,6 +271,12 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		if req.FileObjectID != nil {
 			updates["file_object_id"] = *req.FileObjectID
 		}
+		if req.Status == "rejected" || req.Status == "closed" {
+			updates["source_password_encrypted"] = nil
+			if publicRequest.RequestType == "redistribution_assistance" || publicRequest.RequestType == "publisher_assistance" {
+				updates["intake_file_path"] = ""
+			}
+		}
 		if err := tx.Model(&model.PublicRequest{}).Where("id = ?", publicRequest.ID).Updates(updates).Error; err != nil {
 			return err
 		}
@@ -295,6 +338,15 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
+	if (req.Status == "rejected" || req.Status == "closed") && publicRequest.IntakeFilePath != "" {
+		path := filepath.Clean(publicRequest.IntakeFilePath)
+		if !filepath.IsAbs(path) && strings.HasPrefix(path, "public-intake"+string(os.PathSeparator)) && !strings.Contains(path, "..") {
+			if removeErr := os.Remove(filepath.Join(s.cfg.StagingDir, path)); removeErr != nil && !os.IsNotExist(removeErr) {
+				s.logger.Warn("could not remove closed public intake file", "request_id", publicRequest.ID, "error", removeErr)
+			}
+		}
+	}
+	publicRequest.IntakeFilePath = ""
 	publicRequest.Status = req.Status
 	if req.ArtifactID != nil {
 		publicRequest.ArtifactID = req.ArtifactID

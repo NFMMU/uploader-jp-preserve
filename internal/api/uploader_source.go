@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -35,9 +36,11 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		return
 	}
 	var req struct {
-		SourceURL   string `json:"source_url" binding:"omitempty,max=4096"`
-		AcceptTerms bool   `json:"accept_terms"`
-		Priority    *int   `json:"priority" binding:"omitempty,min=0,max=5"`
+		SourceURL       string `json:"source_url" binding:"omitempty,max=4096"`
+		AcceptTerms     bool   `json:"accept_terms"`
+		Priority        *int   `json:"priority" binding:"omitempty,min=0,max=5"`
+		Password        string `json:"password" binding:"omitempty,max=1024"`
+		PublicRequestID string `json:"public_request_id" binding:"omitempty,uuid"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid source-ingest request"})
@@ -64,6 +67,28 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
 		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
 		return
+	}
+	passwordEncrypted := file.SourcePasswordEncrypted
+	if req.Password != "" {
+		encrypted, encryptErr := s.encryptSourcePassword(req.Password)
+		if encryptErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": encryptErr.Error()})
+			return
+		}
+		passwordEncrypted = encrypted
+	} else if req.PublicRequestID != "" {
+		var publicRequest model.PublicRequest
+		if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).First(&publicRequest).Error; err != nil {
+			notFoundOrError(c, err, "preservation request")
+			return
+		}
+		if publicRequest.ArtifactID != nil && *publicRequest.ArtifactID != file.ArtifactID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "preservation request does not belong to this file's artifact"})
+			return
+		}
+		if publicRequest.SourcePasswordEncrypted != nil {
+			passwordEncrypted = publicRequest.SourcePasswordEncrypted
+		}
 	}
 	var activeTasks int64
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
@@ -96,7 +121,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 	taskID := uuid.NewString()
 	task := model.Task{ID: taskID, TaskType: "source_fetch", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"source_url": validatedURL, "preservation_status": "queued"}).Error; err != nil {
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"source_url": validatedURL, "source_password_encrypted": passwordEncrypted, "preservation_status": "queued"}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&task).Error
@@ -318,6 +343,122 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (upload
 	return result, ok
 }
 
+func submitUploaderListingPassword(ctx context.Context, client *http.Client, pageURL *url.URL, doc *xhtml.Node, password string) (*url.URL, []byte, error) {
+	if pageURL == nil || doc == nil || password == "" {
+		return nil, nil, errors.New("一覧ページのパスワード送信情報が不正です")
+	}
+	var action, method, passwordField string
+	values := url.Values{}
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if action != "" {
+			return
+		}
+		if n.Type == xhtml.ElementNode && n.Data == "form" {
+			formValues := url.Values{}
+			foundPassword := false
+			var collect func(*xhtml.Node)
+			collect = func(child *xhtml.Node) {
+				if child.Type == xhtml.ElementNode && child.Data == "input" {
+					name := strings.TrimSpace(attr(child, "name"))
+					typ := strings.ToLower(strings.TrimSpace(attr(child, "type")))
+					value := attr(child, "value")
+					if typ == "password" {
+						if name != "" {
+							passwordField = name
+							formValues.Set(name, password)
+							foundPassword = true
+						}
+					} else if name != "" && (typ == "submit" || typ == "button") {
+						if value != "" {
+							formValues.Add(name, value)
+						}
+					} else if name != "" && typ != "file" && typ != "image" {
+						if (typ != "checkbox" && typ != "radio") || attr(child, "checked") != "" {
+							formValues.Add(name, value)
+						}
+					}
+				}
+				for c := child.FirstChild; c != nil; c = c.NextSibling {
+					collect(c)
+				}
+			}
+			collect(n)
+			if foundPassword {
+				formAction := strings.TrimSpace(attr(n, "action"))
+				if formAction == "" {
+					formAction = pageURL.String()
+				} else if parsed, err := pageURL.Parse(formAction); err == nil {
+					formAction = parsed.String()
+				} else {
+					return
+				}
+				action = formAction
+				method = strings.ToUpper(strings.TrimSpace(attr(n, "method")))
+				if method == "" {
+					method = http.MethodGet
+				}
+				values = formValues
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+	if action == "" || passwordField == "" {
+		return nil, nil, errors.New("一覧ページのパスワードフォームを特定できませんでした")
+	}
+	validated, err := validateUploaderURL(action)
+	if err != nil {
+		return nil, nil, errors.New("パスワードフォームの送信先が許可されたアップローダーではありません")
+	}
+	target, _ := url.Parse(validated)
+	if target == nil || !strings.EqualFold(target.Hostname(), pageURL.Hostname()) {
+		return nil, nil, errors.New("パスワードは元ページと同じホストにのみ送信できます")
+	}
+	var req *http.Request
+	if method == http.MethodPost {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(values.Encode()))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+	} else if method == http.MethodGet {
+		query := target.Query()
+		for key, vals := range values {
+			for _, value := range vals {
+				query.Add(key, value)
+			}
+		}
+		target.RawQuery = query.Encode()
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	} else {
+		return nil, nil, errors.New("一覧ページのパスワードフォームの送信方式に対応していません")
+	}
+	if err != nil {
+		return nil, nil, errors.New("パスワード送信リクエストを作成できませんでした")
+	}
+	req.Header.Set("User-Agent", "uploader-jp-archive/1.0 (preservation listing preview)")
+	req.Header.Set("Referer", pageURL.String())
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, errors.New("パスワード送信に失敗しました")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, nil, fmt.Errorf("パスワード送信後に HTTP %d が返されました", resp.StatusCode)
+	}
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if !strings.Contains(contentType, "text/html") && !strings.Contains(contentType, "application/xhtml+xml") {
+		return nil, nil, errors.New("パスワード送信後に一覧HTMLを取得できませんでした")
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxUploaderHTMLBytes+1))
+	if err != nil || len(body) > maxUploaderHTMLBytes {
+		return nil, nil, errors.New("パスワード送信後の一覧ページが大きすぎるか読み込めません")
+	}
+	return resp.Request.URL, body, nil
+}
+
 // uploaderListingCandidate is a public download page discovered on one uploader listing.
 type uploaderListingCandidate struct {
 	URL   string `json:"url"`
@@ -343,8 +484,10 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		return
 	}
 	var req struct {
-		ListingURL  string `json:"listing_url" binding:"required,max=4096"`
-		AcceptTerms bool   `json:"accept_terms"`
+		ListingURL      string `json:"listing_url" binding:"required,max=4096"`
+		AcceptTerms     bool   `json:"accept_terms"`
+		Password        string `json:"password" binding:"omitempty,max=1024"`
+		PublicRequestID string `json:"public_request_id" binding:"omitempty,uuid"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || !req.AcceptTerms {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a listing URL and confirmation of uploader.jp terms are required"})
@@ -355,7 +498,23 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "provide an HTTPS uploader.jp/getuploader.com listing URL"})
 		return
 	}
-	candidates, pages, err := discoverUploaderListing(c.Request.Context(), listingURL)
+	password := req.Password
+	if password == "" && req.PublicRequestID != "" {
+		var publicRequest model.PublicRequest
+		if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).First(&publicRequest).Error; err != nil {
+			notFoundOrError(c, err, "preservation request")
+			return
+		}
+		password, err = s.decryptSourcePassword(publicRequest.SourcePasswordEncrypted)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
+	} else if password != "" && len(s.cfg.SourcePasswordEncryptionKey) != 32 {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": errSourcePasswordKeyMissing.Error()})
+		return
+	}
+	candidates, pages, err := discoverUploaderListing(c.Request.Context(), listingURL, password)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -365,11 +524,11 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"listing_url": listingURL, "pages_scanned": pages, "limit": maxUploaderListingCandidates, "truncated": len(candidates) >= maxUploaderListingCandidates, "items": candidates})
 }
 
-func discoverUploaderListing(ctx context.Context, listingURL string) ([]uploaderListingCandidate, int, error) {
-	return discoverUploaderListingWithLimits(ctx, listingURL, maxUploaderListingPages, maxUploaderListingCandidates)
+func discoverUploaderListing(ctx context.Context, listingURL string, passwords ...string) ([]uploaderListingCandidate, int, error) {
+	return discoverUploaderListingWithLimits(ctx, listingURL, maxUploaderListingPages, maxUploaderListingCandidates, passwords...)
 }
 
-func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, pageLimit, candidateLimit int) ([]uploaderListingCandidate, int, error) {
+func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, pageLimit, candidateLimit int, passwords ...string) ([]uploaderListingCandidate, int, error) {
 	if pageLimit < 1 || candidateLimit < 1 {
 		return []uploaderListingCandidate{}, 0, nil
 	}
@@ -377,7 +536,13 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 	if err != nil {
 		return nil, 0, errors.New("invalid uploader.jp listing URL")
 	}
+	password := ""
+	if len(passwords) > 0 {
+		password = passwords[0]
+	}
+	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
+		Jar:     jar,
 		Timeout: 20 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
@@ -431,11 +596,28 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 			return nil, pagesScanned, errors.New("一覧ページを解析できませんでした")
 		}
 		pageText := strings.ToLower(htmlText(doc))
-		if hasPasswordInput(doc) || hasCaptcha(doc, pageText) || strings.Contains(pageText, "ログインしてください") {
-			return nil, pagesScanned, errors.New("一覧ページにログイン・パスワード・認証が必要です。自動で回避しません")
+		baseURL := resp.Request.URL
+		if hasPasswordInput(doc) {
+			if password == "" {
+				return nil, pagesScanned, errors.New("一覧ページにパスワードが必要です。申請時または管理画面でパスワードを設定してください")
+			}
+			baseURL, body, err = submitUploaderListingPassword(ctx, client, baseURL, doc, password)
+			if err != nil {
+				return nil, pagesScanned, err
+			}
+			doc, htmlErr = xhtml.Parse(bytes.NewReader(body))
+			if htmlErr != nil {
+				return nil, pagesScanned, errors.New("パスワード送信後の一覧ページを解析できませんでした")
+			}
+			pageText = strings.ToLower(htmlText(doc))
+			if hasPasswordInput(doc) {
+				return nil, pagesScanned, errors.New("パスワード認証に失敗したか、追加操作が必要です。CAPTCHA等は自動処理しません")
+			}
+		}
+		if hasCaptcha(doc, pageText) || strings.Contains(pageText, "ログインしてください") {
+			return nil, pagesScanned, errors.New("一覧ページに追加認証が必要です。CAPTCHA等は自動処理しません")
 		}
 		pagesScanned++
-		baseURL := resp.Request.URL
 		var walk func(*xhtml.Node)
 		walk = func(n *xhtml.Node) {
 			if n.Type == xhtml.ElementNode && n.Data == "a" {

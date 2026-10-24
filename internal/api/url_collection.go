@@ -17,9 +17,9 @@ import (
 var errDuplicateSourceURL = errors.New("source URL has already been requested or catalogued")
 
 const (
-	maxURLCollectionSeeds      = 100
-	maxURLCollectionCandidates = 300
-	maxURLCollectionPages      = 100
+	maxURLCollectionSeeds      = 10
+	maxURLCollectionCandidates = 100
+	maxURLCollectionPages      = 20
 )
 
 type collectedSourceURL struct {

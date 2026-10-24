@@ -16,18 +16,19 @@ import (
 )
 
 type Server struct {
-	db                  *gorm.DB
-	cfg                 config.Config
-	logger              *slog.Logger
-	enrollmentLimiterMu sync.Mutex
-	enrollmentAttempts  map[string]enrollmentAttempt
+	db                   *gorm.DB
+	cfg                  config.Config
+	logger               *slog.Logger
+	enrollmentLimiterMu  sync.Mutex
+	enrollmentAttempts   map[string]enrollmentAttempt
+	publicIntakeAttempts map[string]enrollmentAttempt
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	s := &Server{db: db, cfg: cfg, logger: logger, enrollmentAttempts: make(map[string]enrollmentAttempt)}
+	s := &Server{db: db, cfg: cfg, logger: logger, enrollmentAttempts: make(map[string]enrollmentAttempt), publicIntakeAttempts: make(map[string]enrollmentAttempt)}
 	r := gin.New()
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		logger.Error("invalid TRUSTED_PROXIES configuration", "error", err)
@@ -37,9 +38,11 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	r.GET("/healthz", s.health)
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/login", s.login)
+	v1.GET("/public/config", s.publicConfig)
 	v1.GET("/public/artifacts", s.listPublicArtifacts)
 	v1.GET("/public/artifacts/:id", s.getPublicArtifact)
 	v1.POST("/public-requests", s.submitPublicRequest)
+	v1.POST("/public/redistribution-assistance", s.rateLimitPublicIntake(), s.submitRedistributionAssistance)
 	v1.POST("/public/node-enrollment-requests", s.rateLimitNodeEnrollment(), s.submitNodeEnrollmentRequest)
 	v1.POST("/public/files/:id/downloads", s.createDownloadJob)
 	v1.GET("/public/downloads/:id", s.getDownloadJob)
@@ -76,6 +79,9 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/admin/url-collection/scan", s.requireRoles("admin"), s.collectUploaderURLs)
 	auth.GET("/nodes", s.requireRoles("admin", "reviewer"), s.listNodes)
 	auth.GET("/admin/node-enrollment-requests", s.requireRoles("admin"), s.listNodeEnrollmentRequests)
+	auth.GET("/admin/conversation-links", s.requireRoles("admin", "reviewer"), s.listConversationLinks)
+	auth.POST("/admin/conversation-links", s.requireRoles("admin", "reviewer"), s.addConversationLink)
+	auth.DELETE("/admin/conversation-links/:id", s.requireRoles("admin", "reviewer"), s.deleteConversationLink)
 	auth.PATCH("/admin/node-enrollment-requests/:id", s.requireRoles("admin"), s.reviewNodeEnrollmentRequest)
 	auth.GET("/tasks", s.requireRoles("admin", "reviewer"), s.listTasks)
 	auth.POST("/admin/placements/reconcile", s.requireRoles("admin"), s.reconcileNow)
@@ -85,6 +91,8 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.GET("/export", s.exportCatalog)
 	auth.GET("/public-requests", s.requireRoles("admin", "reviewer"), s.listPublicRequests)
 	auth.PATCH("/public-requests/:id", s.requireRoles("admin", "reviewer"), s.reviewPublicRequest)
+	auth.GET("/public-requests/:id/intake-file", s.requireRoles("admin", "reviewer"), s.downloadPublicRequestIntakeFile)
+	auth.POST("/public-requests/:id/ingest-upload", s.requireRoles("admin"), s.ingestPublicRequestUpload)
 	auth.POST("/admin/users", s.requireRoles("admin"), s.createUser)
 	auth.GET("/admin/users", s.requireRoles("admin"), s.listUsers)
 	auth.PATCH("/admin/users/:id", s.requireRoles("admin"), s.updateUser)

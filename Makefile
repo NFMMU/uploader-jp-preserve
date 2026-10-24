@@ -25,9 +25,9 @@ migrate-diff:
 	atlas migrate diff $(name) --env local
 
 migrate-hash:
-	atlas migrate hash --dir file://atlas/migrations
+	atlas migrate hash --dir file://atlas/migrations --force
 
-migrate-apply:
+migrate-apply: migrate-hash
 	atlas migrate apply --env local
 
 generate:

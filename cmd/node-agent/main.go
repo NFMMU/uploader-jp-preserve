@@ -54,6 +54,7 @@ type task struct {
 	StorageKey       string  `json:"storage_key"`
 	AttemptCount     int32   `json:"attempt_count"`
 	SourceURL        string  `json:"source_url"`
+	SourcePassword   string  `json:"source_password"`
 }
 
 type agent struct {
@@ -372,7 +373,7 @@ func (a *agent) fetchAndUploadSource(ctx context.Context, t task) error {
 	if err != nil {
 		return err
 	}
-	fetched, err := fetchUploaderFileWithLimiter(ctx, validatedURL, true, a.waitForUploaderInterval)
+	fetched, err := fetchUploaderFileWithLimiter(ctx, validatedURL, true, a.waitForUploaderInterval, t.SourcePassword)
 	if err != nil {
 		return err
 	}

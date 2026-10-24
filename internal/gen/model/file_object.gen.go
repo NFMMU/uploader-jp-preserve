@@ -5,20 +5,21 @@ package model
 import "time"
 
 type FileObject struct {
-	ID                    string     `gorm:"column:id;primaryKey;default:gen_random_uuid()" json:"id"`
-	ArtifactID            string     `gorm:"column:artifact_id;not null;index" json:"artifact_id"`
-	OriginalFilename      string     `gorm:"column:original_filename;not null" json:"original_filename"`
-	SizeBytes             int64      `gorm:"column:size_bytes;not null" json:"size_bytes"`
-	SHA256                *string    `gorm:"column:sha256" json:"sha256,omitempty"`
-	MediaType             *string    `gorm:"column:media_type" json:"media_type,omitempty"`
-	SourceURL             *string    `gorm:"column:source_url" json:"source_url,omitempty"`
-	PreservationStatus    string     `gorm:"column:preservation_status;not null" json:"preservation_status"`
-	RedistributionPolicy  string     `gorm:"column:redistribution_policy;not null;index" json:"redistribution_policy"`
-	Representative        *string    `gorm:"column:representative" json:"representative,omitempty"`
-	PublicDownloadEnabled bool       `gorm:"column:public_download_enabled;not null" json:"public_download_enabled"`
-	CreatedAt             time.Time  `gorm:"column:created_at;not null" json:"created_at"`
-	DeletionRequestedAt   *time.Time `gorm:"column:deletion_requested_at" json:"deletion_requested_at,omitempty"`
-	DeletedAt             *time.Time `gorm:"column:deleted_at" json:"deleted_at,omitempty"`
+	ID                      string     `gorm:"column:id;primaryKey;default:gen_random_uuid()" json:"id"`
+	ArtifactID              string     `gorm:"column:artifact_id;not null;index" json:"artifact_id"`
+	OriginalFilename        string     `gorm:"column:original_filename;not null" json:"original_filename"`
+	SizeBytes               int64      `gorm:"column:size_bytes;not null" json:"size_bytes"`
+	SHA256                  *string    `gorm:"column:sha256" json:"sha256,omitempty"`
+	MediaType               *string    `gorm:"column:media_type" json:"media_type,omitempty"`
+	SourceURL               *string    `gorm:"column:source_url" json:"source_url,omitempty"`
+	SourcePasswordEncrypted *string    `gorm:"column:source_password_encrypted" json:"-"`
+	PreservationStatus      string     `gorm:"column:preservation_status;not null" json:"preservation_status"`
+	RedistributionPolicy    string     `gorm:"column:redistribution_policy;not null;index" json:"redistribution_policy"`
+	Representative          *string    `gorm:"column:representative" json:"representative,omitempty"`
+	PublicDownloadEnabled   bool       `gorm:"column:public_download_enabled;not null" json:"public_download_enabled"`
+	CreatedAt               time.Time  `gorm:"column:created_at;not null" json:"created_at"`
+	DeletionRequestedAt     *time.Time `gorm:"column:deletion_requested_at" json:"deletion_requested_at,omitempty"`
+	DeletedAt               *time.Time `gorm:"column:deleted_at" json:"deleted_at,omitempty"`
 }
 
 func (FileObject) TableName() string { return "file_objects" }

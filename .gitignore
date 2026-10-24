@@ -27,3 +27,6 @@ Thumbs.db
 *.log
 .tmp/
 tmp/
+
+# Local staging and runtime data (may contain user-submitted files)
+data/

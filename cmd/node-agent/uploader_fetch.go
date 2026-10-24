@@ -19,7 +19,7 @@ import (
 	xhtml "golang.org/x/net/html"
 )
 
-const uploaderFetcherVersion = "2026-10-24-diagnostic-3"
+const uploaderFetcherVersion = "2026-10-24-password-form-1"
 const maxAgentUploaderHTMLBytes = 8 << 20
 const maxAgentSourceBytes int64 = 5 << 30
 
@@ -32,9 +32,10 @@ type fetchedUploaderFile struct {
 }
 
 type uploaderForm struct {
-	Action string
-	Method string
-	Values url.Values
+	Action             string
+	Method             string
+	Values             url.Values
+	PasswordFieldNames []string
 }
 
 func validateAgentUploaderURL(raw string) (string, error) {
@@ -73,7 +74,11 @@ func fetchUploaderFile(ctx context.Context, sourceURL string, acceptTerms bool) 
 
 // fetchUploaderFileWithLimiter spaces every uploader request, including form
 // submissions and redirects, using the calling agent's independent limiter.
-func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptTerms bool, beforeRequest func(context.Context) error) (*fetchedUploaderFile, error) {
+func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptTerms bool, beforeRequest func(context.Context) error, passwords ...string) (*fetchedUploaderFile, error) {
+	password := ""
+	if len(passwords) > 0 {
+		password = passwords[0]
+	}
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
 		Jar:     jar,
@@ -145,8 +150,9 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 			return nil, errors.New("uploader.jpのダウンロードページを解析できませんでした")
 		}
 		pageText := strings.ToLower(htmlText(doc))
-		if hasPasswordInput(doc) || strings.Contains(pageText, "ダウンロードパスワードの認証が必要") || strings.Contains(pageText, "パスワードを入力") {
-			return nil, errors.New("このファイルはダウンロードパスワードが必要です。認証の回避は行いません。管理者が正規の方法で取得してアップロードしてください")
+		hasPassword := hasPasswordInput(doc) || strings.Contains(pageText, "ダウンロードパスワードの認証が必要") || strings.Contains(pageText, "パスワードを入力")
+		if hasPassword && password == "" {
+			return nil, errors.New("このファイルはダウンロードパスワードが必要です。申請時または管理画面でパスワードを設定してください")
 		}
 		if hasCaptcha(doc, pageText) {
 			return nil, errors.New("このページは画像認証などを要求しています。認証の回避は行いません。管理者がブラウザーで取得してください")
@@ -173,9 +179,12 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 			currentURL = nextURL
 			continue
 		}
-		form, ok := findDownloadForm(doc, pageURL, acceptTerms)
+		form, ok := findDownloadForm(doc, pageURL, acceptTerms, password)
 		if !ok {
-			return nil, fmt.Errorf("ダウンロード先を自動判定できませんでした（診断: %s）。パスワード・認証・JavaScriptが必要な場合は、管理者がブラウザーで取得してください", uploaderPageDiagnostic(doc, pageURL, contentType, page))
+			if hasPassword {
+				return nil, errors.New("パスワードフォームを安全に特定できませんでした。フォームの形式が未対応のため自動取得を停止しました")
+			}
+			return nil, fmt.Errorf("ダウンロード先を自動判定できませんでした（診断: %s）。CAPTCHAやJavaScript認証は自動処理しません", uploaderPageDiagnostic(doc, pageURL, contentType, page))
 		}
 		formURL, err := validateAgentUploaderURL(form.Action)
 		if err != nil {
@@ -243,8 +252,11 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 		if nextDoc == nil {
 			return nil, errors.New("ダウンロード確認ページを解析できませんでした")
 		}
-		if hasPasswordInput(nextDoc) || hasCaptcha(nextDoc, strings.ToLower(htmlText(nextDoc))) {
-			return nil, errors.New("追加認証が必要なため自動取得を停止しました")
+		if hasPasswordInput(nextDoc) {
+			return nil, errors.New("パスワード認証後も入力画面が表示されました。パスワードが誤っているか、追加操作が必要です")
+		}
+		if hasCaptcha(nextDoc, strings.ToLower(htmlText(nextDoc))) {
+			return nil, errors.New("CAPTCHA等の追加認証は自動処理しません")
 		}
 		if nextURL := findDirectDownloadLink(nextDoc, resp.Request.URL); nextURL != "" {
 			referer = resp.Request.URL.String()
@@ -489,6 +501,9 @@ func uploaderFormSubmissionValues(form uploaderForm) url.Values {
 	for key, values := range form.Values {
 		keyLower := strings.ToLower(key)
 		if (keyLower == "token" || keyLower == "download_token" || keyLower == "downloadtoken") && len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+			if len(form.PasswordFieldNames) > 0 {
+				return form.Values
+			}
 			return url.Values{key: []string{values[0]}}
 		}
 	}
@@ -522,7 +537,11 @@ func findScriptDownloadURL(page []byte, base *url.URL) string {
 	return ""
 }
 
-func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (uploaderForm, bool) {
+func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwords ...string) (uploaderForm, bool) {
+	password := ""
+	if len(passwords) > 0 {
+		password = passwords[0]
+	}
 	var result uploaderForm
 	var walk func(*xhtml.Node) bool
 	walk = func(n *xhtml.Node) bool {
@@ -540,6 +559,7 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (upload
 			buttonFound := false
 			tokenLikeFound := false
 			md5Found := false
+			passwordFieldFound := false
 			hiddenFieldCount := 0
 			findControls = func(node *xhtml.Node) {
 				if node.Type == xhtml.ElementNode {
@@ -569,8 +589,14 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (upload
 								md5Found = true
 							}
 							switch typ {
-							case "submit", "button", "image", "password", "file":
-								// Submit values were handled above; never send password/file inputs.
+							case "password":
+								if password != "" {
+									form.Values.Set(name, password)
+									form.PasswordFieldNames = append(form.PasswordFieldNames, name)
+									passwordFieldFound = true
+								}
+							case "submit", "button", "image", "file":
+								// Submit values were handled above; file inputs are never sent.
 							case "checkbox", "radio":
 								fieldHint := strings.ToLower(name + " " + attr(node, "id") + " " + value)
 								termsField := strings.Contains(fieldHint, "agree") || strings.Contains(fieldHint, "kiyaku") || strings.Contains(fieldHint, "terms") || strings.Contains(fieldHint, "rule")
@@ -618,7 +644,8 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool) (upload
 			sameHostTokenForm := sameHost && downloadAction && tokenLikeFound && supportedMethod
 			sameHostMetadataForm := sameHost && downloadAction && md5Found && supportedMethod
 			sameHostHiddenForm := sameHost && downloadAction && hiddenFieldCount > 0 && supportedMethod
-			if (buttonFound || sameHostTokenForm || sameHostMetadataForm || sameHostHiddenForm) && supportedMethod {
+			sameHostPasswordForm := sameHost && downloadAction && passwordFieldFound && supportedMethod
+			if (buttonFound || sameHostTokenForm || sameHostMetadataForm || sameHostHiddenForm || sameHostPasswordForm) && supportedMethod {
 				if form.Action != "" {
 					result = form
 					return true

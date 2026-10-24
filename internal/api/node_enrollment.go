@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ func (s *Server) rateLimitNodeEnrollment() gin.HandlerFunc {
 
 func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 	var req struct {
+		TurnstileToken         string `json:"turnstile_token"`
 		Name                   string `json:"name" binding:"required,min=1,max=120"`
 		NodeType               string `json:"node_type" binding:"required,oneof=A B"`
 		RequestedCapacityBytes *int64 `json:"requested_capacity_bytes" binding:"required,gte=0"`
@@ -61,6 +63,9 @@ func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ノード名、種別、容量、連絡先メールアドレスを入力し、参加条件への同意を確認してください。"})
+		return
+	}
+	if !s.verifyTurnstile(c, req.TurnstileToken) {
 		return
 	}
 	if !req.AgreeToTerms {
@@ -80,6 +85,8 @@ func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "参加申請を保存できませんでした。時間をおいて再度お試しください。"})
 		return
 	}
+	content := "新規ストレージノード参加申請\n申請ID: " + id + "\nノード名: " + strings.TrimSpace(req.Name) + "\n種別: " + req.NodeType + "\n申告容量: " + fmt.Sprintf("%d bytes", *req.RequestedCapacityBytes) + "\n連絡先: " + strings.ToLower(strings.TrimSpace(req.ContactEmail)) + "\n補足: " + strings.TrimSpace(req.Message)
+	s.createLibreDeskConversation("node_enrollment_request", id, "【uploader.jp保全】ストレージノード参加申請: "+strings.TrimSpace(req.Name), strings.TrimSpace(req.Name), strings.TrimSpace(req.ContactEmail), content)
 	c.JSON(http.StatusCreated, gin.H{"id": id, "status": "pending", "message": "参加申請を受け付けました。運営による確認後、登録手順を連絡します。"})
 }
 

@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: archive
       POSTGRES_USER: archive
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-archive-dev-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -15,75 +15,6 @@ services:
       timeout: 3s
       retries: 20
 
-  # Prepare persistent named volumes for the non-root distroless containers.
-  staging-data-init:
-    image: alpine:3.20
-    command:
-      [
-        "sh",
-        "-ec",
-        "mkdir -p /data/staging && chown -R 65532:65532 /data/staging",
-      ]
-    volumes:
-      - staging_data:/data/staging
-    restart: "no"
-
-  delivery-data-init:
-    image: alpine:3.20
-    command:
-      [
-        "sh",
-        "-ec",
-        "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery",
-      ]
-    volumes:
-      - delivery_data:/data/delivery
-    restart: "no"
-
-  node-data-init:
-    image: alpine:3.20
-    command:
-      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
-    volumes:
-      - node_data:/data
-    restart: "no"
-
-  node-data-init-b:
-    image: alpine:3.20
-    command:
-      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
-    volumes:
-      - node_data_b:/data
-    restart: "no"
-
-  node-data-init-c:
-    image: alpine:3.20
-    command:
-      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
-    volumes:
-      - node_data_c:/data
-    restart: "no"
-
-  node-data-init-d:
-    image: alpine:3.20
-    command:
-      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
-    volumes:
-      - node_data_d:/data
-    restart: "no"
-
-  # Atlas's container is distroless and has no /bin/sh. Keep commands as
-  # direct Atlas invocations instead of wrapping them in a shell.
-  # Development convenience: refresh the checksum before applying migrations.
-  # In production/CI, commit atlas.sum and verify it rather than re-hashing on deploy.
-  migration-hash:
-    image: arigaio/atlas:latest
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    command: ["migrate", "hash", "--dir", "file://atlas/migrations"]
-    restart: "no"
-
   migrate:
     image: arigaio/atlas:latest
     working_dir: /workspace
@@ -91,26 +22,21 @@ services:
       - .:/workspace
     command: ["migrate", "apply", "--env", "local"]
     environment:
-      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
+      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/archive?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
-      migration-hash:
-        condition: service_completed_successfully
     restart: "no"
 
   api:
     build: .
+    env_file:
+      - .env
     environment:
       APP_ENV: ${APP_ENV:-development}
-      APP_ADDR: :8080
-      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      JWT_TTL_HOURS: ${JWT_TTL_HOURS:-12}
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      DEV_NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
+      APP_ADDR: ":8080"
+      DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/archive?sslmode=disable
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       STAGING_DIR: /data/staging
       DELIVERY_DIR: /data/delivery
     ports:
@@ -121,102 +47,12 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      staging-data-init:
-        condition: service_completed_successfully
-      delivery-data-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  node-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.node
-    environment:
-      CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
-      NODE_NAME: ${NODE_NAME:-local-node-a}
-      NODE_TYPE: ${NODE_TYPE:-A}
-      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}
-      NODE_STORAGE_PATH: /data/objects
-      NODE_STATE_PATH: /data/node-credentials.json
-      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
-    volumes:
-      - node_data:/data
-    depends_on:
-      api:
-        condition: service_started
-      node-data-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  node-agent-b:
-    build:
-      context: .
-      dockerfile: Dockerfile.node
-    environment:
-      CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
-      NODE_NAME: ${NODE_NAME_B:-local-node-b}
-      NODE_TYPE: B
-      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_B:-10737418240}
-      NODE_STORAGE_PATH: /data/objects
-      NODE_STATE_PATH: /data/node-credentials.json
-      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
-    volumes:
-      - node_data_b:/data
-    depends_on:
-      api:
-        condition: service_started
-      node-data-init-b:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  node-agent-c:
-    build:
-      context: .
-      dockerfile: Dockerfile.node
-    environment:
-      CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
-      NODE_NAME: ${NODE_NAME_C:-local-node-c}
-      NODE_TYPE: B
-      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_C:-10737418240}
-      NODE_STORAGE_PATH: /data/objects
-      NODE_STATE_PATH: /data/node-credentials.json
-      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
-    volumes:
-      - node_data_c:/data
-    depends_on:
-      api:
-        condition: service_started
-      node-data-init-c:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  node-agent-d:
-    build:
-      context: .
-      dockerfile: Dockerfile.node
-    environment:
-      CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
-      NODE_NAME: ${NODE_NAME_D:-local-node-d}
-      NODE_TYPE: B
-      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_D:-10737418240}
-      NODE_STORAGE_PATH: /data/objects
-      NODE_STATE_PATH: /data/node-credentials.json
-      NODE_UPLOADER_MIN_INTERVAL: ${NODE_UPLOADER_MIN_INTERVAL:-30s}
-    volumes:
-      - node_data_d:/data
-    depends_on:
-      api:
-        condition: service_started
-      node-data-init-d:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   web:
     build: ./web
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:3000:80"
     depends_on:
@@ -228,7 +64,3 @@ volumes:
   postgres_data:
   delivery_data:
   staging_data:
-  node_data:
-  node_data_b:
-  node_data_c:
-  node_data_d:

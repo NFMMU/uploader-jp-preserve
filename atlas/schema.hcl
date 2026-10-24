@@ -126,6 +126,10 @@ table "file_objects" {
     type = text
     null = true
   }
+  column "source_password_encrypted" {
+    type = text
+    null = true
+  }
   column "preservation_status" {
     type = varchar(32)
     null = false
@@ -707,6 +711,35 @@ table "public_requests" {
     type = text
     null = true
   }
+  column "source_password_encrypted" {
+    type = text
+    null = true
+  }
+  column "rights_holder_contact" {
+    type = varchar(1000)
+    null = true
+  }
+  column "intake_file_path" {
+    type = text
+    null = false
+    default = ""
+  }
+  column "intake_file_name" {
+    type = varchar(500)
+    null = true
+  }
+  column "intake_file_size" {
+    type = bigint
+    null = true
+  }
+  column "intake_file_sha256" {
+    type = varchar(64)
+    null = true
+  }
+  column "intake_file_uploaded_at" {
+    type = timestamptz
+    null = true
+  }
   column "submitter_name" {
     type = varchar(255)
     null = true
@@ -766,7 +799,61 @@ table "public_requests" {
     columns = [column.status, column.created_at]
   }
   check "public_requests_type_check" {
-    expr = "request_type IN ('takedown', 'deletion', 'external_publication', 'preservation')"
+    expr = "request_type IN ('takedown', 'deletion', 'external_publication', 'preservation', 'redistribution_assistance', 'publisher_assistance')"
+  }
+}
+
+table "request_conversation_links" {
+  schema = schema.public
+  column "id" {
+    type = uuid
+    null = false
+    default = sql("gen_random_uuid()")
+  }
+  column "target_type" {
+    type = varchar(32)
+    null = false
+  }
+  column "target_id" {
+    type = uuid
+    null = false
+  }
+  column "url" {
+    type = text
+    null = false
+  }
+  column "label" {
+    type = varchar(255)
+    null = false
+    default = "関連する会話"
+  }
+  column "created_by" {
+    type = uuid
+    null = true
+  }
+  column "created_at" {
+    type = timestamptz
+    null = false
+    default = sql("now()")
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "request_conversation_links_created_by_fkey" {
+    columns = [column.created_by]
+    ref_columns = [table.users.column.id]
+    on_update = NO_ACTION
+    on_delete = SET_NULL
+  }
+  index "request_conversation_links_target_url_key" {
+    unique = true
+    columns = [column.target_type, column.target_id, column.url]
+  }
+  index "request_conversation_links_target_idx" {
+    columns = [column.target_type, column.target_id, column.created_at]
+  }
+  check "request_conversation_links_target_type_check" {
+    expr = "target_type IN ('public_request', 'node_enrollment_request')"
   }
 }
 

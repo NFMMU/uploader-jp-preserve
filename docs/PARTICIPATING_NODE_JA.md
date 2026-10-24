@@ -1,52 +1,53 @@
-# 参加ノード運用ガイド（試験運用版）
+# 参加ノードの始め方
 
-運営元：全国もちもちうどん連盟  
-連絡先：uploaderjp-archive@udonya.moe
+この手順は、ストレージを提供する参加者向けです。MVP／試験運用版のため、参加前に運営の案内と保存・削除方針を確認してください。
 
-この文書は、`uploader.jp保全プロジェクト` にストレージを提供する参加者向けの手順です。現在のソフトウェアは MVP／試験運用版です。まず公開サイトの「ストレージノード参加申請」から申請してください。運営の承認後に発行される一回限りの登録トークンを使って登録します。
+問い合わせ：uploaderjp-archive@udonya.moe
 
-## 参加する前に確認すること
+## 参加の流れ
 
-参加ノードは、運営側から割り当てられた保全タスクを実行し、ファイルをローカルの永続ストレージに保存します。ノードのストレージはインターネットへ直接公開しませんが、保全対象には第三者の著作物などが含まれる可能性があります。参加前に、運営の保全方針、削除・公開停止への対応、保存期間、問い合わせ手順を確認してください。
+1. 公開サイトの「ストレージノード参加申請」から申し込む。
+2. 運営の承認を待つ。
+3. 運営から指定された中央 API の HTTPS URL と、一回限りの登録トークンを受け取る。
+4. このページの手順でノードを起動する。
+5. 登録成功後、運営へ状態を確認する。
 
-参加者は次の条件を理解したうえで参加してください。
+登録トークンは発行後72時間で失効し、最初の登録成功後は再利用できません。パスワードと同じように扱い、Issue・公開チャット・スクリーンショットに貼らないでください。
 
-- 使用するディスク容量と、ノードを稼働させる期間を自分で判断できること。
-- ノードは運営の API に接続し、タスクを受け取り、保存状況と容量情報を報告すること。
-- `source_fetch` タスクを割り当てられた場合、agent が uploader.jp／getuploader.com へアクセスすること。既定では、その agent から送る各 HTTP リクエストの開始間隔を最低 30 秒空けます。
-- 参加ノードの保存領域を他のアプリケーションや一般ユーザー向けの共有フォルダーとして使わないこと。
-- この手順は試験運用向けです。自己サービスでの安全な離脱・データ削除が保証されているわけではありません。離脱時は先に運営へ連絡してください。
+## 必要なもの
 
-## 1. 参加申請と登録トークン
+- Docker Engine と Docker Compose v2 が動く Linux ホスト
+- 継続して使えるディスク容量
+- 中央 API への送信方向の HTTPS 接続
 
-1. 公開サイトの「ストレージノード参加申請」ページから、ノード名、種別、容量、連絡先を送信します。
-2. 運営が参加条件と申請内容を確認します。
-3. 承認された場合、運営から中央 API の HTTPS URL と、申請にひも付いた一回限りの `NODE_ENROLLMENT_TOKEN` が渡されます。
-4. トークンは発行後 72 時間で失効し、最初の登録に成功した時点で再利用できなくなります。登録後の認証情報は agent がローカルの永続ボリュームに保存します。
+ノードの保存領域や agent のポートをインターネットに公開する必要はありません。
 
-トークンはパスワードと同様に扱い、公開 Issue、チャットログ、スクリーンショットなどに貼り付けないでください。トークンだけで参加条件や保存対象への同意が完了するわけではありません。`NODE_NAME`、`NODE_TYPE`、`NODE_CAPACITY_BYTES` は承認された申請内容と一致させてください。
+## 1. 設定する
 
-## 2. 必要な環境
-
-- Docker Engine と Docker Compose v2 が動作するホスト。
-- 継続利用できるディスク領域。Docker の名前付きボリュームを使います。
-- 中央 API への**送信方向**の HTTPS 接続。agent のポートをインターネットや LAN に公開する必要はありません。
-- DNS と TLS 証明書検証が正常に動作すること。
-
-この構成は、ホストの Docker ソケットを agent コンテナに渡しません。`deploy/node-manager` にある Node Manager は別の試作機能であり、Docker ソケットへの管理権限を必要とするため、この参加手順では使用しません。
-
-## 3. 設定と起動
-
-リポジトリを取得し、リポジトリのルートディレクトリで作業します。
+リポジトリを取得し、ルートで実行します。
 
 ```sh
-# GitHub owner は nfmmu、リポジトリ名は uploader-archive です。
-git clone https://github.com/nfmmu/uploader-archive.git
-cd uploader-archive
+git clone https://github.com/nfmmu/uploaderjp-archive.git
+cd uploadejp-archive
 cp deploy/participant-node/.env.example deploy/participant-node/.env
 ```
 
-`deploy/participant-node/.env` を編集し、運営から受け取った値を設定します。`CENTRAL_API_URL` は実際の HTTPS URL に置き換え、`NODE_ENROLLMENT_TOKEN` には承認後に発行された一回限りのトークンを設定します。ノード名、種別、容量は承認済みの申請内容と一致させてください。
+`deploy/participant-node/.env` を編集します。
+
+| 設定                         | 入れる値                                            |
+| ---------------------------- | --------------------------------------------------- |
+| `CENTRAL_API_URL`            | 運営から指定された HTTPS URL                        |
+| `NODE_ENROLLMENT_TOKEN`      | 承認後に受け取った一回限りのトークン                |
+| `NODE_NAME`                  | 申請時に承認されたノード名                          |
+| `NODE_TYPE`                  | 運営から指定された `A` または `B`                   |
+| `NODE_CAPACITY_BYTES`        | 提供する容量（バイト）                              |
+| `NODE_UPLOADER_MIN_INTERVAL` | uploader.jp へのリクエスト間隔。通常は `30s` のまま |
+
+`NODE_CAPACITY_BYTES=10737418240` は 10 GiB、`0` は参加者側で容量上限を設定しない指定です。`0` にしても、実際のディスク容量を超えて保存できるわけではありません。無理のない容量を設定してください。
+
+## 2. 起動する
+
+ローカルでイメージをビルドして起動する場合：
 
 ```sh
 docker compose \
@@ -55,11 +56,9 @@ docker compose \
   up -d --build
 ```
 
-このコマンドは agent イメージをローカルでビルドし、agent を起動します。初回は Go の依存関係を取得するため、ビルドに時間がかかることがあります。
+公開済みの GHCR イメージを使う場合は、同じ `.env` を編集したうえで `compose.yaml` を `compose.ghcr.yaml` に置き換えます。詳しくは[GHCR ガイド](CONTAINER_REGISTRY_JA.md)を参照してください。
 
-## 4. 状態確認と日常操作
-
-ログを確認します。
+## 3. 状態を確認する
 
 ```sh
 docker compose \
@@ -68,78 +67,32 @@ docker compose \
   logs --tail=100 node-agent
 ```
 
-agent の状態を継続して見る場合は `logs -f node-agent` を使います。登録が成功すると、起動ログにノード ID と agent の状態が記録されます。初回登録が成功したら `.env` の `NODE_ENROLLMENT_TOKEN` の値を消して構いません。ノード固有の認証情報は永続ボリュームに保存されるため、通常の再起動では登録トークンは不要です。トークン値や `node-credentials.json` の内容は公開しないでください。
+初回登録に成功したら、`.env` の `NODE_ENROLLMENT_TOKEN` を空にして構いません。ノードの認証情報は永続ボリュームに保存されます。トークンや `node-credentials.json` の内容を他人に送らないでください。
 
-再起動：
+## 更新・停止
 
-```sh
-docker compose --env-file deploy/participant-node/.env -f deploy/participant-node/compose.yaml restart node-agent
-```
-
-更新：リポジトリを更新してから、同じ Compose コマンドに `--build --force-recreate` を付けて実行します。
+更新：
 
 ```sh
-docker compose \
-  --env-file deploy/participant-node/.env \
-  -f deploy/participant-node/compose.yaml \
-  up -d --build --force-recreate node-agent
+docker compose --env-file deploy/participant-node/.env \
+  -f deploy/participant-node/compose.yaml up -d --build --force-recreate
 ```
 
-通常の停止：
+停止：
 
 ```sh
-docker compose --env-file deploy/participant-node/.env -f deploy/participant-node/compose.yaml stop node-agent
+docker compose --env-file deploy/participant-node/.env \
+  -f deploy/participant-node/compose.yaml stop node-agent
 ```
 
-停止すると中央 API へのハートビートが止まり、ノードはオフラインとして扱われる場合があります。長時間停止や離脱の前には運営へ連絡してください。
+長期停止、ディスク故障、容量変更、参加終了の前には運営へ連絡してください。
 
-## 5. 容量とアクセス間隔
+## 大切な注意
 
-`.env` の主要設定：
+- **`docker compose down -v` を実行しないでください。** 保存データとノード認証情報が削除されるおそれがあります。
+- `NODE_DATA_VOLUME` を変更すると、既存データが見えなくなることがあります。
+- 運営の確認前に、保存ファイルやデータ用ボリュームを手動削除しないでください。
+- agent はアクセス制限、ログイン、CAPTCHA などを回避しません。取得失敗が続く場合はIssueを立ててください。
+- ログを共有する前に、URL内の秘密情報や個人情報が含まれていないか確認してください。
 
-| 変数                         | 意味                                                               | 既定値                               |
-| ---------------------------- | ------------------------------------------------------------------ | ------------------------------------ |
-| `NODE_NAME`                  | 運営側に表示されるノード名                                         | サンプル値                           |
-| `NODE_TYPE`                  | ノード種別。`A` または `B`                                         | `B`                                  |
-| `NODE_CAPACITY_BYTES`        | 参加者が提供する容量上限（バイト）                                 | `10737418240`（10 GiB）              |
-| `NODE_UPLOADER_MIN_INTERVAL` | この agent から uploader.jp へ送る各 HTTP リクエストの最低開始間隔 | `30s`                                |
-| `NODE_DATA_VOLUME`           | 保存データと agent 認証情報を保持する Docker ボリューム名          | `uploader-jp-preservation-node-data` |
-
-`NODE_CAPACITY_BYTES=0` は参加者側で申告容量の上限を設けない指定です。ディスク容量や運営側の割り当て条件が無制限になるわけではありません。申告容量は実際に使える空き容量より大きくしないでください。
-
-`NODE_UPLOADER_MIN_INTERVAL` は**各 agent 単位**の制限で、中央 API が全参加者を一律に待たせるものではありません。複数の agent が同時に動けば、サイト側から見た合計アクセス数は増える可能性があります。運営の指定がない限り、既定値 `30s` を維持するか、より長い間隔を設定してください。値を `0s` にすると間隔制限が無効になります。通常は設定しないでください。
-
-## 6. データの保持と離脱
-
-保存データとノードの認証情報は、`participant_node_data` に対応する名前付き Docker ボリュームに保存されます。コンテナを作り直しても通常はボリュームが維持されます。
-
-- **`docker compose down -v` を実行しないでください。** 保存データと認証情報を含むボリュームを削除するおそれがあります。
-- `NODE_DATA_VOLUME` を変更すると別のボリュームを使い始め、既存データが見えなくなることがあります。変更前に運営へ相談してください。
-- ディスク故障、容量逼迫、ホスト移行、長期停止、参加終了を予定している場合は、できるだけ事前に運営へ連絡してください。
-- 離脱時は、運営から保全コピーの状況と停止許可を確認してから agent を停止してください。運営の確認前にボリュームや保存ファイルを手動削除しないでください。
-
-## 7. トラブルシューティング
-
-### `CENTRAL_API_URL` や登録エラー
-
-- 運営から指定された URL であること、ホストから HTTPS 接続できることを確認します。
-- URL に `localhost`、`127.0.0.1`、内部専用の Docker サービス名を使っていないか確認します。
-- 登録初回登録時は、トークンが承認後 72 時間以内で、まだ使われていないこと、ノード名・種別・容量が申請時の内容と一致することを確認します。トークンを Issue や公開ログに貼り付けないでください。
-
-### 容量不足・保存失敗
-
-- ホストの空き容量と `NODE_CAPACITY_BYTES` を確認します。
-- データ用ボリュームを削除して直そうとせず、ログを保存して運営へ連絡してください。
-
-### uploader.jp の取得失敗
-
-- `source_fetch_failed` は、対象ページの構造、追加確認、アクセス制限などにより自動取得できなかったことを示す場合があります。
-- agent は JavaScript を実行せず、パスワード・認証・CAPTCHA を回避しません。失敗を繰り返すのではなく、運営が対象を確認して対応します。
-- ログを共有する場合は、URL に秘密情報が含まれていないか確認してください。Cookie、トークン、認証ヘッダー、個人情報を送らないでください。
-
-## 8. 問い合わせ
-
-参加登録、容量変更、障害、セキュリティ上の懸念、離脱の相談：
-
-**全国もちもちうどん連盟**  
-**uploaderjp-archive@udonya.moe**
+問い合わせ：**uploaderjp-archive@udonya.moe**

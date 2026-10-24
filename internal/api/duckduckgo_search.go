@@ -15,9 +15,9 @@ import (
 
 const (
 	maxDuckDuckGoQueries         = 5
-	maxDuckDuckGoSeeds           = 100
+	maxDuckDuckGoSeeds           = 10
 	maxDuckDuckGoHTMLBytes       = 4 << 20
-	maxDuckDuckGoResultsPerQuery = 20
+	maxDuckDuckGoResultsPerQuery = 2
 )
 
 type duckDuckGoResult struct {
