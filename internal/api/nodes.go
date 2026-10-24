@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uploader-jp/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -252,6 +253,9 @@ func (s *Server) ingestFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expected multipart form with a file field; upload limit is 5 GiB"})
 		return
 	}
+	if c.Request.MultipartForm != nil {
+		defer c.Request.MultipartForm.RemoveAll()
+	}
 	fh, headerErr := c.FormFile("file")
 	if headerErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "multipart field 'file' is required"})
@@ -275,12 +279,11 @@ func (s *Server) ingestFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
 		return
 	}
-	node, err := s.selectNodeForCapacity(c, fh.Size)
+	nodes, err := s.selectNodesForCapacity(c, fh.Size, 2)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "required_placements": 2})
 		return
 	}
-
 	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
 		return
@@ -318,41 +321,58 @@ func (s *Server) ingestFile(c *gin.Context) {
 		return
 	}
 
-	taskID := uuid.NewString()
-	stagingPath := filepath.Join(s.cfg.StagingDir, taskID)
-	if err := os.Rename(tmpName, stagingPath); err != nil {
-		cleanupTmp()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize staging file"})
-		return
-	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
 	mediaType := strings.TrimSpace(fh.Header.Get("Content-Type"))
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
 	}
-	storageKey := "objects/" + file.ID + "/" + taskID
-	task := model.Task{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
-	placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, SHA256: &sha, Status: "queued"}
+	tasks := make([]model.Task, 0, len(nodes))
+	placements := make([]model.Placement, 0, len(nodes))
+	stagePaths := make([]string, 0, len(nodes))
+	for i, node := range nodes {
+		taskID := uuid.NewString()
+		stagePath := filepath.Join(s.cfg.StagingDir, taskID)
+		if i == 0 {
+			if err := os.Rename(tmpName, stagePath); err != nil {
+				cleanupTmp()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize staging file"})
+				return
+			}
+		} else if err := copyLocalFile(stagePaths[0], stagePath); err != nil {
+			for _, existing := range stagePaths {
+				_ = os.Remove(existing)
+			}
+			cleanupTmp()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not prepare staged replica"})
+			return
+		}
+		stagePaths = append(stagePaths, stagePath)
+		task := model.Task{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
+		storageKey := "objects/" + file.ID + "/" + taskID
+		placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, SHA256: &sha, Status: "queued"}
+		tasks = append(tasks, task)
+		placements = append(placements, placement)
+	}
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{
 			"original_filename": filename, "size_bytes": written, "sha256": sha, "media_type": mediaType, "preservation_status": "queued", "public_download_enabled": false,
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&task).Error; err != nil {
-			return err
-		}
-		var existing model.Placement
-		placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).First(&existing).Error
-		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			if err := tx.Create(&placement).Error; err != nil {
+		for i, task := range tasks {
+			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
-		} else if placementErr != nil {
-			return placementErr
-		} else {
-			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
-				"storage_key": storageKey, "sha256": sha, "status": "queued", "verified_at": nil,
+			var existing model.Placement
+			placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, nodes[i].ID).First(&existing).Error
+			if errors.Is(placementErr, gorm.ErrRecordNotFound) {
+				if err := tx.Create(&placements[i]).Error; err != nil {
+					return err
+				}
+			} else if placementErr != nil {
+				return placementErr
+			} else if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
+				"sha256": sha, "status": "queued", "verified_at": nil,
 			}).Error; err != nil {
 				return err
 			}
@@ -360,26 +380,257 @@ func (s *Server) ingestFile(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		_ = os.Remove(stagingPath)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create preservation task"})
+		for _, path := range stagePaths {
+			_ = os.Remove(path)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create preservation tasks"})
 		return
 	}
 	actor, _ := currentUser(c)
-	s.audit(c, &actor, "file_object", file.ID, "file_object.ingest.queued", "success", stringPtr("File uploaded to temporary staging and queued for node storage"))
-	c.JSON(http.StatusAccepted, gin.H{"file_object_id": file.ID, "task_id": task.ID, "node_id": node.ID, "status": "queued", "size_bytes": written, "sha256": sha, "storage_key": storageKey})
+	s.audit(c, &actor, "file_object", file.ID, "file_object.ingest.queued", "success", stringPtr("File uploaded to temporary staging and queued for two-node storage"))
+	taskViews := make([]gin.H, 0, len(tasks))
+	nodeViews := make([]gin.H, 0, len(nodes))
+	for i := range tasks {
+		taskViews = append(taskViews, gin.H{"task_id": tasks[i].ID, "node_id": nodes[i].ID, "status": "queued"})
+		nodeViews = append(nodeViews, gin.H{"id": nodes[i].ID, "name": nodes[i].Name, "node_type": nodes[i].NodeType})
+	}
+	c.JSON(http.StatusAccepted, gin.H{"file_object_id": file.ID, "task_id": tasks[0].ID, "node_id": nodes[0].ID, "tasks": taskViews, "target_nodes": nodeViews, "replication_target": 2, "status": "queued", "size_bytes": written, "sha256": sha})
 }
 
-func (s *Server) selectNodeForCapacity(c *gin.Context, incoming int64) (model.Node, error) {
-	var nodes []model.Node
-	cutoff := time.Now().UTC().Add(-2 * time.Minute)
-	if err := s.db.WithContext(c.Request.Context()).Where("status = ? AND last_seen_at >= ?", "online", cutoff).Order("last_seen_at DESC").Limit(100).Find(&nodes).Error; err != nil {
-		return model.Node{}, errors.New("could not select a storage node")
+func copyLocalFile(sourcePath, targetPath string) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
 	}
-	for _, node := range nodes {
+	defer source.Close()
+	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(target, source)
+	syncErr := target.Sync()
+	closeErr := target.Close()
+	if copyErr != nil {
+		_ = os.Remove(targetPath)
+		return copyErr
+	}
+	if syncErr != nil {
+		_ = os.Remove(targetPath)
+		return syncErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(targetPath)
+		return closeErr
+	}
+	return nil
+}
+
+func (s *Server) retryTask(c *gin.Context) {
+	taskID := c.Param("id")
+	if _, err := uuid.Parse(taskID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		return
+	}
+
+	var task model.Task
+	if err := s.db.WithContext(c.Request.Context()).First(&task, "id = ?", taskID).Error; err != nil {
+		notFoundOrError(c, err, "task")
+		return
+	}
+	if task.Status != "failed" {
+		c.JSON(http.StatusConflict, gin.H{"error": "only failed tasks can be retried"})
+		return
+	}
+	if task.TaskType != "store" || task.TargetNodeID == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "only failed storage tasks with a target node can be retried"})
+		return
+	}
+
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
+		return
+	}
+	if file.PreservationStatus == "verified" {
+		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; this failed historical task will not be retried"})
+		return
+	}
+	if file.SHA256 == nil || len(*file.SHA256) != 64 {
+		c.JSON(http.StatusConflict, gin.H{"error": "file has no valid expected SHA-256; ingest it again before retrying"})
+		return
+	}
+
+	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
+		return
+	}
+	stagingPath := filepath.Join(s.cfg.StagingDir, task.ID)
+	replacementProvided := false
+	if strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxIngestBytes+(1<<20))
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart retry upload; upload limit is 5 GiB"})
+			return
+		}
+		if c.Request.MultipartForm != nil {
+			defer c.Request.MultipartForm.RemoveAll()
+		}
+		fh, err := c.FormFile("file")
+		if err == nil {
+			replacementProvided = true
+			if fh.Size < 0 || fh.Size > maxIngestBytes {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file exceeds the 5 GiB MVP upload limit"})
+				return
+			}
+			if fh.Size != file.SizeBytes {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("replacement size mismatch: expected %d bytes, received %d", file.SizeBytes, fh.Size)})
+				return
+			}
+			source, err := fh.Open()
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "could not open replacement file"})
+				return
+			}
+			tmp, err := os.CreateTemp(s.cfg.StagingDir, ".retry-upload-*")
+			if err != nil {
+				_ = source.Close()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create retry staging file"})
+				return
+			}
+			tmpName := tmp.Name()
+			cleanupTmp := func() { _ = os.Remove(tmpName) }
+			hasher := sha256.New()
+			written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(source, maxIngestBytes+1))
+			_ = source.Close()
+			if copyErr != nil || written != fh.Size || written > maxIngestBytes {
+				_ = tmp.Close()
+				cleanupTmp()
+				c.JSON(http.StatusBadRequest, gin.H{"error": "replacement file could not be read completely"})
+				return
+			}
+			if err := tmp.Sync(); err != nil {
+				_ = tmp.Close()
+				cleanupTmp()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not sync retry staging file"})
+				return
+			}
+			if err := tmp.Close(); err != nil {
+				cleanupTmp()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not close retry staging file"})
+				return
+			}
+			gotSHA := hex.EncodeToString(hasher.Sum(nil))
+			if !strings.EqualFold(gotSHA, *file.SHA256) {
+				cleanupTmp()
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("replacement SHA-256 mismatch: expected %s, received %s", *file.SHA256, gotSHA)})
+				return
+			}
+			if err := os.Rename(tmpName, stagingPath); err != nil {
+				cleanupTmp()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not replace staged retry content"})
+				return
+			}
+		} else if !errors.Is(err, http.ErrMissingFile) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "multipart retry upload must use the optional 'file' field"})
+			return
+		}
+	}
+
+	if !replacementProvided {
+		gotSHA, gotSize, err := hashStagedFile(stagingPath)
+		if err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "staged source is missing or unreadable; retry with a replacement multipart file"})
+			return
+		}
+		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
+			c.JSON(http.StatusConflict, gin.H{"error": "staged source failed integrity verification; retry with a correct replacement multipart file"})
+			return
+		}
+	}
+
+	actor, _ := currentUser(c)
+	now := time.Now().UTC()
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var locked model.Task
+		if err := tx.Raw(`SELECT id, task_type, file_object_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at FROM tasks WHERE id = ? FOR UPDATE`, task.ID).Scan(&locked).Error; err != nil {
+			return err
+		}
+		if locked.ID == "" || locked.Status != "failed" {
+			return errors.New("task is no longer failed and cannot be retried")
+		}
+		var activeCount int64
+		if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND id <> ? AND status IN ('queued', 'running')", task.FileObjectID, task.ID).Count(&activeCount).Error; err != nil {
+			return err
+		}
+		if activeCount > 0 {
+			return errors.New("another active task already exists for this file object")
+		}
+		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+			"status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", task.FileObjectID).Updates(map[string]any{
+			"preservation_status": "queued", "public_download_enabled": false,
+		}).Error; err != nil {
+			return err
+		}
+		var placement model.Placement
+		placementErr := tx.Where("file_object_id = ? AND node_id = ?", task.FileObjectID, *task.TargetNodeID).First(&placement).Error
+		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
+			return tx.Create(&model.Placement{FileObjectID: task.FileObjectID, NodeID: *task.TargetNodeID, StorageKey: "objects/" + task.FileObjectID + "/" + task.ID, SHA256: file.SHA256, Status: "queued"}).Error
+		}
+		if placementErr != nil {
+			return placementErr
+		}
+		if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{
+			"status": "queued", "sha256": file.SHA256, "verified_at": nil,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{
+			ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "task", TargetID: &task.ID,
+			Action: "task.retry", Result: "success",
+			Reason: stringPtr("Administrator manually retried failed storage task; attempt counter reset and up to five attempts allowed"),
+		}).Error
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "no longer failed") || strings.Contains(err.Error(), "another active task") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not queue task retry"})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "status": "queued", "attempt_count": 0, "max_attempts": maxTaskAttempts, "source_verified": true})
+}
+
+func hashStagedFile(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	hasher := sha256.New()
+	size, err := io.Copy(hasher, f)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), size, nil
+}
+
+func (s *Server) selectNodesForCapacity(c *gin.Context, incoming int64, count int) ([]model.Node, error) {
+	var candidates []model.Node
+	cutoff := time.Now().UTC().Add(-2 * time.Minute)
+	if err := s.db.WithContext(c.Request.Context()).Where("status = ? AND last_seen_at >= ?", "online", cutoff).Order("available_bytes DESC, last_seen_at DESC").Limit(500).Find(&candidates).Error; err != nil {
+		return nil, errors.New("could not select storage nodes")
+	}
+	selected := make([]model.Node, 0, count)
+	for _, node := range candidates {
 		var reserved int64
 		err := s.db.WithContext(c.Request.Context()).Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN file_objects AS f ON f.id = t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued', 'running')", node.ID).Scan(&reserved).Error
 		if err != nil {
-			return model.Node{}, errors.New("could not calculate reserved node capacity")
+			return nil, errors.New("could not calculate reserved node capacity")
 		}
 		if node.AvailableBytes-reserved < incoming {
 			continue
@@ -387,9 +638,12 @@ func (s *Server) selectNodeForCapacity(c *gin.Context, incoming int64) (model.No
 		if node.RequestedCapacityBytes > 0 && node.UsedBytes+reserved+incoming > node.RequestedCapacityBytes {
 			continue
 		}
-		return node, nil
+		selected = append(selected, node)
+		if len(selected) == count {
+			return selected, nil
+		}
 	}
-	return model.Node{}, errors.New("no online node has enough free space and participant quota; start the node agent or reduce the file size")
+	return nil, fmt.Errorf("need %d online nodes with enough free space and participant quota; found %d eligible nodes", count, len(selected))
 }
 
 func (s *Server) claimNodeTask(c *gin.Context) {
@@ -402,33 +656,23 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		Task       model.Task
 		LeaseToken string
 	}
-	var exhaustedTaskIDs []string
 	noTask := false
 	leaseToken := uuid.NewString()
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// Capture exhausted leases so their staging files can be removed after the transaction commits.
-		if err := tx.Raw(`SELECT id FROM tasks WHERE target_node_id = ? AND status = 'running' AND lease_until < now() AND attempt_count >= ? FOR UPDATE`, node.ID, maxTaskAttempts).Scan(&exhaustedTaskIDs).Error; err != nil {
-			return err
-		}
-		// Expired leases that exhausted retries are terminal rather than stuck forever.
 		if err := tx.Exec(`UPDATE tasks SET status = 'failed', lease_until = NULL, lease_token = NULL,
 			last_error = COALESCE(last_error, 'task lease expired after maximum attempts'), updated_at = now()
-			WHERE target_node_id = ? AND status = 'running' AND lease_until < now() AND attempt_count >= ?`, node.ID, maxTaskAttempts).Error; err != nil {
+			WHERE ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
-			(SELECT file_object_id FROM tasks WHERE target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(`UPDATE file_objects SET preservation_status = 'error'
-			WHERE id IN (SELECT file_object_id FROM tasks WHERE target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')
-			AND preservation_status = 'queued'`, node.ID).Error; err != nil {
+			(SELECT file_object_id FROM tasks WHERE task_type = 'store' AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
 		err := tx.Raw(`SELECT id, task_type, file_object_id, source_node_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at
-			FROM tasks WHERE target_node_id = ? AND attempt_count < ? AND
-			(status = 'queued' OR (status = 'running' AND lease_until < now()))
-			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
+			FROM tasks WHERE ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
+			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
 			return err
 		}
@@ -440,8 +684,10 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			lease_until = ?, lease_token = ?, last_error = NULL, updated_at = now() WHERE id = ?`, time.Now().UTC().Add(nodeLeaseDuration), leaseToken, claimed.Task.ID).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", claimed.Task.FileObjectID, node.ID).Update("status", "running").Error; err != nil {
-			return err
+		if claimed.Task.TaskType == "store" {
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", claimed.Task.FileObjectID, node.ID).Update("status", "running").Error; err != nil {
+				return err
+			}
 		}
 		claimed.Task.Status = "running"
 		claimed.Task.AttemptCount++
@@ -452,9 +698,6 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not claim task"})
 		return
 	}
-	for _, exhaustedID := range exhaustedTaskIDs {
-		_ = os.Remove(filepath.Join(s.cfg.StagingDir, exhaustedID))
-	}
 	if noTask {
 		c.Status(http.StatusNoContent)
 		return
@@ -464,15 +707,20 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
 		return
 	}
+	placementNodeID := node.ID
+	if claimed.Task.TaskType == "replicate" {
+		placementNodeID = valueOrEmpty(claimed.Task.SourceNodeID)
+	}
 	var placement model.Placement
-	if err := s.db.WithContext(c.Request.Context()).First(&placement, "file_object_id = ? AND node_id = ?", file.ID, node.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task placement"})
+	if err := s.db.WithContext(c.Request.Context()).First(&placement, "file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "could not load source or target placement"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"task_id": claimed.Task.ID, "lease_token": claimed.LeaseToken, "file_object_id": file.ID,
+		"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken, "file_object_id": file.ID,
 		"original_filename": file.OriginalFilename, "size_bytes": file.SizeBytes, "sha256": file.SHA256,
 		"storage_key": placement.StorageKey, "attempt_count": claimed.Task.AttemptCount,
+		"source_node_id": claimed.Task.SourceNodeID, "target_node_id": claimed.Task.TargetNodeID,
 	})
 }
 
@@ -493,7 +741,7 @@ func (s *Server) nodeTaskContent(c *gin.Context) {
 		return
 	}
 	var count int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("id = ? AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).Count(&count).Error; err != nil || count != 1 {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("id = ? AND task_type = 'store' AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).Count(&count).Error; err != nil || count != 1 {
 		c.JSON(http.StatusConflict, gin.H{"error": "task lease is no longer valid"})
 		return
 	}
@@ -533,7 +781,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		return
 	}
 	var task model.Task
-	if err := s.db.WithContext(c.Request.Context()).First(&task, "id = ? AND target_node_id = ?", taskID, node.ID).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
 		notFoundOrError(c, err, "task")
 		return
 	}
@@ -546,6 +794,10 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "task lease token does not match"})
 		return
 	}
+	if task.TaskType == "replicate" && req.Status == "success" {
+		c.JSON(http.StatusConflict, gin.H{"error": "replicate tasks must upload source content to the replica-content endpoint"})
+		return
+	}
 	var file model.FileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
@@ -555,20 +807,21 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		req.Status = "failure"
 		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.SHA256), req.SizeBytes, req.SHA256)
 	}
-	terminal := false
-	var nextStatus string
+	terminal := req.Status == "failure" && task.AttemptCount >= maxTaskAttempts
+	nextStatus := "queued"
 	if req.Status == "success" {
 		nextStatus = "completed"
-	} else if task.AttemptCount >= maxTaskAttempts {
+	} else if terminal {
 		nextStatus = "failed"
-		terminal = true
-	} else {
-		nextStatus = "queued"
 	}
 	if req.Status == "failure" && strings.TrimSpace(req.Error) == "" {
 		req.Error = "node agent reported task failure"
 	}
 	now := time.Now().UTC()
+	placementNodeID := node.ID
+	if task.TaskType == "replicate" {
+		placementNodeID = valueOrEmpty(task.TargetNodeID)
+	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{"status": nextStatus, "lease_until": nil, "lease_token": nil, "updated_at": now}
 		if req.Status == "failure" {
@@ -583,40 +836,176 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		} else if terminal {
 			placementUpdates = map[string]any{"status": "error"}
 		}
-		if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(placementUpdates).Error; err != nil {
+		if task.TaskType == "store" || terminal {
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Updates(placementUpdates).Error; err != nil {
+				return err
+			}
+		}
+		if task.TaskType == "replicate" && terminal && (strings.Contains(req.Error, "source placement failed verification") || strings.Contains(req.Error, "could not read source placement") || strings.Contains(req.Error, "source replica failed size or SHA-256 validation")) {
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Update("status", "error").Error; err != nil {
+				return err
+			}
+		}
+		if req.Status == "success" && task.TaskType == "store" {
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}).Error; err != nil {
+				return err
+			}
+		}
+		result, action := "success", "node.task.completed"
+		if req.Status == "failure" {
+			result, action = "failure", "node.task.failed"
+		}
+		if err := tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: stringPtr(req.Error)}).Error; err != nil {
 			return err
 		}
-		if req.Status == "success" {
-			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "verified").Error; err != nil {
-				return err
-			}
-		} else if terminal {
-			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "error").Error; err != nil {
-				return err
-			}
-		}
-		result := "success"
-		action := "node.task.completed"
-		if req.Status == "failure" {
-			result = "failure"
-			action = "node.task.failed"
-		}
-		return tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: stringPtr(req.Error)}).Error
+		return recomputeFilePreservation(tx, file.ID)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not record task result"})
 		return
 	}
-	if req.Status == "success" || terminal {
+	if req.Status == "success" && task.TaskType == "store" {
 		_ = os.Remove(filepath.Join(s.cfg.StagingDir, task.ID))
 	}
-	preservationStatus := "queued"
-	if req.Status == "success" {
-		preservationStatus = "verified"
-	} else if terminal {
-		preservationStatus = "error"
+	var updatedFile model.FileObject
+	_ = s.db.WithContext(c.Request.Context()).Select("preservation_status").First(&updatedFile, "id = ?", file.ID).Error
+	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": updatedFile.PreservationStatus})
+}
+
+func (s *Server) replicaContent(c *gin.Context) {
+	node, ok := currentNode(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "node authentication required"})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": preservationStatus})
+	taskID := c.Param("taskID")
+	if _, err := uuid.Parse(taskID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		return
+	}
+	lease := c.Query("lease_token")
+	if _, err := uuid.Parse(lease); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid lease_token is required"})
+		return
+	}
+	var task model.Task
+	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&task).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "replication task lease is no longer valid"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load replica file"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxIngestBytes+1)
+	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
+		return
+	}
+	tmp, err := os.CreateTemp(s.cfg.StagingDir, ".replica-upload-*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create replica staging file"})
+		return
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+	hasher := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), c.Request.Body)
+	if copyErr != nil || written > maxIngestBytes {
+		_ = tmp.Close()
+		cleanup()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "replica content upload failed or exceeded size limit"})
+		return
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not sync replica staging file"})
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not close replica staging file"})
+		return
+	}
+	gotSHA := hex.EncodeToString(hasher.Sum(nil))
+	if written != file.SizeBytes || file.SHA256 == nil || !strings.EqualFold(gotSHA, *file.SHA256) {
+		cleanup()
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "source replica failed size or SHA-256 validation"})
+		return
+	}
+	stagingPath := filepath.Join(s.cfg.StagingDir, task.ID)
+	if err := os.Rename(tmpName, stagingPath); err != nil {
+		cleanup()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize replica staging file"})
+		return
+	}
+	now := time.Now().UTC()
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var locked model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&locked).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{"task_type": "store", "source_node_id": nil, "status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now}).Error; err != nil {
+			return err
+		}
+		storageKey := "objects/" + file.ID + "/" + task.ID
+		var placement model.Placement
+		placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, valueOrEmpty(task.TargetNodeID)).First(&placement).Error
+		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
+			if err := tx.Create(&model.Placement{FileObjectID: file.ID, NodeID: valueOrEmpty(task.TargetNodeID), StorageKey: storageKey, SHA256: file.SHA256, Status: "queued"}).Error; err != nil {
+				return err
+			}
+		} else if placementErr != nil {
+			return placementErr
+		} else {
+			storageKey = placement.StorageKey
+			if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.SHA256, "status": "queued", "verified_at": nil}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: "node.replication.source-uploaded", Result: "success", Reason: stringPtr("Verified source-node bytes staged for target-node storage")}).Error
+	})
+	if err != nil {
+		_ = os.Remove(stagingPath)
+		c.JSON(http.StatusConflict, gin.H{"error": "could not queue target-node storage after replication upload"})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "task_type": "store", "target_node_id": task.TargetNodeID, "status": "queued", "sha256": gotSHA, "size_bytes": written})
+}
+
+func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
+	var healthy int64
+	if err := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthy).Error; err != nil {
+		return err
+	}
+	var active int64
+	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", fileID).Count(&active).Error; err != nil {
+		return err
+	}
+	var missing int64
+	if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND status = 'missing'", fileID).Count(&missing).Error; err != nil {
+		return err
+	}
+	var offlineVerified int64
+	if err := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND (n.status <> 'online' OR n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '2 minutes')", fileID).Count(&offlineVerified).Error; err != nil {
+		return err
+	}
+	status := "queued"
+	if healthy >= 2 {
+		status = "verified"
+	} else if active == 0 && healthy == 1 {
+		status = "degraded"
+	} else if active == 0 && healthy == 0 && (missing > 0 || offlineVerified > 0) {
+		status = "missing"
+	} else if active == 0 && healthy == 0 {
+		status = "error"
+	}
+	return tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error
 }
 
 func valueOrEmpty(value *string) string {

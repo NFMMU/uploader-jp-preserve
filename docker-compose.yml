@@ -36,6 +36,22 @@ services:
       - node_data:/data
     restart: "no"
 
+  node-data-init-b:
+    image: alpine:3.20
+    command:
+      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
+    volumes:
+      - node_data_b:/data
+    restart: "no"
+
+  node-data-init-c:
+    image: alpine:3.20
+    command:
+      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
+    volumes:
+      - node_data_c:/data
+    restart: "no"
+
   # Atlas's container is distroless and has no /bin/sh. Keep commands as
   # direct Atlas invocations instead of wrapping them in a shell.
   # Development convenience: refresh the checksum before applying migrations.
@@ -107,7 +123,51 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  node-agent-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    environment:
+      CENTRAL_API_URL: http://api:8080
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_NAME: ${NODE_NAME_B:-local-node-b}
+      NODE_TYPE: B
+      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_B:-10737418240}
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+      - node_data_b:/data
+    depends_on:
+      api:
+        condition: service_started
+      node-data-init-b:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  node-agent-c:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    environment:
+      CENTRAL_API_URL: http://api:8080
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_NAME: ${NODE_NAME_C:-local-node-c}
+      NODE_TYPE: B
+      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_C:-10737418240}
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+      - node_data_c:/data
+    depends_on:
+      api:
+        condition: service_started
+      node-data-init-c:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   staging_data:
   node_data:
+  node_data_b:
+  node_data_c:

@@ -1,18 +1,20 @@
-# uploader.jp 魚拓作戦 — MVP-2: single-node preservation
+# uploader.jp 魚拓作戦 — MVP-3: distributed preservation
 
-Go API, PostgreSQL catalog, and a Go node agent. This implementation follows design document v1.1 and the decisions made during the project conversation.
+Go API, PostgreSQL catalog, and Go node agents. This implementation follows system design v1.3. Local Docker Compose starts three isolated demo nodes (one A node and two B nodes) so a spare target is available for failure-recovery tests; for production, each agent should run on its own host and storage volume.
 
-## MVP-2 scope
+## MVP-3 scope
 
 - A Go node agent enrolls with the central API using a shared enrollment secret, then stores its per-node bearer token in a persistent file with mode `0600`.
 - The agent reports actual filesystem capacity/free space, managed-object usage, the participant's requested quota, and its last-seen time.
-- An administrator uploads a file to temporary central staging. The API computes its SHA-256 and size, creates a storage task and placement, and keeps public downloads disabled.
-- The node agent polls for work, claims a task with a lease, downloads the staged bytes over the authenticated API, writes to its managed storage directory, re-hashes the final on-disk file, and reports the result.
-- The API compares the reported size/hash against the upload-time size/hash. Only a match marks the placement and file object `verified`.
-- Failures are retried up to five attempts. Expired task leases can be reclaimed; lease tokens prevent an older attempt from reporting over a newer attempt.
-- Task results are recorded in the audit log.
+- Nodes A/B enroll separately and report real capacity, available bytes, used bytes, requested quota, and heartbeat status.
+- An administrator uploads a file to temporary central staging. The API computes SHA-256 and size and creates independent storage tasks for two eligible online nodes.
+- Each node downloads from the authenticated API, writes into its own managed storage, re-hashes the final on-disk object, and reports its result.
+- A file is marked `verified` only when at least two placements are verified on online nodes. A single remaining healthy copy is `degraded`; task failures are retried up to five attempts.
+- If a verified file needs another copy, the API queues a `replicate` task on a verified source node. That agent verifies its local object and uploads it to central staging; the target node then stores and verifies it through the normal storage workflow.
+- A background reconciler marks stale nodes offline, marks unverified placements on those nodes missing, updates file preservation state, and queues replacement replicas when a healthy source and eligible target are available. Previously verified placement metadata is retained when a node is merely offline; the copy is treated as unavailable until the node returns.
+- Administrators can inspect placements, request replication, and trigger reconciliation. Task and placement actions are recorded in audit logs.
 
-This is the single-node MVP-2 slice, not yet multi-node replication or production deployment. The API stages a temporary copy centrally until the node confirms verification. Use only test or authorized content while validating this workflow.
+This is an MVP-3 implementation slice, not a production-ready deployment. Central staging is temporary relay space for transfers, not a permanent third replica. Use only test or authorized content while validating this workflow.
 
 ## Schema/code generation contract
 
@@ -30,17 +32,15 @@ Requirements: Docker Desktop / Docker Compose. Go 1.23+ and Atlas CLI are needed
 
 ```sh
 cp .env.example .env
-# Edit .env and set a unique JWT_SECRET (32+ bytes) and bootstrap admin password (12+ chars).
-# For a public deployment, also replace NODE_ENROLLMENT_TOKEN with a random secret (32+ chars).
 docker compose up --build
 ```
 
-Compose runs PostgreSQL, applies Atlas migrations, starts the API, and starts a local Go node agent. The node agent enrolls automatically and saves its credentials in the persistent `node_data` volume. On first startup, allow a short time for its first heartbeat.
+Compose runs PostgreSQL, applies Atlas migrations, starts the API, and starts three local Go node agents (`local-node-a`, `local-node-b`, and `local-node-c`). Each agent enrolls independently and saves its credential in its own persistent volume. On first startup, allow a short time for all three first heartbeats.
 
 ```sh
 curl -i http://localhost:8080/healthz
 docker compose ps
-docker compose logs --tail=100 node-agent
+docker compose logs --tail=100 node-agent node-agent-b node-agent-c
 ```
 
 API listens on `http://localhost:8080`. Health endpoint: `GET /healthz`.
@@ -57,50 +57,52 @@ curl -s http://localhost:8080/api/v1/auth/login \
 
 The first administrator is created only when the users table is empty. The bootstrap password is hashed with bcrypt; it is not stored in plaintext. After initial setup, remove the bootstrap password from deployment environment configuration.
 
-## End-to-end MVP-2 smoke test
+## End-to-end MVP-3 smoke test
 
 Set the access token from login. Do not paste credentials or bearer tokens into logs or chat.
 
 ```sh
 export TOKEN='your-admin-access-token'
 
-# 1. Confirm that the local node agent has enrolled and is online.
 curl -sS http://localhost:8080/api/v1/nodes \
   -H "Authorization: Bearer $TOKEN"
 
-# 2. Create a catalog entry (the source URL must be an HTTPS uploader.jp URL).
 ARTIFACT=$(curl -sS -X POST http://localhost:8080/api/v1/artifacts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"MVP-2 test artifact","source_url":"https://www.uploader.jp/"}')
+  -d '{"title":"MVP-3 test artifact","source_url":"https://www.uploader.jp/"}')
 export ARTIFACT_ID=$(printf '%s' "$ARTIFACT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
-# 3. Create the logical file record. It remains private regardless of policy.
 FILE=$(curl -sS -X POST "http://localhost:8080/api/v1/artifacts/$ARTIFACT_ID/files" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"original_filename":"sample.txt","size_bytes":0,"media_type":"text/plain","redistribution_policy":"pending"}')
 export FILE_ID=$(printf '%s' "$FILE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
-# 4. Upload a small test file and queue storage on the node agent.
-printf 'uploader.jp archive MVP-2 test\n' > /tmp/archive-sample.txt
+printf 'uploader.jp archive MVP-3 test\n' > /tmp/archive-sample.txt
 curl -i -X POST "http://localhost:8080/api/v1/files/$FILE_ID/ingest" \
   -H "Authorization: Bearer $TOKEN" \
   -F 'file=@/tmp/archive-sample.txt;type=text/plain' -F 'priority=3'
 
-# 5. Wait a few seconds, then inspect task and file status.
 curl -sS 'http://localhost:8080/api/v1/tasks' \
   -H "Authorization: Bearer $TOKEN"
 curl -sS "http://localhost:8080/api/v1/files/$FILE_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected result: the ingest endpoint returns `202 Accepted`; the task becomes `completed`; the placement and file preservation status become `verified`; the file has a SHA-256 value and actual size; `public_download_enabled` remains `false` because the redistribution policy is `pending`.
+Expected result: the ingest endpoint returns `202 Accepted` with two tasks and two target nodes. Both tasks should become `completed`; the placements endpoint should report `healthy_replica_count: 2`; file `preservation_status` becomes `verified`; `public_download_enabled` remains `false` because the redistribution policy is `pending`.
+
+```sh
+curl -sS "http://localhost:8080/api/v1/files/$FILE_ID/placements" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+To manually ask the system to create another copy for an existing file, or to test the placement repair path, use `POST /api/v1/files/:id/replicate`. The API schedules a source-node transfer only when another healthy copy is needed and an eligible target node is available. To trigger an immediate health/placement reconciliation during testing, call `POST /api/v1/admin/placements/reconcile`.
 
 To inspect node state or task failures:
 
 ```sh
 curl -sS http://localhost:8080/api/v1/nodes -H "Authorization: Bearer $TOKEN"
 curl -sS 'http://localhost:8080/api/v1/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
-docker compose logs --tail=200 node-agent api migrate
+docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 ```
 
 ## MVP-1 API surface
@@ -113,18 +115,48 @@ docker compose logs --tail=200 node-agent api migrate
 - `POST /api/v1/public-requests`, `GET /api/v1/public-requests`, `PATCH /api/v1/public-requests/:id`
 - `POST /api/v1/admin/users`, `GET /api/v1/admin/users`, `GET /api/v1/admin/audit-logs`
 
-## MVP-2 API surface
+## MVP-2 and MVP-3 API surface
 
 - `POST /api/v1/nodes/register` — one-time enrollment with `X-Node-Enrollment-Token`
 - `POST /api/v1/nodes/:id/heartbeat` — node-token authenticated capacity report
 - `GET /api/v1/nodes` — admin/reviewer node list
 - `GET /api/v1/tasks?status=...` — admin/reviewer task list
-- `POST /api/v1/files/:id/ingest` — admin-only multipart upload (`file` field)
-- `POST /api/v1/nodes/:id/tasks/claim` — node-token authenticated task claim
-- `GET /api/v1/nodes/:id/tasks/:taskID/content?lease_token=...` — authenticated task content
+- `POST /api/v1/tasks/:id/retry` — admin-only retry for a failed storage task; optionally send a replacement `file` as multipart data if staged source content is missing or corrupt
+- `POST /api/v1/files/:id/ingest` — admin-only multipart upload; queues two placements on separate eligible nodes
+- `GET /api/v1/files/:id/placements` — admin/reviewer placement status and healthy replica count
+- `POST /api/v1/files/:id/replicate` — admin-only manual request to create a replacement replica when needed
+- `POST /api/v1/admin/placements/reconcile` — admin-only immediate reconciliation
+- `POST /api/v1/nodes/:id/tasks/claim` — node-token authenticated storage or replication task claim
+- `GET /api/v1/nodes/:id/tasks/:taskID/content?lease_token=...` — authenticated central-staged task content for target storage
+- `POST /api/v1/nodes/:id/tasks/:taskID/replica-content?lease_token=...` — source-node authenticated relay upload for a replica
 - `POST /api/v1/nodes/:id/tasks/:taskID/result` — authenticated hash/size result
 
 The node credential is returned only at enrollment; the database stores only its SHA-256 hash. Do not expose the enrollment secret. Node storage is not exposed directly to end users.
+
+### Administrator retry example
+
+If the staged source is intact, a retry can be queued without uploading a replacement:
+
+```sh
+curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+If the staged source is missing or fails integrity verification, provide the correct original file (it must match the file object's recorded size and SHA-256):
+
+```sh
+curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@/path/to/correct-file'
+```
+
+## MVP-3 placement behavior
+
+- New ingests require two online nodes with sufficient actual free space and requested participant quota. If fewer than two nodes are eligible, ingestion returns `409 Conflict` rather than silently claiming the file is fully replicated.
+- Each target has its own task ID and temporary staged payload. A successful target removes its own staged payload; a failed target keeps it available for administrator retry.
+- A replication task is claimed by the source node, which re-checks the source object's size and SHA-256 before relaying it. The API validates the bytes again before queuing target storage. The target agent then uses the same write-and-verify path as an initial ingest.
+- The file becomes `verified` only with at least two healthy verified placements. One healthy copy is `degraded`; if no verified copy is currently reachable, the file is `missing`; a terminal storage error with no verified placement is `error`.
+- Automatic reconciliation runs every 30 seconds and treats a node with no heartbeat for two minutes as offline. It does not delete physical data on a node that has gone offline.
 
 ## Capacity settings
 
@@ -135,9 +167,13 @@ The node credential is returned only at enrollment; the database stores only its
 ## Safety defaults and limitations
 
 - New file objects default to `preservation_status=uncollected`, `redistribution_policy=unknown`, and `public_download_enabled=false`.
-- Preserving a file is separate from permission to redistribute it. MVP-2 does not provide a public download route.
+- Preserving a file is separate from permission to redistribute it. MVP-3 does not provide a public download route.
 - Uploads are limited to 5 GiB per request in this MVP. Large-file resumable uploads are not implemented.
-- Task attempts are limited to five; multipart field `priority` is optional (default `3`), values must be `0`–`5`, and the current scheduler orders `5` first and `0` last.
+- Each execution run is limited to five attempts. An administrator can retry a terminally failed storage task; retry resets `attempt_count` to `0`, revalidates staged content against the expected size and SHA-256, and gives the task up to five new attempts. Prior task-result events and retry actions remain in the audit log.
+- Failed tasks retain their staged source payload for possible administrator retry. On retry, a replacement payload may be uploaded with `-F 'file=@/path/to/correct-file'`; it must match the file object's expected size and SHA-256. A successful task removes its staged payload. The node agent removes stale unverified destination data and abandoned `.partial-*` files before each attempt; failed payloads are never marked `verified`.
+- Multipart field `priority` on ingestion is optional (default `3`), values must be `0`–`5`, and the current scheduler orders `5` first and `0` last.
 - The local Compose enrollment token is for development only. Production needs a unique secret, TLS, stronger node identity/lifecycle controls, rate limits, monitoring, backup/restore testing, and a documented credential rotation/revocation process.
-- Multi-node replication, source-page crawling, direct object upload from external sources, central delivery gateway, node removal, OTel/Grafana, and public request escalation are later milestones.
+- The local three-node Compose setup demonstrates placement and repair logic on one physical host only; it does not provide independent failure domains. Production nodes should run on separate hosts/storage systems.
+- The reconciler can queue a replacement only when at least one verified source and a different eligible target node are online. If one of exactly two nodes is offline, the remaining copy stays degraded until the offline node returns or a third node joins.
+- Source-page crawling, direct object upload from external sources, central delivery gateway, OTel/Grafana, and public request escalation are later milestones.
 - Do not expose the service publicly until TLS termination, secrets, backups, rate limiting, and operational controls are configured.

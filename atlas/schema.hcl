@@ -466,6 +466,9 @@ table "tasks" {
     unique = true
     columns = [column.lease_token]
   }
+  index "tasks_source_node_status_idx" {
+    columns = [column.source_node_id, column.status]
+  }
   check "tasks_priority_check" {
     expr = "priority BETWEEN 0 AND 5"
   }

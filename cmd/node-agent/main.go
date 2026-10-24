@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const agentVersion = "0.2.0"
+const agentVersion = "0.3.0"
 
 type config struct {
 	APIURL      string
@@ -42,6 +42,9 @@ type credentials struct {
 
 type task struct {
 	TaskID           string  `json:"task_id"`
+	TaskType         string  `json:"task_type"`
+	SourceNodeID     *string `json:"source_node_id"`
+	TargetNodeID     *string `json:"target_node_id"`
 	LeaseToken       string  `json:"lease_token"`
 	FileObjectID     string  `json:"file_object_id"`
 	OriginalFilename string  `json:"original_filename"`
@@ -291,7 +294,15 @@ func (a *agent) claimAndProcess(ctx context.Context) error {
 	if t.TaskID == "" || t.LeaseToken == "" || t.StorageKey == "" || t.SHA256 == nil {
 		return errors.New("central API returned an incomplete storage task")
 	}
-	a.log.Info("task_claimed", "task_id", t.TaskID, "file_object_id", t.FileObjectID, "attempt", t.AttemptCount)
+	a.log.Info("task_claimed", "task_id", t.TaskID, "task_type", t.TaskType, "file_object_id", t.FileObjectID, "attempt", t.AttemptCount)
+	if t.TaskType == "replicate" {
+		if err := a.uploadReplica(ctx, t); err != nil {
+			a.log.Warn("replica_upload_failed", "task_id", t.TaskID, "error", err)
+			return a.reportResult(ctx, t, map[string]any{"lease_token": t.LeaseToken, "status": "failure", "error": truncate(err.Error(), 1900)})
+		}
+		a.log.Info("replica_source_uploaded", "task_id", t.TaskID, "target_node_id", t.TargetNodeID)
+		return nil
+	}
 	sha, size, err := a.downloadAndStore(ctx, t)
 	if err != nil {
 		a.log.Warn("task_storage_failed", "task_id", t.TaskID, "error", err)
@@ -307,12 +318,58 @@ func (a *agent) claimAndProcess(ctx context.Context) error {
 	return nil
 }
 
+func (a *agent) uploadReplica(ctx context.Context, t task) error {
+	if t.TargetNodeID == nil || *t.TargetNodeID == "" {
+		return errors.New("replication task has no target node")
+	}
+	sourcePath, err := safeStoragePath(a.cfg.StoragePath, t.StorageKey)
+	if err != nil {
+		return err
+	}
+	sha, size, err := hashFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("could not read source placement: %w", err)
+	}
+	if size != t.SizeBytes || t.SHA256 == nil || !strings.EqualFold(sha, *t.SHA256) {
+		return fmt.Errorf("source placement failed verification: expected size=%d sha256=%v, received size=%d sha256=%s", t.SizeBytes, t.SHA256, size, sha)
+	}
+	f, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	uploadURL := a.cfg.APIURL + "/api/v1/nodes/" + a.creds.NodeID + "/tasks/" + t.TaskID + "/replica-content?lease_token=" + url.QueryEscape(t.LeaseToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, f)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+a.creds.Token)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = size
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("replica content upload returned %s: %s", resp.Status, strings.TrimSpace(string(payload)))
+	}
+	return nil
+}
+
 func (a *agent) downloadAndStore(ctx context.Context, t task) (string, int64, error) {
 	destination, err := safeStoragePath(a.cfg.StoragePath, t.StorageKey)
 	if err != nil {
 		return "", 0, err
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
+		return "", 0, err
+	}
+	// A queued retry is not a verified placement. Remove any final object left by
+	// an earlier failed attempt, as well as abandoned partial downloads, before
+	// receiving the payload again.
+	if err := cleanupUnverifiedObject(destination); err != nil {
 		return "", 0, err
 	}
 	contentURL := a.cfg.APIURL + "/api/v1/nodes/" + a.creds.NodeID + "/tasks/" + t.TaskID + "/content?lease_token=" + url.QueryEscape(t.LeaseToken)
@@ -372,6 +429,22 @@ func (a *agent) downloadAndStore(ctx context.Context, t task) (string, int64, er
 		return finalSHA, finalSize, errors.New("post-write verification failed")
 	}
 	return finalSHA, finalSize, nil
+}
+
+func cleanupUnverifiedObject(destination string) error {
+	if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("could not remove stale unverified object: %w", err)
+	}
+	partials, err := filepath.Glob(filepath.Join(filepath.Dir(destination), ".partial-*"))
+	if err != nil {
+		return err
+	}
+	for _, partial := range partials {
+		if err := os.Remove(partial); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("could not remove stale partial object: %w", err)
+		}
+	}
+	return nil
 }
 
 func safeStoragePath(root, key string) (string, error) {

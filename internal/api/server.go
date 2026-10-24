@@ -36,6 +36,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1.POST("/nodes/:id/tasks/claim", s.authenticateNode(), s.claimNodeTask)
 	v1.GET("/nodes/:id/tasks/:taskID/content", s.authenticateNode(), s.nodeTaskContent)
 	v1.POST("/nodes/:id/tasks/:taskID/result", s.authenticateNode(), s.nodeTaskResult)
+	v1.POST("/nodes/:id/tasks/:taskID/replica-content", s.authenticateNode(), s.replicaContent)
 
 	auth := v1.Group("")
 	auth.Use(s.authenticate())
@@ -46,9 +47,13 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/artifacts/:id/files", s.requireRoles("admin"), s.createFileObject)
 	auth.GET("/files", s.listFiles)
 	auth.GET("/files/:id", s.getFileObject)
+	auth.GET("/files/:id/placements", s.requireRoles("admin", "reviewer"), s.listPlacements)
+	auth.POST("/files/:id/replicate", s.requireRoles("admin"), s.requestReplica)
 	auth.POST("/files/:id/ingest", s.requireRoles("admin"), s.ingestFile)
 	auth.GET("/nodes", s.requireRoles("admin", "reviewer"), s.listNodes)
 	auth.GET("/tasks", s.requireRoles("admin", "reviewer"), s.listTasks)
+	auth.POST("/admin/placements/reconcile", s.requireRoles("admin"), s.reconcileNow)
+	auth.POST("/tasks/:id/retry", s.requireRoles("admin"), s.retryTask)
 	auth.PATCH("/files/:id/policy", s.requireRoles("admin", "reviewer"), s.updateFilePolicy)
 	auth.PATCH("/files/:id/publication", s.requireRoles("admin"), s.updatePublicationFlag)
 	auth.GET("/export", s.exportCatalog)
@@ -58,6 +63,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.GET("/admin/users", s.requireRoles("admin"), s.listUsers)
 	auth.PATCH("/admin/users/:id", s.requireRoles("admin"), s.updateUser)
 	auth.GET("/admin/audit-logs", s.requireRoles("admin"), s.listAuditLogs)
+	go s.runPlacementReconciler()
 	return r
 }
 
