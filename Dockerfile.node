@@ -4,9 +4,11 @@ RUN apk add --no-cache ca-certificates git
 COPY go.mod ./
 COPY . .
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/node-agent ./cmd/node-agent
+RUN mkdir -p /data/objects && chown -R 65532:65532 /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /
 COPY --from=build /out/node-agent /node-agent
+COPY --from=build --chown=65532:65532 /data /data
 USER nonroot:nonroot
 ENTRYPOINT ["/node-agent"]

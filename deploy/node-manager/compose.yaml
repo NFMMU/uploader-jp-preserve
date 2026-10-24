@@ -1,0 +1,23 @@
+services:
+  node-manager:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.manager
+    image: archive-node-manager:local
+    environment:
+      LISTEN_ADDR: :8080
+      MANAGER_CONFIG_DIR: /var/lib/archive-node-manager
+      DOCKER_SOCKET: /var/run/docker.sock
+      NODE_AGENT_IMAGE: ${NODE_AGENT_IMAGE:-archive-node-agent:local}
+      NODE_DATA_VOLUME: ${NODE_DATA_VOLUME:-archive-node-data}
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-true}
+    ports:
+      - "127.0.0.1:${MANAGER_PORT:-8780}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - manager_config:/var/lib/archive-node-manager
+    restart: unless-stopped
+
+volumes:
+  manager_config:
+    name: archive-node-manager-config
