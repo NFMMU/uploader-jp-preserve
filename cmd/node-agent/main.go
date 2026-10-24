@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const agentVersion = "0.3.0"
+const agentVersion = "0.4.0"
 
 type config struct {
 	APIURL      string
@@ -303,6 +303,23 @@ func (a *agent) claimAndProcess(ctx context.Context) error {
 		a.log.Info("replica_source_uploaded", "task_id", t.TaskID, "target_node_id", t.TargetNodeID)
 		return nil
 	}
+	if t.TaskType == "delete" {
+		if err := a.deleteStoredObject(t.StorageKey); err != nil {
+			a.log.Warn("object_delete_failed", "task_id", t.TaskID, "error", err)
+			return a.reportResult(ctx, t, map[string]any{"lease_token": t.LeaseToken, "status": "failure", "error": truncate(err.Error(), 1900)})
+		}
+		if err := a.reportResult(ctx, t, map[string]any{"lease_token": t.LeaseToken, "status": "success"}); err != nil {
+			return err
+		}
+		a.log.Info("object_deleted", "task_id", t.TaskID, "file_object_id", t.FileObjectID, "storage_key", t.StorageKey)
+		if err := a.heartbeat(ctx); err != nil {
+			a.log.Warn("post_task_heartbeat_failed", "error", err)
+		}
+		return nil
+	}
+	if t.TaskType != "store" {
+		return fmt.Errorf("unsupported task type %q", t.TaskType)
+	}
 	sha, size, err := a.downloadAndStore(ctx, t)
 	if err != nil {
 		a.log.Warn("task_storage_failed", "task_id", t.TaskID, "error", err)
@@ -443,6 +460,17 @@ func cleanupUnverifiedObject(destination string) error {
 		if err := os.Remove(partial); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("could not remove stale partial object: %w", err)
 		}
+	}
+	return nil
+}
+
+func (a *agent) deleteStoredObject(storageKey string) error {
+	path, err := safeStoragePath(a.cfg.StoragePath, storageKey)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("could not remove stored object: %w", err)
 	}
 	return nil
 }

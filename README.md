@@ -12,6 +12,7 @@ Go API, PostgreSQL catalog, and Go node agents. This implementation follows syst
 - A file is marked `verified` only when at least two placements are verified on online nodes. A single remaining healthy copy is `degraded`; task failures are retried up to five attempts.
 - If a verified file needs another copy, the API queues a `replicate` task on a verified source node. That agent verifies its local object and uploads it to central staging; the target node then stores and verifies it through the normal storage workflow.
 - A background reconciler marks stale nodes offline, marks unverified placements on those nodes missing, updates file preservation state, and queues replacement replicas when a healthy source and eligible target are available. Previously verified placement metadata is retained when a node is merely offline; the copy is treated as unavailable until the node returns.
+- The required healthy replica count is two, with one extra healthy replica allowed (maximum three). If more than three online verified placements exist, the reconciler queues one surplus deletion at a time, only when no task for that file is active, every online node holding the file has been continuously online for at least five minutes, and the newest verified placement is at least five minutes old. Deletion runs as a node-agent task; the placement is marked `deleted` only after the agent confirms success. Failed or uncertain deletion is not counted as healthy.
 - Administrators can inspect placements, request replication, and trigger reconciliation. Task and placement actions are recorded in audit logs.
 
 This is an MVP-3 implementation slice, not a production-ready deployment. Central staging is temporary relay space for transfers, not a permanent third replica. Use only test or authorized content while validating this workflow.
@@ -126,7 +127,7 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 - `GET /api/v1/files/:id/placements` — admin/reviewer placement status and healthy replica count
 - `POST /api/v1/files/:id/replicate` — admin-only manual request to create a replacement replica when needed
 - `POST /api/v1/admin/placements/reconcile` — admin-only immediate reconciliation
-- `POST /api/v1/nodes/:id/tasks/claim` — node-token authenticated storage or replication task claim
+- `POST /api/v1/nodes/:id/tasks/claim` — node-token authenticated store, replicate, or surplus-delete task claim
 - `GET /api/v1/nodes/:id/tasks/:taskID/content?lease_token=...` — authenticated central-staged task content for target storage
 - `POST /api/v1/nodes/:id/tasks/:taskID/replica-content?lease_token=...` — source-node authenticated relay upload for a replica
 - `POST /api/v1/nodes/:id/tasks/:taskID/result` — authenticated hash/size result
@@ -157,6 +158,7 @@ curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
 - A replication task is claimed by the source node, which re-checks the source object's size and SHA-256 before relaying it. The API validates the bytes again before queuing target storage. The target agent then uses the same write-and-verify path as an initial ingest.
 - The file becomes `verified` only with at least two healthy verified placements. One healthy copy is `degraded`; if no verified copy is currently reachable, the file is `missing`; a terminal storage error with no verified placement is `error`.
 - Automatic reconciliation runs every 30 seconds and treats a node with no heartbeat for two minutes as offline. It does not delete physical data on a node that has gone offline.
+- Surplus policy: keep the required two healthy replicas plus one spare. When there are four or more healthy replicas, queue a deletion task for the newest verified placement only after all online nodes holding the file have been continuously online for at least five minutes and that placement was verified at least five minutes ago. At most one deletion task per file runs at a time, and no deletion is queued while any other task for that file is active. The node agent deletes only the exact managed storage key; deletion of an already-absent object is idempotent. Placement status changes to `deleted` only after success is reported. A failed/uncertain deletion is marked `error` and never counted as a healthy replica.
 
 ## Capacity settings
 
@@ -177,3 +179,19 @@ curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
 - The reconciler can queue a replacement only when at least one verified source and a different eligible target node are online. If one of exactly two nodes is offline, the remaining copy stays degraded until the offline node returns or a third node joins.
 - Source-page crawling, direct object upload from external sources, central delivery gateway, OTel/Grafana, and public request escalation are later milestones.
 - Do not expose the service publicly until TLS termination, secrets, backups, rate limiting, and operational controls are configured.
+
+### Optional fourth node for surplus-replica cleanup testing
+
+The Compose file includes `node-agent-d` with its own `node_data_d` volume. It is intended for local testing of the cleanup rule that retains two required replicas plus one spare. To test the real transfer and deletion path, first bring node D online, temporarily stop nodes B and C so the normal repair path creates a verified copy on D, then restart B and C. After all four copies and all relevant nodes have remained stable for at least five minutes, reconciliation should delete only the newest surplus placement. Do not remove Docker volumes or edit placement rows manually.
+
+## Automated surplus-replica regression test
+
+Run the surplus cleanup integration tests against a disposable PostgreSQL instance on `127.0.0.1:55432`:
+
+```sh
+./scripts/test-surplus-cleanup.sh
+```
+
+The script starts a separate `postgres-test` service using `docker-compose.test.yml`, applies the Atlas SQL migrations, runs the `internal/api` integration tests, and removes only that temporary test container/network on exit. It does not connect to the application's PostgreSQL service on port `5432` and does not remove Docker volumes. The integration test refuses to run unless the database URL points to localhost database `archive_test`.
+
+The test covers stable four-replica cleanup, idempotency, retaining three replicas, blocking cleanup while a task is active, and cooldowns after a node comes online or a replica is verified.

@@ -52,6 +52,14 @@ services:
       - node_data_c:/data
     restart: "no"
 
+  node-data-init-d:
+    image: alpine:3.20
+    command:
+      ["sh", "-ec", "mkdir -p /data/objects && chown -R 65532:65532 /data"]
+    volumes:
+      - node_data_d:/data
+    restart: "no"
+
   # Atlas's container is distroless and has no /bin/sh. Keep commands as
   # direct Atlas invocations instead of wrapping them in a shell.
   # Development convenience: refresh the checksum before applying migrations.
@@ -165,9 +173,31 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  node-agent-d:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    environment:
+      CENTRAL_API_URL: http://api:8080
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_NAME: ${NODE_NAME_D:-local-node-d}
+      NODE_TYPE: B
+      NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_D:-10737418240}
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+      - node_data_d:/data
+    depends_on:
+      api:
+        condition: service_started
+      node-data-init-d:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   staging_data:
   node_data:
   node_data_b:
   node_data_c:
+  node_data_d:

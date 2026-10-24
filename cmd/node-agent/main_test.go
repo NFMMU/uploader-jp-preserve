@@ -68,3 +68,27 @@ func TestCleanupUnverifiedObject(t *testing.T) {
 		t.Errorf("unrelated file was not preserved: content=%q err=%v", string(b), err)
 	}
 }
+
+func TestDeleteStoredObject(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "objects", "file-id", "task-id")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stored"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &agent{cfg: config{StoragePath: root}}
+	if err := a.deleteStoredObject("objects/file-id/task-id"); err != nil {
+		t.Fatalf("deleteStoredObject returned error: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected object to be removed, stat error = %v", err)
+	}
+	if err := a.deleteStoredObject("objects/file-id/task-id"); err != nil {
+		t.Fatalf("deleting an already absent object should be idempotent: %v", err)
+	}
+	if err := a.deleteStoredObject("../outside"); err == nil {
+		t.Fatal("expected path traversal to be rejected")
+	}
+}

@@ -13,7 +13,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const requiredReplicaCount = 2
+const (
+	requiredReplicaCount   = 2
+	maxHealthyReplicaCount = requiredReplicaCount + 1
+	surplusReplicaCooldown = 5 * time.Minute
+)
 
 type placementStatusView struct {
 	ID         string     `json:"id"`
@@ -112,14 +116,14 @@ func (s *Server) runPlacementReconciler() {
 func (s *Server) reconcilePlacements(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
-	if err := db.Exec("UPDATE nodes SET status = 'offline', updated_at = now() WHERE status <> 'offline' AND (last_seen_at IS NULL OR last_seen_at < ?)", cutoff).Error; err != nil {
+	if err := db.Exec("UPDATE nodes SET status = 'offline', online_since = NULL, updated_at = now() WHERE status <> 'offline' AND (last_seen_at IS NULL OR last_seen_at < ?)", cutoff).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`UPDATE tasks AS t SET status='failed', last_error=COALESCE(t.last_error, 'node went offline during placement task'), lease_until=NULL, lease_token=NULL, updated_at=now()
-		WHERE t.status IN ('queued','running') AND ((t.task_type='store' AND t.target_node_id IN (SELECT id FROM nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM nodes WHERE status='offline')))`).Error; err != nil {
+		WHERE t.status IN ('queued','running') AND ((t.task_type IN ('store','delete') AND t.target_node_id IN (SELECT id FROM nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM nodes WHERE status='offline')))`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM nodes WHERE status='offline') AND status IN ('queued','running','stored')`).Error; err != nil {
+	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM nodes WHERE status='offline') AND status IN ('queued','running','stored','deleting')`).Error; err != nil {
 		return err
 	}
 	var fileIDs []string
@@ -134,8 +138,92 @@ func (s *Server) reconcilePlacements(ctx context.Context) error {
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		if err := s.scheduleSurplusPlacementDeletion(ctx, fileID); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// shouldQueueSurplusDeletion keeps one spare healthy replica beyond the required minimum.
+// It queues at most one deletion task per file at a time so repeated reconciliation is idempotent.
+func shouldQueueSurplusDeletion(healthyCount, activeTaskCount int64) bool {
+	return healthyCount > maxHealthyReplicaCount && activeTaskCount == 0
+}
+
+func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var file model.FileObject
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		var activeTasks int64
+		if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", fileID).Count(&activeTasks).Error; err != nil {
+			return err
+		}
+		if activeTasks > 0 {
+			return nil
+		}
+
+		cutoff := time.Now().UTC().Add(-2 * time.Minute)
+		type candidate struct {
+			PlacementID string
+			NodeID      string
+			NodeName    string
+			VerifiedAt  *time.Time
+			OnlineSince *time.Time
+		}
+		var healthy []candidate
+		if err := tx.Table("placements AS p").
+			Select("p.id AS placement_id, p.node_id, n.name AS node_name, p.verified_at, n.online_since").
+			Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).
+			Order("p.verified_at DESC NULLS LAST, p.created_at DESC").Find(&healthy).Error; err != nil {
+			return err
+		}
+		if !shouldQueueSurplusDeletion(int64(len(healthy)), activeTasks) {
+			return nil
+		}
+
+		// Wait until every online node holding this file has remained continuously
+		// online for five minutes. This prevents cleanup immediately after a node recovers.
+		stableCutoff := time.Now().UTC().Add(-surplusReplicaCooldown)
+		for _, placement := range healthy {
+			if placement.OnlineSince == nil || placement.OnlineSince.After(stableCutoff) {
+				return nil
+			}
+		}
+		// Candidates are sorted newest-first. Do not remove a newly verified copy until
+		// it has itself been stable for the same cooldown period.
+		candidateToDelete := healthy[0]
+		if candidateToDelete.VerifiedAt == nil || candidateToDelete.VerifiedAt.After(stableCutoff) {
+			return nil
+		}
+
+		result := tx.Model(&model.Placement{}).Where("id = ? AND status = 'verified'", candidateToDelete.PlacementID).Update("status", "deleting")
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+
+		taskID := uuid.NewString()
+		targetNodeID := candidateToDelete.NodeID
+		task := model.Task{ID: taskID, TaskType: "delete", FileObjectID: fileID, TargetNodeID: &targetNodeID, Status: "queued", Priority: 0}
+		if err := tx.Create(&task).Error; err != nil {
+			return err
+		}
+		return tx.Create(&model.AuditLog{
+			ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID,
+			Action: "placement.replica.deletion_queued", Result: "success",
+			Reason: stringPtr("Queued deletion of surplus verified replica on node " + candidateToDelete.NodeName + "; retaining at most one spare beyond the required replica count"),
+		}).Error
+	})
 }
 
 func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID, sourceNodeID, targetNodeID string, scheduled bool, reason string, err error) {

@@ -278,6 +278,10 @@ table "nodes" {
     type = timestamptz
     null = true
   }
+  column "online_since" {
+    type = timestamptz
+    null = true
+  }
   column "agent_version" {
     type = varchar(64)
     null = true

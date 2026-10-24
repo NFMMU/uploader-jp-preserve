@@ -155,6 +155,9 @@ func (s *Server) nodeHeartbeat(c *gin.Context) {
 		"available_bytes": req.AvailableBytes, "requested_capacity_bytes": req.RequestedCapacityBytes,
 		"agent_version": strings.TrimSpace(req.AgentVersion), "last_seen_at": now, "updated_at": now,
 	}
+	if node.Status != "online" || node.LastSeenAt == nil || time.Since(*node.LastSeenAt) > 2*time.Minute {
+		updates["online_since"] = now
+	}
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.Node{}).Where("id = ?", node.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update node heartbeat"})
 		return
@@ -661,16 +664,16 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`UPDATE tasks SET status = 'failed', lease_until = NULL, lease_token = NULL,
 			last_error = COALESCE(last_error, 'task lease expired after maximum attempts'), updated_at = now()
-			WHERE ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			WHERE ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
 			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
-			(SELECT file_object_id FROM tasks WHERE task_type = 'store' AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
+			(SELECT file_object_id FROM tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
 		err := tx.Raw(`SELECT id, task_type, file_object_id, source_node_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at
-			FROM tasks WHERE ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
+			FROM tasks WHERE ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
 			AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
 			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
@@ -781,7 +784,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		return
 	}
 	var task model.Task
-	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type = 'store' AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type IN ('store','delete') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
 		notFoundOrError(c, err, "task")
 		return
 	}
@@ -803,7 +806,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
 		return
 	}
-	if req.Status == "success" && (file.SHA256 == nil || !strings.EqualFold(*file.SHA256, req.SHA256) || file.SizeBytes != req.SizeBytes) {
+	if req.Status == "success" && task.TaskType != "delete" && (file.SHA256 == nil || !strings.EqualFold(*file.SHA256, req.SHA256) || file.SizeBytes != req.SizeBytes) {
 		req.Status = "failure"
 		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.SHA256), req.SizeBytes, req.SHA256)
 	}
@@ -832,11 +835,15 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		}
 		placementUpdates := map[string]any{"status": "queued"}
 		if req.Status == "success" {
-			placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}
+			if task.TaskType == "delete" {
+				placementUpdates = map[string]any{"status": "deleted"}
+			} else {
+				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}
+			}
 		} else if terminal {
 			placementUpdates = map[string]any{"status": "error"}
 		}
-		if task.TaskType == "store" || terminal {
+		if task.TaskType == "store" || task.TaskType == "delete" || terminal {
 			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Updates(placementUpdates).Error; err != nil {
 				return err
 			}

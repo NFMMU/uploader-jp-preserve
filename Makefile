@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: up down logs test build migrate-diff migrate-apply migrate-hash generate check
+.PHONY: up down logs test test-surplus-cleanup build migrate-diff migrate-apply migrate-hash generate check
 
 up:
 	docker compose up --build -d
@@ -13,6 +13,9 @@ logs:
 
 test:
 	go test ./...
+
+test-surplus-cleanup:
+	./scripts/test-surplus-cleanup.sh
 
 build:
 	go build ./cmd/api ./cmd/generate
