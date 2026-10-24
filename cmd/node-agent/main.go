@@ -118,8 +118,8 @@ func loadConfig() (config, error) {
 		StatePath:           strings.TrimSpace(os.Getenv("NODE_STATE_PATH")),
 		UploaderMinInterval: 30 * time.Second,
 	}
-	if cfg.APIURL == "" || cfg.Enrollment == "" || cfg.Name == "" {
-		return config{}, errors.New("CENTRAL_API_URL, NODE_ENROLLMENT_TOKEN, and NODE_NAME are required")
+	if cfg.APIURL == "" || cfg.Name == "" {
+		return config{}, errors.New("CENTRAL_API_URL and NODE_NAME are required")
 	}
 	parsed, err := url.Parse(cfg.APIURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -164,6 +164,9 @@ func loadOrRegister(cfg config, logger *slog.Logger) (credentials, error) {
 		return creds, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return credentials{}, err
+	}
+	if cfg.Enrollment == "" {
+		return credentials{}, errors.New("NODE_ENROLLMENT_TOKEN is required for initial enrollment; request a fresh token if this node's credential file was lost")
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.StatePath), 0o700); err != nil {
 		return credentials{}, err

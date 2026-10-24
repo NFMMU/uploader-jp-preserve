@@ -31,7 +31,11 @@ services:
   delivery-data-init:
     image: alpine:3.20
     command:
-      ["sh", "-ec", "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery"]
+      [
+        "sh",
+        "-ec",
+        "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery",
+      ]
     volumes:
       - delivery_data:/data/delivery
     restart: "no"
@@ -105,7 +109,8 @@ services:
       JWT_TTL_HOURS: ${JWT_TTL_HOURS:-12}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      DEV_NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
       STAGING_DIR: /data/staging
       DELIVERY_DIR: /data/delivery
     ports:
@@ -128,7 +133,7 @@ services:
       dockerfile: Dockerfile.node
     environment:
       CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
       NODE_NAME: ${NODE_NAME:-local-node-a}
       NODE_TYPE: ${NODE_TYPE:-A}
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}
@@ -150,7 +155,7 @@ services:
       dockerfile: Dockerfile.node
     environment:
       CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
       NODE_NAME: ${NODE_NAME_B:-local-node-b}
       NODE_TYPE: B
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_B:-10737418240}
@@ -172,7 +177,7 @@ services:
       dockerfile: Dockerfile.node
     environment:
       CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
       NODE_NAME: ${NODE_NAME_C:-local-node-c}
       NODE_TYPE: B
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_C:-10737418240}
@@ -194,7 +199,7 @@ services:
       dockerfile: Dockerfile.node
     environment:
       CENTRAL_API_URL: http://api:8080
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
+      NODE_ENROLLMENT_TOKEN: ${DEV_NODE_ENROLLMENT_TOKEN:-local-node-enrollment-token-change-me}
       NODE_NAME: ${NODE_NAME_D:-local-node-d}
       NODE_TYPE: B
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES_D:-10737418240}

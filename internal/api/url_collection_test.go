@@ -1,0 +1,103 @@
+package api
+
+import (
+	"net"
+	"net/url"
+	"testing"
+)
+
+func TestNormalizeUploaderURL(t *testing.T) {
+	got, err := normalizeUploaderURL(" HTTPS://UU.GETUPLOADER.COM:443/example/download/12?token=abc#section ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://uu.getuploader.com/example/download/12?token=abc"
+	if got != want {
+		t.Fatalf("normalizeUploaderURL() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeUploaderURLRejectsUnsupportedHost(t *testing.T) {
+	if _, err := normalizeUploaderURL("https://example.com/download/12"); err == nil {
+		t.Fatal("expected unsupported host to be rejected")
+	}
+}
+
+func TestCandidateURLTitle(t *testing.T) {
+	got := candidateURLTitle("https://uu.getuploader.com/example/download/12")
+	if got != "12" {
+		t.Fatalf("candidateURLTitle() = %q, want %q", got, "12")
+	}
+}
+
+func TestIsGenericDownloadLabel(t *testing.T) {
+	if !isGenericDownloadLabel(" ダウンロード ") || isGenericDownloadLabel("モデル配布") {
+		t.Fatal("generic download label detection failed")
+	}
+}
+
+func TestNormalizePublicCrawlURL(t *testing.T) {
+	got, err := normalizePublicCrawlURL(" HTTPS://Example.COM:443/posts/1#section ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://example.com/posts/1"; got != want {
+		t.Fatalf("normalizePublicCrawlURL() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizePublicCrawlURLRejectsUnsafeURLs(t *testing.T) {
+	for _, raw := range []string{
+		"http://example.com/post", "https://127.0.0.1/admin", "https://10.0.0.5/",
+		"https://169.254.169.254/latest/meta-data/", "https://localhost/", "https://example.com:8443/",
+		"https://user:password@example.com/",
+	} {
+		if _, err := normalizePublicCrawlURL(raw); err == nil {
+			t.Errorf("normalizePublicCrawlURL(%q) should be rejected", raw)
+		}
+	}
+}
+
+func TestIsPublicCrawlIP(t *testing.T) {
+	for _, raw := range []string{"8.8.8.8", "2606:4700:4700::1111"} {
+		if !isPublicCrawlIP(net.ParseIP(raw)) {
+			t.Errorf("expected %s to be public", raw)
+		}
+	}
+	for _, raw := range []string{"127.0.0.1", "10.0.0.1", "100.64.0.1", "169.254.169.254", "192.0.2.1", "::1", "fd00::1", "2001:db8::1"} {
+		if isPublicCrawlIP(net.ParseIP(raw)) {
+			t.Errorf("expected %s to be blocked", raw)
+		}
+	}
+}
+
+func TestUnwrapDuckDuckGoURL(t *testing.T) {
+	target := "https://example.org/article?q=1"
+	wrapper := "https://duckduckgo.com/l/?uddg=" + url.QueryEscape(target) + "&rut=abc"
+	got, ok := unwrapDuckDuckGoURL(wrapper)
+	if !ok || got != target {
+		t.Fatalf("unwrapDuckDuckGoURL() = %q, %v; want %q, true", got, ok, target)
+	}
+	if _, ok := unwrapDuckDuckGoURL("https://duckduckgo.com/about"); ok {
+		t.Fatal("expected DuckDuckGo internal URL to be rejected")
+	}
+}
+
+func TestParseDuckDuckGoHTML(t *testing.T) {
+	body := []byte(`<html><body>
+	<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fpost">MMD 配布記事</a>
+	<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fpost">duplicate</a>
+	<a class="result__a" href="https://duckduckgo.com/about">internal</a>
+	<a class="result__a" href="https://example.net/page">別記事</a>
+	</body></html>`)
+	got := parseDuckDuckGoHTML(body, 10)
+	if len(got) != 2 {
+		t.Fatalf("parseDuckDuckGoHTML() returned %d results, want 2: %#v", len(got), got)
+	}
+	if got[0].URL != "https://example.org/post" || got[0].Title != "MMD 配布記事" {
+		t.Fatalf("unexpected first result: %#v", got[0])
+	}
+	if got[1].URL != "https://example.net/page" {
+		t.Fatalf("unexpected second result: %#v", got[1])
+	}
+}

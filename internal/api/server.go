@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,17 +16,23 @@ import (
 )
 
 type Server struct {
-	db     *gorm.DB
-	cfg    config.Config
-	logger *slog.Logger
+	db                  *gorm.DB
+	cfg                 config.Config
+	logger              *slog.Logger
+	enrollmentLimiterMu sync.Mutex
+	enrollmentAttempts  map[string]enrollmentAttempt
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	s := &Server{db: db, cfg: cfg, logger: logger}
+	s := &Server{db: db, cfg: cfg, logger: logger, enrollmentAttempts: make(map[string]enrollmentAttempt)}
 	r := gin.New()
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		logger.Error("invalid TRUSTED_PROXIES configuration", "error", err)
+		panic(err)
+	}
 	r.Use(gin.Recovery(), requestLogger(logger), securityHeaders())
 	r.GET("/healthz", s.health)
 	v1 := r.Group("/api/v1")
@@ -33,6 +40,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1.GET("/public/artifacts", s.listPublicArtifacts)
 	v1.GET("/public/artifacts/:id", s.getPublicArtifact)
 	v1.POST("/public-requests", s.submitPublicRequest)
+	v1.POST("/public/node-enrollment-requests", s.rateLimitNodeEnrollment(), s.submitNodeEnrollmentRequest)
 	v1.POST("/public/files/:id/downloads", s.createDownloadJob)
 	v1.GET("/public/downloads/:id", s.getDownloadJob)
 	v1.GET("/public/downloads/:id/content", s.downloadContent)
@@ -64,7 +72,11 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/files/:id/ingest", s.requireRoles("admin"), s.ingestFile)
 	auth.POST("/files/:id/ingest-source", s.requireRoles("admin"), s.ingestSourceFile)
 	auth.POST("/artifacts/:id/discover-source-files", s.requireRoles("admin"), s.discoverUploaderFiles)
+	auth.POST("/admin/url-collection/search", s.requireRoles("admin"), s.searchUploaderURLs)
+	auth.POST("/admin/url-collection/scan", s.requireRoles("admin"), s.collectUploaderURLs)
 	auth.GET("/nodes", s.requireRoles("admin", "reviewer"), s.listNodes)
+	auth.GET("/admin/node-enrollment-requests", s.requireRoles("admin"), s.listNodeEnrollmentRequests)
+	auth.PATCH("/admin/node-enrollment-requests/:id", s.requireRoles("admin"), s.reviewNodeEnrollmentRequest)
 	auth.GET("/tasks", s.requireRoles("admin", "reviewer"), s.listTasks)
 	auth.POST("/admin/placements/reconcile", s.requireRoles("admin"), s.reconcileNow)
 	auth.POST("/tasks/:id/retry", s.requireRoles("admin"), s.retryTask)

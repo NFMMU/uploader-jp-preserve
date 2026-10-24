@@ -46,15 +46,6 @@ func newNodeToken() (string, error) {
 }
 
 func (s *Server) registerNode(c *gin.Context) {
-	if s.cfg.NodeEnrollmentToken == "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "node enrollment is disabled"})
-		return
-	}
-	enrollment := c.GetHeader("X-Node-Enrollment-Token")
-	if len(enrollment) != len(s.cfg.NodeEnrollmentToken) || subtle.ConstantTimeCompare([]byte(enrollment), []byte(s.cfg.NodeEnrollmentToken)) != 1 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid enrollment token"})
-		return
-	}
 	var req struct {
 		Name                   string `json:"name" binding:"required,min=1,max=120"`
 		NodeType               string `json:"node_type" binding:"required,oneof=A B"`
@@ -65,17 +56,36 @@ func (s *Server) registerNode(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name, node_type (A or B), requested_capacity_bytes, and agent_version are required"})
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.AgentVersion = strings.TrimSpace(req.AgentVersion)
+	enrollment := strings.TrimSpace(c.GetHeader("X-Node-Enrollment-Token"))
+	if enrollment == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "one-time enrollment token required"})
+		return
+	}
+	// Shared-token registration exists only for local development. Production nodes
+	// must use an approved, one-time token issued for a specific enrollment request.
+	if s.cfg.Environment == "development" && s.cfg.DevNodeEnrollmentToken != "" && len(enrollment) == len(s.cfg.DevNodeEnrollmentToken) && subtle.ConstantTimeCompare([]byte(enrollment), []byte(s.cfg.DevNodeEnrollmentToken)) == 1 {
+		s.registerDevelopmentNode(c, req)
+		return
+	}
+	s.registerApprovedNode(c, req)
+}
+
+func (s *Server) registerDevelopmentNode(c *gin.Context, req struct {
+	Name                   string `json:"name" binding:"required,min=1,max=120"`
+	NodeType               string `json:"node_type" binding:"required,oneof=A B"`
+	RequestedCapacityBytes int64  `json:"requested_capacity_bytes" binding:"gte=0"`
+	AgentVersion           string `json:"agent_version" binding:"required,max=64"`
+}) {
 	token, err := newNodeToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue node credential"})
 		return
 	}
-	node := model.Node{
-		Name: strings.TrimSpace(req.Name), NodeType: req.NodeType, Status: "offline",
-		RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(strings.TrimSpace(req.AgentVersion)),
-	}
+	node := model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
 	if err := s.db.WithContext(c.Request.Context()).Create(&node).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register node"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register development node"})
 		return
 	}
 	if err := s.db.WithContext(c.Request.Context()).Exec("UPDATE nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(token), node.ID).Error; err != nil {
@@ -83,11 +93,70 @@ func (s *Server) registerNode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not store node credential"})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{
-		"node":       gin.H{"id": node.ID, "name": node.Name, "node_type": node.NodeType, "status": node.Status, "requested_capacity_bytes": node.RequestedCapacityBytes},
-		"node_token": token,
-		"warning":    "node_token is shown only once; store it securely",
+	c.JSON(http.StatusCreated, gin.H{"node": gin.H{"id": node.ID, "name": node.Name, "node_type": node.NodeType, "status": node.Status, "requested_capacity_bytes": node.RequestedCapacityBytes}, "node_token": token, "warning": "development-only node registration; store credentials securely"})
+}
+
+func (s *Server) registerApprovedNode(c *gin.Context, req struct {
+	Name                   string `json:"name" binding:"required,min=1,max=120"`
+	NodeType               string `json:"node_type" binding:"required,oneof=A B"`
+	RequestedCapacityBytes int64  `json:"requested_capacity_bytes" binding:"gte=0"`
+	AgentVersion           string `json:"agent_version" binding:"required,max=64"`
+}) {
+	var responseNode model.Node
+	var nodeToken string
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var enrollment struct {
+			ID                     string
+			Name                   string
+			NodeType               string
+			RequestedCapacityBytes int64
+		}
+		err := tx.Raw(`SELECT id::text, name, node_type, requested_capacity_bytes
+			FROM node_enrollment_requests
+			WHERE enrollment_token_hash = ? AND status = 'approved' AND token_expires_at > now()
+			FOR UPDATE`, hashNodeToken(strings.TrimSpace(c.GetHeader("X-Node-Enrollment-Token")))).Scan(&enrollment).Error
+		if err != nil {
+			return err
+		}
+		if enrollment.ID == "" {
+			return gorm.ErrRecordNotFound
+		}
+		if req.Name != enrollment.Name || req.NodeType != enrollment.NodeType || req.RequestedCapacityBytes != enrollment.RequestedCapacityBytes {
+			return errors.New("registration details do not match the approved request")
+		}
+		nodeToken, err = newNodeToken()
+		if err != nil {
+			return err
+		}
+		responseNode = model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
+		if err := tx.Create(&responseNode).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("UPDATE nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(nodeToken), responseNode.ID).Error; err != nil {
+			return err
+		}
+		result := tx.Exec(`UPDATE node_enrollment_requests SET status = 'enrolled', node_id = ?, enrollment_token_hash = NULL, token_expires_at = NULL, updated_at = now() WHERE id = ? AND status = 'approved'`, responseNode.ID, enrollment.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("enrollment token has already been used")
+		}
+		return nil
 	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid, expired, or already used enrollment token"})
+		return
+	}
+	if err != nil {
+		if strings.Contains(err.Error(), "do not match") || strings.Contains(err.Error(), "already been used") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not complete node enrollment"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"node": gin.H{"id": responseNode.ID, "name": responseNode.Name, "node_type": responseNode.NodeType, "status": responseNode.Status, "requested_capacity_bytes": responseNode.RequestedCapacityBytes}, "node_token": nodeToken, "warning": "node_token is shown only once; store it securely"})
 }
 
 func (s *Server) authenticateNode() gin.HandlerFunc {

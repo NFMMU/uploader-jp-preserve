@@ -1,4 +1,4 @@
-h1:T3Ads0vRbHDdyz3aoH4EBSyu4SgOVmyRbBC/a7hhsGQ=
+h1:YduZ3KVAwXzvH7/5+0y+BqtTHR7GV3kYL15dS9BJrR8=
 20261023000000_initial.sql h1:Y6/tsH5XjbWC/RHVyTzBBcUvJUnghkptH5qhp0wHavk=
 20261023010000_mvp2_node_agent.sql h1:IFrAtyvLVhZZW0yT0gBuL0m7AyX0WSbnLT9+/CX0Ax8=
 20261023020000_mvp3_replication.sql h1:w/fesKmj/1CDPIOCM0BM4+CV659OrM7t7E/ef/FRqa8=
@@ -6,3 +6,5 @@ h1:T3Ads0vRbHDdyz3aoH4EBSyu4SgOVmyRbBC/a7hhsGQ=
 20261024000000_mvp4_download_gateway.sql h1:ofm21Tx0fs+hdhSODwolA8Rn9w0SogjG2y6tSmCzqjA=
 20261024030000_source_ingest_and_preservation_requests.sql h1:jK5KnrFaZekGwRFUqwJkxvbJHGo6nes4OYgA2czEQQA=
 20261024040000_file_deletion_workflow.sql h1:8QGrvPSSNOSRcIsgl+YGQiIpeygJ2gprJC572k8akdY=
+20261024050000_node_enrollment_requests.sql h1:g6ydtetNoZtlonk2+Q589C2G3ejtrWhFeJBqXF/AAwo=
+20261024060000_url_collection_dedup.sql h1:Iqk18MS1WqDo1c02/RX4NYa45l2VzR8pNS6EYCTayNQ=

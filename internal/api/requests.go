@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url is required for preservation requests"})
 			return
 		}
-		validated, err := validateUploaderURL(*req.SourceURL)
+		validated, err := normalizeUploaderURL(*req.SourceURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
 			return
@@ -77,7 +78,49 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		Title: trimOptional(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: trimOptional(req.SourceURL),
 		SubmitterName: trimOptional(req.SubmitterName), Contact: trimOptional(req.Contact), Details: strings.TrimSpace(req.Details), ExternalURL: trimOptional(req.ExternalURL),
 	}
-	if err := s.db.WithContext(c.Request.Context()).Create(&request).Error; err != nil {
+	if req.RequestType == "preservation" && req.SourceURL != nil {
+		var existingFile model.FileObject
+		if err := s.db.WithContext(c.Request.Context()).Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", *req.SourceURL).First(&existingFile).Error; err == nil {
+			c.JSON(http.StatusOK, gin.H{"duplicate": true, "file_object_id": existingFile.ID, "message": "このURLはすでにカタログに登録されているため、重複申請を破棄しました。"})
+			return
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing source URL"})
+			return
+		}
+		var existingRequest model.PublicRequest
+		if err := s.db.WithContext(c.Request.Context()).Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", *req.SourceURL).Order("created_at ASC").First(&existingRequest).Error; err == nil {
+			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existingRequest.ID, "message": "同じURLの保全リクエストがすでに存在するため、重複リクエストを破棄しました。"})
+			return
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing preservation requests"})
+			return
+		}
+	}
+
+	if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&request).Error; err != nil {
+			return err
+		}
+		if request.RequestType == "preservation" && request.SourceURL != nil {
+			result := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
+				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *request.SourceURL, *request.SourceURL, request.ID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errDuplicateSourceURL
+			}
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, errDuplicateSourceURL) {
+			var existing struct {
+				PublicRequestID *string `gorm:"column:public_request_id"`
+			}
+			_ = s.db.WithContext(c.Request.Context()).Table("source_url_registry").Select("public_request_id").Where("normalized_url = ?", *request.SourceURL).Scan(&existing).Error
+			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existing.PublicRequestID, "message": "同じURLの申請・収集リクエストがすでに存在するため、重複リクエストを破棄しました。"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not submit request"})
 		return
 	}

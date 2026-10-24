@@ -76,6 +76,7 @@ function PublicHeader() {
         <Link to="/preservation-requests">保全リクエスト</Link>
         <Link to="/requests">公開停止・削除</Link>
         <Link to="/relocation-info">移設先情報の提供</Link>
+        <Link to="/participate">ストレージノード参加</Link>
         <Link to="/admin/login">管理者ログイン</Link>
       </nav>
     </header>
@@ -96,6 +97,7 @@ export default function PublicSite() {
             element={<PreservationRequest />}
           />
           <Route path="/relocation-info" element={<RelocationInfoRequest />} />
+          <Route path="/participate" element={<NodeParticipationRequest />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
@@ -112,6 +114,7 @@ export default function PublicSite() {
           <Link to="/terms">利用規約</Link>
           <Link to="/privacy">プライバシー・ポリシー</Link>
           <Link to="/disclaimer">免責事項</Link>
+          <Link to="/participate">ストレージノード参加</Link>
           <a href="mailto:uploaderjp-archive@udonya.moe">お問い合わせ</a>
         </div>
       </footer>
@@ -178,7 +181,7 @@ function TermsPage() {
       </ul>
       <h2>第5条（公開停止・削除の申請）</h2>
       <p>
-        権利者または正当な利害関係を有する方は、本サービスの申請フォームから公開停止・削除を申し出ることができます。運営者は、申請内容、対象の特定可能性、権利関係その他の事情を確認し、必要に応じて追加情報を求めます。申請の受付は、即時に削除を完了するものではありません。権利者の皆様には大変申し訳ありませんが、この措置は公開停止はダウンロードを停止するための措置であり、保存ノード上のデータ削除には各ノードの処理・接続状況に応じて時間を要する場合があります。
+        権利者または正当な利害関係を有する方は、本サービスの申請フォームから公開停止・削除を申し出ることができます。運営者は、申請内容、対象の特定可能性、権利関係その他の事情を確認し、必要に応じて追加情報を求めます。申請の受付は、直ちに削除完了を意味しません。公開停止はダウンロードを停止するための措置であり、保存ノード上のデータ削除には各ノードの処理・接続状況に応じて時間を要する場合があります。
       </p>
       <h2>第6条（保存ノードへの参加）</h2>
       <p>
@@ -198,7 +201,7 @@ function TermsPage() {
       </p>
       <h2>第10条（準拠法）</h2>
       <p>
-        本規約は日本法に準拠します。本サービスに関して紛争が生じた場合、適用法令に従い管轄権を有する裁判所を利用します。他の法令による制限を受けない場合、本サービスの合意管轄は、津地方裁判所です。
+        本規約は日本法に準拠します。本サービスに関して紛争が生じた場合、適用法令に従い管轄権を有する裁判所を利用します。
       </p>
     </LegalLayout>
   );
@@ -304,6 +307,136 @@ function DisclaimerPage() {
         本免責事項は必要に応じて変更されることがあります。最新の内容を本ページで確認してください。
       </p>
     </LegalLayout>
+  );
+}
+
+function NodeParticipationRequest() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [capacity, setCapacity] = useState("10737418240");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    try {
+      const result = await publicAPI<{ message: string }>(
+        "/public/node-enrollment-requests",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name") || "").trim(),
+            node_type: String(form.get("node_type") || "B"),
+            requested_capacity_bytes: Number(capacity),
+            contact_email: String(form.get("contact_email") || "").trim(),
+            message: String(form.get("message") || "").trim(),
+            agree_to_terms: form.get("agree_to_terms") === "on",
+          }),
+        },
+      );
+      setSuccess(result.message || "参加申請を受け付けました。");
+      formElement.reset();
+      setCapacity("10737418240");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <h1>ストレージノード参加申請</h1>
+      <p className="public-intro">
+        ご自身のサーバーや PC
+        のストレージを、ファイル保全ネットワークに提供するための申請です。申請は運営が確認し、承認された場合に限り登録用の一回限りトークンを発行します。ノード種別
+        A/B は運営と相談して決定します。
+      </p>
+      {success ? (
+        <div className="public-success">
+          <h2>申請を受け付けました</h2>
+          <p>{success}</p>
+          <p>運営が申請内容を確認し、入力された連絡先へ別途連絡します。</p>
+          <button type="button" onClick={() => setSuccess("")}>
+            別の申請を行う
+          </button>
+        </div>
+      ) : (
+        <form className="public-request-form" onSubmit={submit}>
+          <label>
+            ノード名 *
+            <input
+              name="name"
+              required
+              minLength={1}
+              maxLength={120}
+              placeholder="例：my-storage-node-01"
+            />
+          </label>
+          <label>
+            ノード種別 *
+            <select name="node_type" defaultValue="B">
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+          </label>
+          <label>
+            提供容量（バイト） *
+            <input
+              type="number"
+              min="0"
+              step="1"
+              required
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+            />
+            <small>
+              0 は参加者側で容量上限を設定しない指定です。例：10 GiB =
+              10737418240
+            </small>
+          </label>
+          <label>
+            連絡先メールアドレス *
+            <input
+              name="contact_email"
+              type="email"
+              required
+              maxLength={320}
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
+          </label>
+          <label>
+            補足（任意）
+            <textarea
+              name="message"
+              rows={4}
+              maxLength={1000}
+              placeholder="稼働予定、回線・ストレージ構成など"
+            />
+          </label>
+          <label className="check-label">
+            <input type="checkbox" name="agree_to_terms" required />{" "}
+            <span>
+              <Link to="/terms">利用規約</Link>、
+              <Link to="/privacy">プライバシー・ポリシー</Link>
+              および参加ノード運用上の注意を確認し、ノード参加申請に必要な情報を送信することに同意します。
+            </span>
+          </label>
+          {error && <p className="public-error">{error}</p>}
+          <button type="submit" disabled={busy}>
+            {busy ? "申請中…" : "参加申請を送信"}
+          </button>
+          <p className="public-footnote">
+            承認前にノードを接続しないでください。登録トークンは申請ごとに発行され、有効期限は72時間、登録成功後は再利用できません。ノードの保存データは第三者の権利物を含む場合があります。参加条件を確認し、不明点は{" "}
+            <a href="mailto:uploaderjp-archive@udonya.moe">運営窓口</a>{" "}
+            にお問い合わせください。
+          </p>
+        </form>
+      )}
+    </>
   );
 }
 
@@ -786,12 +919,17 @@ function PreservationRequest() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [submittedID, setSubmittedID] = useState("");
+  const [submittedMessage, setSubmittedMessage] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError("");
     try {
-      const data = await publicAPI<{ id: string }>("/public-requests", {
+      const data = await publicAPI<{
+        id?: string;
+        duplicate?: boolean;
+        message?: string;
+      }>("/public-requests", {
         method: "POST",
         body: JSON.stringify({
           request_type: "preservation",
@@ -803,7 +941,13 @@ function PreservationRequest() {
           contact: contact.trim(),
         }),
       });
-      setSubmittedID(data.id);
+      setSubmittedID(data.id || (data.duplicate ? "duplicate" : ""));
+      setSubmittedMessage(
+        data.message ||
+          (data.duplicate
+            ? "このURLはすでに登録・申請済みのため、重複リクエストを破棄しました。"
+            : "リクエストを受け付けました。"),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "送信できませんでした。");
     } finally {
@@ -818,15 +962,18 @@ function PreservationRequest() {
       </p>
       {submittedID ? (
         <div className="public-success">
-          <p>リクエストを受け付けました。</p>
-          <p className="public-muted">
-            受付番号: <code>{submittedID}</code>
-          </p>
+          <p>{submittedMessage}</p>
+          {submittedID !== "duplicate" && (
+            <p className="public-muted">
+              受付番号: <code>{submittedID}</code>
+            </p>
+          )}
           <p className="public-muted">内容を確認してから保全を検討します。</p>
           <button
             type="button"
             onClick={() => {
               setSubmittedID("");
+              setSubmittedMessage("");
               setTitle("");
               setCreator("");
               setSourceURL("");

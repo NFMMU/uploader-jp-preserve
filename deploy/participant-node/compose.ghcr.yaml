@@ -1,9 +1,9 @@
 services:
   node-agent:
-    image: ghcr.io/nfmmu/uploader-jp-preservation-node-agent:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER in the participant .env file}/uploader-jp-preservation-node-agent:${IMAGE_TAG:-latest}
     environment:
       CENTRAL_API_URL: ${CENTRAL_API_URL:?Set CENTRAL_API_URL in the participant .env file}
-      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:?Set NODE_ENROLLMENT_TOKEN in the participant .env file}
+      NODE_ENROLLMENT_TOKEN: ${NODE_ENROLLMENT_TOKEN:-}
       NODE_NAME: ${NODE_NAME:?Set NODE_NAME in the participant .env file}
       NODE_TYPE: ${NODE_TYPE:-B}
       NODE_CAPACITY_BYTES: ${NODE_CAPACITY_BYTES:-10737418240}

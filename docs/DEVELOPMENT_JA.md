@@ -3,12 +3,12 @@
 **運営元：全国もちもちうどん連盟**  
 **連絡先：uploaderjp-archive@udonya.moe**
 
-Go 製 API、PostgreSQL の目録データベース、Go 製ノードエージェント、React 製 Web 画面で構成される分散保全プロジェクトです。
+Go 製 API、PostgreSQL の目録データベース、Go 製ノードエージェント、React 製 Web 画面で構成される分散保全プロジェクトです。現在は MVP／試験運用版であり、無人の本番運用に必要な機能・監査・復旧手順がすべて完成していることを保証するものではありません。
 
 ## はじめに
 
 - ローカルで試す場合は、以下の「Docker Compose でのローカル開発」を参照してください。
-- ストレージを提供する参加者は、先に [参加ノード運用ガイド](PARTICIPATING_NODE_JA.md) を読んでください。接続先 URL と登録トークンは運営から受け取る必要があります。
+- ストレージを提供する参加者は、先に [参加ノード運用ガイド](PARTICIPATING_NODE_JA.md) を読んでください。公開申請の承認後、申請単位の一回限りの登録トークンが発行されます。
 - ドキュメントの一覧は [ドキュメント一覧](README.md)、GitHub 公開前の確認事項は [公開前チェックリスト](PUBLICATION_CHECKLIST.md) を参照してください。
 - 不具合や運用の問い合わせ：uploaderjp-archive@udonya.moe。脆弱性の報告は [SECURITY.md](../SECURITY.md) を参照してください。
 
@@ -27,9 +27,10 @@ Go 製 API、PostgreSQL の目録データベース、Go 製ノードエージ�
 - `docs/` — 運用手順、参加者向けガイド、設計資料
 - `.github/` — CI、GHCR イメージ発行、Issue テンプレート、Pull Request テンプレート
 
+
 ## MVP-3 の実装範囲
 
-- Go 製ノードエージェントは共有登録シークレットを使って中央 API に登録し、ノードごとの Bearer トークンを権限 `0600` の永続ファイルに保存します。
+- Go 製ノードエージェントは、運営が承認した申請ごとの一回限り登録トークンを使って中央 API に登録し、ノードごとの Bearer トークンを権限 `0600` の永続ファイルに保存します。ローカル Compose のみ `DEV_NODE_ENROLLMENT_TOKEN` を使用します。
 - エージェントは、実際のファイルシステム容量・空き容量、管理対象オブジェクトの使用量、参加者が申告した容量上限、最終応答時刻を報告します。
 - A/B ノードは個別に登録し、実容量、空き容量、使用量、申告容量、ハートビート状態を報告します。
 - 管理者がファイルを中央の一時ステージング領域にアップロードすると、API は SHA-256 とサイズを計算し、条件を満たすオンラインノード 2 台にそれぞれ独立した保存タスクを作成します。
@@ -146,11 +147,13 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 - `PATCH /api/v1/files/:id/policy`、`PATCH /api/v1/files/:id/publication`
 - `GET /api/v1/export?format=json|csv`
 - `POST /api/v1/public-requests`、`GET /api/v1/public-requests`、`PATCH /api/v1/public-requests/:id`
+- `POST /api/v1/public/node-enrollment-requests` — 公開ストレージノード参加申請。IP ごとに 1 時間 5 件まで。
+- `GET /api/v1/admin/node-enrollment-requests`、`PATCH /api/v1/admin/node-enrollment-requests/:id` — 管理者が参加申請を審査し、承認時に申請ごとの一回限り・72 時間有効な登録トークンを発行します。
 - `POST /api/v1/admin/users`、`GET /api/v1/admin/users`、`GET /api/v1/admin/audit-logs`
 
 ## MVP-2 / MVP-3 の API 一覧
 
-- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一度限りのノード登録
+- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一度限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
 - `POST /api/v1/nodes/:id/heartbeat` — ノードトークン認証付きの容量報告
 - `GET /api/v1/nodes` — 管理者／レビュアー向けノード一覧
 - `GET /api/v1/tasks?status=...` — 管理者／レビュアー向けタスク一覧
@@ -218,7 +221,7 @@ curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
 - タスクの実行試行は 1 回につき最大 5 回です。保存タスクが最終的に失敗した場合、管理者は再試行できます。再試行時は `attempt_count` を `0` に戻し、ステージングデータが期待するサイズと SHA-256 に一致することを再検証してから、最大 5 回の試行を新たに行います。過去のタスク結果と再試行操作は監査ログに残ります。
 - 失敗したタスクのステージング元データは、管理者が再試行できるよう保持します。再試行時に代替データをアップロードする場合は `-F 'file=@/path/to/correct-file'` を使用し、ファイルオブジェクトに記録されたサイズと SHA-256 に一致させてください。タスク成功後はステージングデータを削除します。ノードエージェントは各試行の前に未検証の古い保存データと放置された `.partial-*` ファイルを削除します。失敗したデータが `verified` として扱われることはありません。
 - 取り込み時の multipart フィールド `priority` は省略可能で、既定値は `3` です。指定できる値は `0`〜`5` で、スケジューラーは `5` を優先し、`0` を最後に扱います。
-- ローカル Compose のノード登録トークンは開発用です。本番環境では、固有のシークレット、TLS、より強固なノード識別・ライフサイクル管理、レート制限、監視、バックアップ／復元テスト、認証情報のローテーション／失効手順が必要です。
+- ローカル Compose の共有登録トークンは開発専用で、本番環境では `APP_ENV=production` にすると利用できません。`TRUSTED_PROXIES` は `X-Forwarded-For` を信頼するプロキシの IP/CIDR だけを指定してください。本番では承認済み申請ごとの一回限りトークンを使い、TLS、ノード識別・ライフサイクル管理、レート制限、監視、バックアップ／復元テスト、認証情報のローテーション／失効手順も整備してください。
 - ローカルの 3 ノード構成は、1 台の物理ホスト上で配置・修復ロジックを実演するものです。障害ドメインは独立していません。本番ノードは別々のホスト／ストレージシステムで動かしてください。
 - 代替コピーを予約できるのは、少なくとも 1 つの検証済みコピー元と、それとは別の条件を満たす保存先ノードがオンラインの場合だけです。ノードが 2 台しかない状態で 1 台がオフラインになると、オフラインノードが復帰するか 3 台目が参加するまで、残りのコピーは `degraded` のままです。
 - 一覧ページの確認は、1 回につき最大 10 ページ・候補 100 件に制限されています。同じホスト上のページ送りリンクのみをたどり、ログイン認証、パスワード、CAPTCHA、JavaScript チャレンジを回避しません。Web 管理画面には OTel / Grafana ダッシュボードはまだ含まれていません。

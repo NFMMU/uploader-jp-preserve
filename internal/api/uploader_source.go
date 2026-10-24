@@ -366,6 +366,13 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 }
 
 func discoverUploaderListing(ctx context.Context, listingURL string) ([]uploaderListingCandidate, int, error) {
+	return discoverUploaderListingWithLimits(ctx, listingURL, maxUploaderListingPages, maxUploaderListingCandidates)
+}
+
+func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, pageLimit, candidateLimit int) ([]uploaderListingCandidate, int, error) {
+	if pageLimit < 1 || candidateLimit < 1 {
+		return []uploaderListingCandidate{}, 0, nil
+	}
 	start, err := url.Parse(listingURL)
 	if err != nil {
 		return nil, 0, errors.New("invalid uploader.jp listing URL")
@@ -387,7 +394,7 @@ func discoverUploaderListing(ctx context.Context, listingURL string) ([]uploader
 	seenCandidates := map[string]bool{}
 	items := make([]uploaderListingCandidate, 0, 32)
 	pagesScanned := 0
-	for len(queue) > 0 && pagesScanned < maxUploaderListingPages && len(items) < maxUploaderListingCandidates {
+	for len(queue) > 0 && pagesScanned < pageLimit && len(items) < candidateLimit {
 		pageURL := queue[0]
 		queue = queue[1:]
 		parsedPage, parseErr := url.Parse(pageURL)
@@ -446,14 +453,14 @@ func discoverUploaderListing(ctx context.Context, listingURL string) ([]uploader
 								}
 								items = append(items, uploaderListingCandidate{URL: normalized, Label: label})
 							}
-							if isUploaderPaginationLink(normalized, attr(n, "rel"), strings.TrimSpace(htmlText(n)), baseURL) && len(queue)+pagesScanned < maxUploaderListingPages && !seenPages[normalized] {
+							if isUploaderPaginationLink(normalized, attr(n, "rel"), strings.TrimSpace(htmlText(n)), baseURL) && len(queue)+pagesScanned < pageLimit && !seenPages[normalized] {
 								queue = append(queue, normalized)
 							}
 						}
 					}
 				}
 			}
-			for child := n.FirstChild; child != nil && len(items) < maxUploaderListingCandidates; child = child.NextSibling {
+			for child := n.FirstChild; child != nil && len(items) < candidateLimit; child = child.NextSibling {
 				walk(child)
 			}
 		}

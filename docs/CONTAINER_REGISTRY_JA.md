@@ -4,8 +4,7 @@
 
 ## 発行するイメージ
 
-GitHub リポジトリの所有者名を小文字にした値を `<owner>` とすると、次のイメージを発行します。このプロジェクトの GitHub owner は `nfmmu` です。
-したがって、通常のイメージ名は `ghcr.io/nfmmu/uploader-jp-preservation-<コンポーネント>` になります。
+GitHub リポジトリの所有者名を小文字にした値を `<owner>` とすると、次のイメージを発行します。このプロジェクトの GitHub owner は `nfmmu` です。したがって、通常のイメージ名は `ghcr.io/nfmmu/uploader-jp-preservation-<コンポーネント>` になります。
 
 - `ghcr.io/<owner>/uploader-jp-preservation-api`
 - `ghcr.io/<owner>/uploader-jp-preservation-web`
@@ -36,7 +35,7 @@ GitHub Actions の `GITHUB_TOKEN` に `packages: write` を許可しています
 
 ## 参加ノードで GHCR イメージを使う
 
-`deploy/participant-node/.env.example` を `.env` にコピーし、`GHCR_OWNER=nfmmu` を設定します（リポジトリを別の owner に移した場合は変更してください）。さらに、運営者から受け取った API URL とノード登録トークンを設定してください。
+`deploy/participant-node/.env.example` を `.env` にコピーし、`GHCR_OWNER=nfmmu` を設定します（リポジトリを別の owner に移した場合は変更してください）。さらに、公開サイトから参加申請を行い、運営の承認後に受け取る API URL と申請ごとの一回限りノード登録トークンを設定してください。
 
 ```sh
 cd deploy/participant-node
