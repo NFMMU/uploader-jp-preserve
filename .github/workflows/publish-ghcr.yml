@@ -57,7 +57,7 @@ jobs:
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ steps.owner.outputs.value }}/uploader-jp-preservation-${{ matrix.name }}
           tags: |
