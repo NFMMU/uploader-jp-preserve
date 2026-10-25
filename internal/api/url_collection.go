@@ -21,6 +21,7 @@ var errDuplicateSourceURL = errors.New("source URL has already been requested or
 const (
 	maxURLCollectionSeeds      = 10
 	maxURLCollectionCandidates = 100
+	maxURLCollectionChecks     = 20
 	maxURLCollectionPages      = 20
 )
 
@@ -57,6 +58,39 @@ func checkUploaderCandidate(ctx context.Context, raw string, client *http.Client
 	}
 	resp.Body.Close()
 	return resp.StatusCode, nil
+}
+
+func checkUploaderListingCandidates(ctx context.Context, found []uploaderListingCandidate, seen map[string]bool, checksPerformed int, client *http.Client) ([]uploaderListingCandidate, int, int, []string, bool) {
+	candidates := make([]uploaderListingCandidate, 0, len(found))
+	duplicates := 0
+	var checkErrors []string
+	for _, item := range found {
+		normalized, err := normalizeUploaderURL(item.URL)
+		if err != nil {
+			continue
+		}
+		if seen[normalized] {
+			duplicates++
+			continue
+		}
+		if checksPerformed >= maxURLCollectionChecks {
+			return candidates, checksPerformed, duplicates, checkErrors, true
+		}
+		seen[normalized] = true
+		checksPerformed++
+		status, checkErr := checkUploaderCandidate(ctx, normalized, client)
+		if checkErr != nil {
+			checkErrors = appendCapped(checkErrors, fmt.Sprintf("%s: リンク先を確認できませんでした: %s", normalized, checkErr))
+			continue
+		}
+		if status < 200 || status >= 300 {
+			checkErrors = appendCapped(checkErrors, fmt.Sprintf("%s: リンク先がHTTP %dを返したためスキップしました", normalized, status))
+			continue
+		}
+		item.URL = normalized
+		candidates = append(candidates, item)
+	}
+	return candidates, checksPerformed, duplicates, checkErrors, false
 }
 
 type collectedSourceURL struct {
@@ -120,10 +154,12 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	seenCandidates := make(map[string]bool)
 	pagesScanned := 0
 	duplicatesInRun := 0
+	checksPerformed := 0
+	checksTruncated := false
 	var scanErrors []string
 	candidateClient := uploaderCandidateHTTPClient()
 	for _, seed := range seeds {
-		if pagesScanned >= maxURLCollectionPages || len(candidates) >= maxURLCollectionCandidates {
+		if pagesScanned >= maxURLCollectionPages || len(candidates) >= maxURLCollectionCandidates || checksTruncated {
 			break
 		}
 		remainingPages := maxURLCollectionPages - pagesScanned
@@ -133,33 +169,23 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		for _, scanErr := range errorsForSeed {
 			scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: %s", seed, scanErr))
 		}
-		for _, item := range found {
-			normalized, normErr := normalizeUploaderURL(item.URL)
-			if normErr != nil {
-				continue
-			}
-			status, checkErr := checkUploaderCandidate(c.Request.Context(), normalized, candidateClient)
-			if checkErr != nil {
-				scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: リンク先を確認できませんでした: %s", normalized, checkErr))
-				continue
-			}
-			if status < 200 || status >= 300 {
-				scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: リンク先がHTTP %dを返したためスキップしました", normalized, status))
-				continue
-			}
-			if seenCandidates[normalized] {
-				duplicatesInRun++
-				continue
-			}
-			seenCandidates[normalized] = true
-			item.URL = normalized
+		checked, totalChecks, duplicates, checkErrors, truncated := checkUploaderListingCandidates(
+			c.Request.Context(), found, seenCandidates, checksPerformed, candidateClient,
+		)
+		checksPerformed = totalChecks
+		duplicatesInRun += duplicates
+		checksTruncated = truncated
+		for _, checkErr := range checkErrors {
+			scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: %s", seed, checkErr))
+		}
+		for _, item := range checked {
 			candidates = append(candidates, item)
-			candidateSeeds[normalized] = seed
+			candidateSeeds[item.URL] = seed
 			if len(candidates) >= maxURLCollectionCandidates {
 				break
 			}
 		}
-		if len(candidates) >= maxURLCollectionCandidates {
+		if len(candidates) >= maxURLCollectionCandidates || checksTruncated {
 			break
 		}
 	}
@@ -250,7 +276,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"seed_count": len(seeds), "pages_scanned": pagesScanned, "candidate_count": len(candidates),
 		"requests_created": created, "duplicates_discarded": duplicates, "failed": failed,
-		"truncated": len(candidates) >= maxURLCollectionCandidates, "errors": scanErrors, "items": results,
+		"truncated": len(candidates) >= maxURLCollectionCandidates || checksTruncated, "errors": scanErrors, "items": results,
 		"message": "公開サイトから検出した新しいURLは申請・保全レビューに登録しました。権利確認後に取得を開始できます。",
 	})
 }

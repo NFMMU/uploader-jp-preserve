@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -56,6 +57,47 @@ func TestCheckUploaderCandidateStatus(t *testing.T) {
 				t.Fatalf("checkUploaderCandidate() status = %d, want %d", got, tc.wantStatus)
 			}
 		})
+	}
+}
+
+func TestCheckUploaderListingCandidatesDeduplicatesAndCapsRequests(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	found := []uploaderListingCandidate{
+		{URL: "https://uu.getuploader.com/example/download/0"},
+		{URL: "https://uu.getuploader.com/example/download/0"},
+	}
+	for i := 1; i <= maxURLCollectionChecks; i++ {
+		found = append(found, uploaderListingCandidate{
+			URL: fmt.Sprintf("https://uu.getuploader.com/example/download/%d", i),
+		})
+	}
+
+	candidates, checks, duplicates, _, truncated := checkUploaderListingCandidates(
+		context.Background(), found, make(map[string]bool), 0, client,
+	)
+	if requests != maxURLCollectionChecks {
+		t.Fatalf("request count = %d, want %d", requests, maxURLCollectionChecks)
+	}
+	if checks != maxURLCollectionChecks {
+		t.Fatalf("checks = %d, want %d", checks, maxURLCollectionChecks)
+	}
+	if duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", duplicates)
+	}
+	if len(candidates) != maxURLCollectionChecks {
+		t.Fatalf("candidate count = %d, want %d", len(candidates), maxURLCollectionChecks)
+	}
+	if !truncated {
+		t.Fatal("expected remaining candidates to mark the scan as truncated")
 	}
 }
 
