@@ -4,7 +4,7 @@ COPY go.mod go.sum ./
 COPY cmd/node-manager ./cmd/node-manager
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/node-manager ./cmd/node-manager
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/node-manager /node-manager
 ENV LISTEN_ADDR=:8080 \
