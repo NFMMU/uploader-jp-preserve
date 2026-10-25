@@ -2746,20 +2746,8 @@ function NodeEnrollmentRequests({ api, refresh, notify }: any) {
         </Modal>
       )}
       {issued && (
-        <section className="panel issued-token-panel">
-          <div className="panel-head">
-            <div>
-              <h2>発行した登録トークン</h2>
-              <p>{issued.name} 向け。参加者へ安全な方法で共有してください。</p>
-            </div>
-            <button
-              className="icon-btn"
-              onClick={() => setIssued(null)}
-              title="閉じる"
-            >
-              <X size={16} />
-            </button>
-          </div>
+        <Modal title="発行した登録トークン" close={() => setIssued(null)}>
+          <p>{issued.name} 向け。参加者へ安全な方法で共有してください。</p>
           <div className="issued-token-body">
             <p className="policy-warning">
               <LockKeyhole size={16} />{" "}
@@ -2790,10 +2778,11 @@ function NodeEnrollmentRequests({ api, refresh, notify }: any) {
             </div>
             <p className="muted">
               有効期限：{date(issued.expires_at)}
-              。初回登録後は再利用できません。
+              <br />
+              初回登録後は再利用できません。
             </p>
           </div>
-        </section>
+        </Modal>
       )}
     </>
   );
