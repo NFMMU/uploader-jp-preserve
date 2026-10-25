@@ -11,7 +11,7 @@ require (
 	golang.org/x/sys v0.28.0
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gen v0.3.27
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.31.2
 )
 
 require (
