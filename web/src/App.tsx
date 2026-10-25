@@ -2492,7 +2492,7 @@ function Nodes({ api, refresh, notify, role }: any) {
           label="申告容量"
           value={bytes(
             (d.data.items || []).reduce(
-              (s: number, x: Obj) => s + (x.capacity_bytes || 0),
+              (s: number, x: Obj) => s + (x.requested_capacity_bytes || 0),
               0,
             ),
           )}
