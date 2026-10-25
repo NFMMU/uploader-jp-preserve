@@ -28,6 +28,9 @@ const (
 func uploaderCandidateHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			Proxy: nil, DialContext: dialPublicCrawlHost,
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return errors.New("too many redirects")
@@ -60,7 +63,7 @@ func checkUploaderCandidate(ctx context.Context, raw string, client *http.Client
 	return resp.StatusCode, nil
 }
 
-func checkUploaderListingCandidates(ctx context.Context, found []uploaderListingCandidate, seen map[string]bool, checksPerformed int, client *http.Client) ([]uploaderListingCandidate, int, int, []string, bool) {
+func checkUploaderListingCandidates(ctx context.Context, found []uploaderListingCandidate, seen, registered map[string]bool, checksPerformed int, client *http.Client) ([]uploaderListingCandidate, int, int, []string, bool) {
 	candidates := make([]uploaderListingCandidate, 0, len(found))
 	duplicates := 0
 	var checkErrors []string
@@ -70,6 +73,11 @@ func checkUploaderListingCandidates(ctx context.Context, found []uploaderListing
 			continue
 		}
 		if seen[normalized] {
+			duplicates++
+			continue
+		}
+		if registered[normalized] {
+			seen[normalized] = true
 			duplicates++
 			continue
 		}
@@ -169,8 +177,31 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		for _, scanErr := range errorsForSeed {
 			scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: %s", seed, scanErr))
 		}
+		lookupURLs := make([]string, 0, len(found))
+		lookupSeen := make(map[string]bool, len(found))
+		for _, item := range found {
+			normalized, err := normalizeUploaderURL(item.URL)
+			if err == nil && !lookupSeen[normalized] {
+				lookupSeen[normalized] = true
+				lookupURLs = append(lookupURLs, normalized)
+			}
+		}
+		registeredURLs := make([]string, 0, len(lookupURLs))
+		if len(lookupURLs) > 0 {
+			if err := s.db.WithContext(c.Request.Context()).
+				Table("source_url_registry").
+				Where("normalized_url IN ?", lookupURLs).
+				Pluck("normalized_url", &registeredURLs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "登録済みURLを確認できませんでした。"})
+				return
+			}
+		}
+		registered := make(map[string]bool, len(registeredURLs))
+		for _, normalized := range registeredURLs {
+			registered[normalized] = true
+		}
 		checked, totalChecks, duplicates, checkErrors, truncated := checkUploaderListingCandidates(
-			c.Request.Context(), found, seenCandidates, checksPerformed, candidateClient,
+			c.Request.Context(), found, seenCandidates, registered, checksPerformed, candidateClient,
 		)
 		checksPerformed = totalChecks
 		duplicatesInRun += duplicates

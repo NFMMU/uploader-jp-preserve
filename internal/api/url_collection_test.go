@@ -28,6 +28,20 @@ func TestNormalizeUploaderURL(t *testing.T) {
 	}
 }
 
+func TestUploaderCandidateHTTPClientRejectsPrivateIPs(t *testing.T) {
+	client := uploaderCandidateHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("candidate client should not use a proxy")
+	}
+	if _, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:443"); err == nil {
+		t.Fatal("candidate client should reject private IP addresses")
+	}
+}
+
 func TestCheckUploaderCandidateStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -82,7 +96,7 @@ func TestCheckUploaderListingCandidatesDeduplicatesAndCapsRequests(t *testing.T)
 	}
 
 	candidates, checks, duplicates, _, truncated := checkUploaderListingCandidates(
-		context.Background(), found, make(map[string]bool), 0, client,
+		context.Background(), found, make(map[string]bool), make(map[string]bool), 0, client,
 	)
 	if requests != maxURLCollectionChecks {
 		t.Fatalf("request count = %d, want %d", requests, maxURLCollectionChecks)
@@ -98,6 +112,46 @@ func TestCheckUploaderListingCandidatesDeduplicatesAndCapsRequests(t *testing.T)
 	}
 	if !truncated {
 		t.Fatal("expected remaining candidates to mark the scan as truncated")
+	}
+}
+
+func TestCheckUploaderListingCandidatesRegisteredURLsDoNotUseCheckBudget(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	registeredURL := "https://uu.getuploader.com/example/download/registered"
+	newURL := "https://uu.getuploader.com/example/download/new"
+	found := []uploaderListingCandidate{{URL: registeredURL}, {URL: newURL}}
+
+	candidates, checks, duplicates, _, truncated := checkUploaderListingCandidates(
+		context.Background(),
+		found,
+		make(map[string]bool),
+		map[string]bool{registeredURL: true},
+		maxURLCollectionChecks-1,
+		client,
+	)
+	if requests != 1 {
+		t.Fatalf("request count = %d, want 1", requests)
+	}
+	if checks != maxURLCollectionChecks {
+		t.Fatalf("checks = %d, want %d", checks, maxURLCollectionChecks)
+	}
+	if duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", duplicates)
+	}
+	if len(candidates) != 1 || candidates[0].URL != newURL {
+		t.Fatalf("candidates = %#v, want only %q", candidates, newURL)
+	}
+	if truncated {
+		t.Fatal("expected registered URL not to exhaust the check budget")
 	}
 }
 
