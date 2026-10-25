@@ -4655,7 +4655,13 @@ function Audit({ api, refresh }: any) {
             (d.data.items || []).map((x: Obj) => (
               <tr key={x.id}>
                 <td>{date(x.created_at)}</td>
-                <td>{x.actor_email || x.actor_id || "system"}</td>
+                <td>
+                  {x.actor_display_name ||
+                    x.actor_label ||
+                    x.actor_email ||
+                    x.actor_id ||
+                    "system"}
+                </td>
                 <td>
                   {x.target_type}{" "}
                   <code>{String(x.target_id || "").slice(0, 8)}</code>
