@@ -2831,7 +2831,7 @@ function Tasks({ api, refresh, notify, role }: any) {
             ["queued", "待機中"],
             ["running", "実行中"],
             ["failed", "失敗"],
-            ["succeeded", "成功"],
+            ["completed", "成功"],
           ].map(([v, l]) => (
             <button
               key={v}
