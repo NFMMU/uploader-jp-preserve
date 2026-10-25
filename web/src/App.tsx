@@ -1894,84 +1894,17 @@ function Catalog({ api, refresh, notify, role, token }: any) {
                 </td>
               </tr>
               {files.map((x: Obj) => (
-                <tr
+                <FileRow
                   key={x.id}
-                  className={selectedIDs.includes(x.id) ? "selected-row" : ""}
-                >
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`${x.original_filename}を選択`}
-                      checked={selectedIDs.includes(x.id)}
-                      disabled={
-                        role === "viewer" ||
-                        !!x.deletion_requested_at ||
-                        !!x.deleted_at
-                      }
-                      onChange={(e) => toggleSelected(x.id, e.target.checked)}
-                    />
-                  </td>
-                  <td>
-                    <div className="file-cell">
-                      <div className="file-icon">
-                        <Files size={17} />
-                      </div>
-                      <div>
-                        <b>{x.artifact_title || "作品名未設定"}</b>
-                        <small>作者：{x.creator_name || "不明"}</small>
-                        <span>{x.original_filename || "名称未設定"}</span>
-                        <small>
-                          <code>{x.id}</code>
-                        </small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <Status
-                      value={x.deleted_at ? "deleted" : x.preservation_status}
-                    />
-                    {x.deletion_requested_at && !x.deleted_at && (
-                      <small className="cell-sub">削除処理中</small>
-                    )}
-                  </td>
-                  <td>
-                    <Status value={x.redistribution_policy} />
-                    <small className="cell-sub">
-                      {x.public_download_enabled ? "公開フラグON" : "非公開"}
-                    </small>
-                  </td>
-                  <td>{bytes(x.size_bytes)}</td>
-                  <td>{date(x.created_at)}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button
-                        className="small-btn"
-                        disabled={role === "viewer"}
-                        onClick={() => {
-                          setDetail(x);
-                          setPolicy(x.redistribution_policy || "unknown");
-                          setPub(!!x.public_download_enabled);
-                        }}
-                      >
-                        公開設定
-                      </button>
-                      <button
-                        className="small-btn"
-                        disabled={
-                          role === "viewer" ||
-                          !!x.deletion_requested_at ||
-                          !!x.deleted_at
-                        }
-                        onClick={() => openMetadata(x)}
-                      >
-                        メタデータ
-                      </button>
-                      <button type="button" disabled={busy} onClick={download}>
-                        {busy ? "準備中…" : "ダウンロード"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  x={x}
+                  role={role}
+                  isSelected={selectedIDs.includes(x.id)}
+                  toggleSelected={toggleSelected}
+                  setDetail={setDetail}
+                  setPolicy={setPolicy}
+                  setPub={setPub}
+                  openMetadata={openMetadata}
+                />
               ))}
             </>
           ) : (
@@ -4719,11 +4652,11 @@ function FileRow({
   x: Obj;
   role: string;
   isSelected: boolean;
-  toggleSelected: (id: string, checked: boolean) => {};
-  setDetail: (x: Obj) => {};
-  setPolicy: (policy: string) => {};
-  setPub: (isPublic: boolean) => {};
-  openMetadata: (x: Obj) => {};
+  toggleSelected: (id: string, checked: boolean) => void;
+  setDetail: React.Dispatch<React.SetStateAction<Obj | null>>;
+  setPolicy: React.Dispatch<React.SetStateAction<string>>;
+  setPub: React.Dispatch<React.SetStateAction<boolean>>;
+  openMetadata: React.Dispatch<React.SetStateAction<Obj>>;
 }) {
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = useState("");
