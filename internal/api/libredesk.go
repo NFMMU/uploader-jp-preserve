@@ -52,13 +52,13 @@ func (s *Server) libreDeskEnabled() bool {
 	return s.cfg.LibreDeskBaseURL != "" && s.cfg.LibreDeskAPIKey != "" && s.cfg.LibreDeskAPISecret != "" && s.cfg.LibreDeskInboxID > 0
 }
 
-func (s *Server) createLibreDeskConversation(targetType, targetID, subject, contactName, contactValue, content string) {
+func (s *Server) createLibreDeskConversation(targetType, targetID, subject, contactName, contactValue, content string) string {
 	if !s.libreDeskEnabled() {
-		return
+		return ""
 	}
 	if targetType != "public_request" && targetType != "node_enrollment_request" {
 		s.logger.Error("libredesk conversation target type is invalid", "target_type", targetType, "target_id", targetID)
-		return
+		return ""
 	}
 	contactEmail := s.cfg.LibreDeskFallbackContactEmail
 	contactMissing := true
@@ -69,9 +69,6 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 	firstName := strings.TrimSpace(contactName)
 	if firstName == "" {
 		firstName = "申請者"
-	}
-	if contactMissing {
-		content = "【注意】申請者がメールアドレスを入力していないため、LibreDesk の連絡先には運営窓口アドレスを設定しています。申請に記載された連絡先を確認してください。\n\n" + content
 	}
 	// LibreDesk accepts HTML content. Escape all user-submitted text before adding
 	// line breaks so request details cannot inject markup into the helpdesk thread.
@@ -93,14 +90,14 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 	body, err := json.Marshal(payload)
 	if err != nil {
 		s.logger.Error("libredesk conversation payload could not be encoded", "target_type", targetType, "target_id", targetID, "error", err)
-		return
+		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.LibreDeskBaseURL+"/api/v1/conversations", bytes.NewReader(body))
 	if err != nil {
 		s.logger.Error("libredesk conversation request could not be built", "target_type", targetType, "target_id", targetID, "error", err)
-		return
+		return ""
 	}
 	token := base64.StdEncoding.EncodeToString([]byte(s.cfg.LibreDeskAPIKey + ":" + s.cfg.LibreDeskAPISecret))
 	req.Header.Set("Authorization", "Basic "+token)
@@ -110,40 +107,44 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 	resp, err := client.Do(req)
 	if err != nil {
 		s.logger.Error("libredesk conversation creation failed", "target_type", targetType, "target_id", targetID, "error", err)
-		return
+		return ""
 	}
 	defer resp.Body.Close()
 	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if readErr != nil {
 		s.logger.Error("libredesk response could not be read", "target_type", targetType, "target_id", targetID, "error", readErr)
-		return
+		return ""
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		s.logger.Error("libredesk conversation creation returned an error", "target_type", targetType, "target_id", targetID, "http_status", resp.StatusCode)
-		return
+		return ""
 	}
 	var result libreDeskConversationResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
 		s.logger.Error("libredesk conversation response was invalid", "target_type", targetType, "target_id", targetID, "error", err)
-		return
+		return ""
 	}
 	if strings.TrimSpace(result.Data.UUID) == "" {
 		s.logger.Error("libredesk conversation response did not include a UUID", "target_type", targetType, "target_id", targetID)
-		return
+		return ""
 	}
 	conversationURL := strings.ReplaceAll(s.cfg.LibreDeskConversationURLTemplate, "{{base_url}}", s.cfg.LibreDeskBaseURL)
 	conversationURL = strings.ReplaceAll(conversationURL, "{{uuid}}", result.Data.UUID)
 	if _, err := validateHTTPURL(conversationURL); err != nil {
 		s.logger.Error("configured libredesk conversation URL is invalid", "target_type", targetType, "target_id", targetID)
-		return
+		return ""
 	}
 	if err := s.db.WithContext(context.Background()).Exec(`
 		INSERT INTO request_conversation_links (target_type, target_id, url, label, created_at)
 		VALUES (?, ?, ?, ?, now()) ON CONFLICT (target_type, target_id, url) DO NOTHING`, targetType, targetID, conversationURL, fmt.Sprintf("LibreDesk 会話 #%s", shortID(result.Data.UUID))).Error; err != nil {
 		s.logger.Error("libredesk conversation was created but its link could not be saved", "target_type", targetType, "target_id", targetID, "error", err)
-		return
+		return ""
+	}
+	if contactMissing {
+		s.addLibreDeskPrivateNote(result.Data.UUID, "【注意】申請者がメールアドレスを入力していないため、LibreDesk の連絡先には運営窓口アドレスを設定しています。申請に記載された連絡先を確認してください。")
 	}
 	s.logger.Info("libredesk conversation created", "target_type", targetType, "target_id", targetID, "conversation_uuid", result.Data.UUID)
+	return result.Data.UUID
 }
 
 func shortID(value string) string {
@@ -266,4 +267,94 @@ func (s *Server) conversationTargetExists(c *gin.Context, targetType, targetID s
 		return false
 	}
 	return err == nil && count == 1
+}
+
+func (s *Server) addLibreDeskPrivateNote(
+	conversationUUID string,
+	note string,
+) error {
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return nil
+	}
+
+	// Escape user-supplied text before converting newlines to HTML.
+	message := strings.ReplaceAll(
+		html.EscapeString(note),
+		"\n",
+		"<br>",
+	)
+
+	payload := struct {
+		Message    string `json:"message"`
+		Private    bool   `json:"private"`
+		SenderType string `json:"sender_type"`
+	}{
+		Message:    message,
+		Private:    true,
+		SenderType: "agent",
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode private note: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		8*time.Second,
+	)
+	defer cancel()
+
+	endpoint := fmt.Sprintf(
+		"%s/api/v1/conversations/%s/messages",
+		strings.TrimRight(s.cfg.LibreDeskBaseURL, "/"),
+		conversationUUID,
+	)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		endpoint,
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("build private note request: %w", err)
+	}
+
+	token := base64.StdEncoding.EncodeToString(
+		[]byte(
+			s.cfg.LibreDeskAPIKey + ":" +
+				s.cfg.LibreDeskAPISecret,
+		),
+	)
+
+	req.Header.Set("Authorization", "Basic "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("post private note: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Drain a limited response body and close the connection.
+	_, readErr := io.Copy(
+		io.Discard,
+		io.LimitReader(resp.Body, 1<<20),
+	)
+	if readErr != nil {
+		return fmt.Errorf("read private note response: %w", readErr)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf(
+			"private note API returned HTTP %d",
+			resp.StatusCode,
+		)
+	}
+
+	return nil
 }

@@ -195,8 +195,11 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 	if requestType == "publisher_assistance" {
 		label = "配布元からの配布代行相談"
 	}
-	content := fmt.Sprintf("申請種別: %s\n申請ID: %s\n申請者: %s\n連絡先: %s\n作品名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, request.ID, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
-	s.createLibreDeskConversation("public_request", request.ID, "【uploader.jp保全】"+label+": "+title, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), content)
+	content := fmt.Sprintf("申請種別: %s\nn申請者: %s\n連絡先: %s\n作品名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
+	conversation_id := s.createLibreDeskConversation("public_request", request.ID, "【uploader.jp保全】"+label+": "+title, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), content)
+	if conversation_id != "" {
+		s.addLibreDeskPrivateNote(conversation_id, "申請URL: https://uploaderjp.udonya.moe/admin/requests/"+request.ID)
+	}
 	c.JSON(http.StatusCreated, gin.H{"id": request.ID, "request_type": request.RequestType, "status": request.Status, "message": "申請を受け付けました。権利関係を確認し、必要に応じて連絡します。許諾が確認できるまでは公開・再配布しません。"})
 }
 
