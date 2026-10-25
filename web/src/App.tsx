@@ -2842,6 +2842,7 @@ function Tasks({ api, refresh, notify, role }: any) {
             "優先度",
             "試行回数",
             "エラー / 結果",
+            "ノード",
             "更新日時",
             "操作",
           ]}
@@ -2883,6 +2884,7 @@ function Tasks({ api, refresh, notify, role }: any) {
                 </td>
                 <td>{x.attempt_count ?? 0} / 5</td>
                 <td className="error-cell">{x.last_error || "—"}</td>
+                <td>{x.target_node ? x.source_node : "-"}</td>
                 <td>{date(x.updated_at)}</td>
                 <td>
                   {role === "admin" && x.status === "failed" && (
