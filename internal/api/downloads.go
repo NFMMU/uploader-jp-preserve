@@ -108,7 +108,7 @@ func (s *Server) authorizedDownloadJob(c *gin.Context) (downloadJob, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid download id"})
 		return downloadJob{}, false
 	}
-	header := c.GetHeader("Authorization")
+	header := c.GetHeader("Download-Authorization")
 	if !strings.HasPrefix(header, "Bearer ") {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "download bearer token required"})
 		return downloadJob{}, false

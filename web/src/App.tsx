@@ -4673,7 +4673,11 @@ function FileRow({
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         const status = await publicAPI<{ status: string; last_error?: string }>(
           `/downloads/${created.job.id}`,
-          { headers: { Authorization: `Bearer ${created.access_token}` } },
+          {
+            headers: {
+              "Download-Authorization": `Bearer ${created.access_token}`,
+            },
+          },
         );
         if (status.status === "ready") {
           ready = true;
@@ -4691,7 +4695,11 @@ function FileRow({
         );
       const response = await fetch(
         `/api/v1/downloads/${created.job.id}/content`,
-        { headers: { Authorization: `Bearer ${created.access_token}` } },
+        {
+          headers: {
+            "Download-Authorization": `Bearer ${created.access_token}`,
+          },
+        },
       );
       if (!response.ok) {
         let detail = "";
