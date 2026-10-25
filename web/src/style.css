@@ -380,11 +380,17 @@ a {
 .stat-icon {
   display: none;
 }
-.blue,
+.blue {
+  background: lightblue;
+}
+.green {
+  background: lightgreen;
+}
+.red {
+  background: lightsalmon;
+}
 .violet,
-.green,
 .amber,
-.red,
 .gray {
   background: transparent;
   color: inherit;
@@ -620,10 +626,7 @@ code {
   border-radius: 50%;
   background: currentColor;
 }
-.badge.green,
-.badge.blue,
 .badge.amber,
-.badge.red,
 .badge.gray {
   background: #f3f3f3;
   color: #444;
