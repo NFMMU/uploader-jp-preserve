@@ -121,7 +121,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 		if enrollment.ID == "" {
 			return gorm.ErrRecordNotFound
 		}
-		if req.Name != enrollment.Name || req.NodeType != enrollment.NodeType || req.RequestedCapacityBytes != enrollment.RequestedCapacityBytes {
+		if req.Name != enrollment.Name || req.NodeType != enrollment.NodeType {
 			return errors.New("registration details do not match the approved request")
 		}
 		nodeToken, err = newNodeToken()
