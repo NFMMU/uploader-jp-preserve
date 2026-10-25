@@ -418,12 +418,13 @@ func submitUploaderListingPassword(ctx context.Context, client *http.Client, pag
 		return nil, nil, errors.New("パスワードは元ページと同じホストにのみ送信できます")
 	}
 	var req *http.Request
-	if method == http.MethodPost {
+	switch method {
+	case http.MethodPost:
 		req, err = http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(values.Encode()))
 		if err == nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
-	} else if method == http.MethodGet {
+	case http.MethodGet:
 		query := target.Query()
 		for key, vals := range values {
 			for _, value := range vals {
@@ -432,7 +433,7 @@ func submitUploaderListingPassword(ctx context.Context, client *http.Client, pag
 		}
 		target.RawQuery = query.Encode()
 		req, err = http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-	} else {
+	default:
 		return nil, nil, errors.New("一覧ページのパスワードフォームの送信方式に対応していません")
 	}
 	if err != nil {
