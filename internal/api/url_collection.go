@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,8 +21,85 @@ var errDuplicateSourceURL = errors.New("source URL has already been requested or
 const (
 	maxURLCollectionSeeds      = 10
 	maxURLCollectionCandidates = 100
+	maxURLCollectionChecks     = 20
 	maxURLCollectionPages      = 20
 )
+
+func uploaderCandidateHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			Proxy: nil, DialContext: dialPublicCrawlHost,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects")
+			}
+			if _, err := validateUploaderURL(req.URL.String()); err != nil {
+				return errors.New("redirect target is not an uploader URL")
+			}
+			return nil
+		},
+	}
+}
+
+func checkUploaderCandidate(ctx context.Context, raw string, client *http.Client) (int, error) {
+	validated, err := validateUploaderURL(raw)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validated, nil)
+	if err != nil {
+		return 0, fmt.Errorf("確認リクエストを作成できません: %w", err)
+	}
+	req.Header.Set("User-Agent", "uploader-jp-archive/1.0 (preservation link check)")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/octet-stream,*/*;q=0.8")
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("接続エラー: %w", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+func checkUploaderListingCandidates(ctx context.Context, found []uploaderListingCandidate, seen, registered map[string]bool, checksPerformed int, client *http.Client) ([]uploaderListingCandidate, int, int, []string, bool) {
+	candidates := make([]uploaderListingCandidate, 0, len(found))
+	duplicates := 0
+	var checkErrors []string
+	for _, item := range found {
+		normalized, err := normalizeUploaderURL(item.URL)
+		if err != nil {
+			continue
+		}
+		if seen[normalized] {
+			duplicates++
+			continue
+		}
+		if registered[normalized] {
+			seen[normalized] = true
+			duplicates++
+			continue
+		}
+		if checksPerformed >= maxURLCollectionChecks {
+			return candidates, checksPerformed, duplicates, checkErrors, true
+		}
+		seen[normalized] = true
+		checksPerformed++
+		status, checkErr := checkUploaderCandidate(ctx, normalized, client)
+		if checkErr != nil {
+			checkErrors = appendCapped(checkErrors, fmt.Sprintf("%s: リンク先を確認できませんでした: %s", normalized, checkErr))
+			continue
+		}
+		if status < 200 || status >= 300 {
+			checkErrors = appendCapped(checkErrors, fmt.Sprintf("%s: リンク先がHTTP %dを返したためスキップしました", normalized, status))
+			continue
+		}
+		item.URL = normalized
+		candidates = append(candidates, item)
+	}
+	return candidates, checksPerformed, duplicates, checkErrors, false
+}
 
 type collectedSourceURL struct {
 	URL       string `json:"url"`
@@ -83,9 +162,12 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	seenCandidates := make(map[string]bool)
 	pagesScanned := 0
 	duplicatesInRun := 0
+	checksPerformed := 0
+	checksTruncated := false
 	var scanErrors []string
+	candidateClient := uploaderCandidateHTTPClient()
 	for _, seed := range seeds {
-		if pagesScanned >= maxURLCollectionPages || len(candidates) >= maxURLCollectionCandidates {
+		if pagesScanned >= maxURLCollectionPages || len(candidates) >= maxURLCollectionCandidates || checksTruncated {
 			break
 		}
 		remainingPages := maxURLCollectionPages - pagesScanned
@@ -95,24 +177,46 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		for _, scanErr := range errorsForSeed {
 			scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: %s", seed, scanErr))
 		}
+		lookupURLs := make([]string, 0, len(found))
+		lookupSeen := make(map[string]bool, len(found))
 		for _, item := range found {
-			normalized, normErr := normalizeUploaderURL(item.URL)
-			if normErr != nil {
-				continue
+			normalized, err := normalizeUploaderURL(item.URL)
+			if err == nil && !lookupSeen[normalized] {
+				lookupSeen[normalized] = true
+				lookupURLs = append(lookupURLs, normalized)
 			}
-			if seenCandidates[normalized] {
-				duplicatesInRun++
-				continue
+		}
+		registeredURLs := make([]string, 0, len(lookupURLs))
+		if len(lookupURLs) > 0 {
+			if err := s.db.WithContext(c.Request.Context()).
+				Table("source_url_registry").
+				Where("normalized_url IN ?", lookupURLs).
+				Pluck("normalized_url", &registeredURLs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "登録済みURLを確認できませんでした。"})
+				return
 			}
-			seenCandidates[normalized] = true
-			item.URL = normalized
+		}
+		registered := make(map[string]bool, len(registeredURLs))
+		for _, normalized := range registeredURLs {
+			registered[normalized] = true
+		}
+		checked, totalChecks, duplicates, checkErrors, truncated := checkUploaderListingCandidates(
+			c.Request.Context(), found, seenCandidates, registered, checksPerformed, candidateClient,
+		)
+		checksPerformed = totalChecks
+		duplicatesInRun += duplicates
+		checksTruncated = truncated
+		for _, checkErr := range checkErrors {
+			scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: %s", seed, checkErr))
+		}
+		for _, item := range checked {
 			candidates = append(candidates, item)
-			candidateSeeds[normalized] = seed
+			candidateSeeds[item.URL] = seed
 			if len(candidates) >= maxURLCollectionCandidates {
 				break
 			}
 		}
-		if len(candidates) >= maxURLCollectionCandidates {
+		if len(candidates) >= maxURLCollectionCandidates || checksTruncated {
 			break
 		}
 	}
@@ -203,7 +307,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"seed_count": len(seeds), "pages_scanned": pagesScanned, "candidate_count": len(candidates),
 		"requests_created": created, "duplicates_discarded": duplicates, "failed": failed,
-		"truncated": len(candidates) >= maxURLCollectionCandidates, "errors": scanErrors, "items": results,
+		"truncated": len(candidates) >= maxURLCollectionCandidates || checksTruncated, "errors": scanErrors, "items": results,
 		"message": "公開サイトから検出した新しいURLは申請・保全レビューに登録しました。権利確認後に取得を開始できます。",
 	})
 }

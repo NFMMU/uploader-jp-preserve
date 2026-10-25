@@ -1,10 +1,21 @@
 package api
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestNormalizeUploaderURL(t *testing.T) {
 	got, err := normalizeUploaderURL(" HTTPS://UU.GETUPLOADER.COM:443/example/download/12?token=abc#section ")
@@ -14,6 +25,133 @@ func TestNormalizeUploaderURL(t *testing.T) {
 	want := "https://uu.getuploader.com/example/download/12?token=abc"
 	if got != want {
 		t.Fatalf("normalizeUploaderURL() = %q, want %q", got, want)
+	}
+}
+
+func TestUploaderCandidateHTTPClientRejectsPrivateIPs(t *testing.T) {
+	client := uploaderCandidateHTTPClient()
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("candidate client should not use a proxy")
+	}
+	if _, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:443"); err == nil {
+		t.Fatal("candidate client should reject private IP addresses")
+	}
+}
+
+func TestCheckUploaderCandidateStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		wantStatus int
+	}{
+		{name: "not found", statusCode: http.StatusNotFound, wantStatus: http.StatusNotFound},
+		{name: "available", statusCode: http.StatusPartialContent, wantStatus: http.StatusPartialContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("Range") != "bytes=0-0" {
+					t.Errorf("Range header = %q, want bytes=0-0", req.Header.Get("Range"))
+				}
+				return &http.Response{
+					StatusCode: tc.statusCode,
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			})}
+			got, err := checkUploaderCandidate(context.Background(), "https://uu.getuploader.com/example/download/12", client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.wantStatus {
+				t.Fatalf("checkUploaderCandidate() status = %d, want %d", got, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestCheckUploaderListingCandidatesDeduplicatesAndCapsRequests(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	found := []uploaderListingCandidate{
+		{URL: "https://uu.getuploader.com/example/download/0"},
+		{URL: "https://uu.getuploader.com/example/download/0"},
+	}
+	for i := 1; i <= maxURLCollectionChecks; i++ {
+		found = append(found, uploaderListingCandidate{
+			URL: fmt.Sprintf("https://uu.getuploader.com/example/download/%d", i),
+		})
+	}
+
+	candidates, checks, duplicates, _, truncated := checkUploaderListingCandidates(
+		context.Background(), found, make(map[string]bool), make(map[string]bool), 0, client,
+	)
+	if requests != maxURLCollectionChecks {
+		t.Fatalf("request count = %d, want %d", requests, maxURLCollectionChecks)
+	}
+	if checks != maxURLCollectionChecks {
+		t.Fatalf("checks = %d, want %d", checks, maxURLCollectionChecks)
+	}
+	if duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", duplicates)
+	}
+	if len(candidates) != maxURLCollectionChecks {
+		t.Fatalf("candidate count = %d, want %d", len(candidates), maxURLCollectionChecks)
+	}
+	if !truncated {
+		t.Fatal("expected remaining candidates to mark the scan as truncated")
+	}
+}
+
+func TestCheckUploaderListingCandidatesRegisteredURLsDoNotUseCheckBudget(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	registeredURL := "https://uu.getuploader.com/example/download/registered"
+	newURL := "https://uu.getuploader.com/example/download/new"
+	found := []uploaderListingCandidate{{URL: registeredURL}, {URL: newURL}}
+
+	candidates, checks, duplicates, _, truncated := checkUploaderListingCandidates(
+		context.Background(),
+		found,
+		make(map[string]bool),
+		map[string]bool{registeredURL: true},
+		maxURLCollectionChecks-1,
+		client,
+	)
+	if requests != 1 {
+		t.Fatalf("request count = %d, want 1", requests)
+	}
+	if checks != maxURLCollectionChecks {
+		t.Fatalf("checks = %d, want %d", checks, maxURLCollectionChecks)
+	}
+	if duplicates != 1 {
+		t.Fatalf("duplicates = %d, want 1", duplicates)
+	}
+	if len(candidates) != 1 || candidates[0].URL != newURL {
+		t.Fatalf("candidates = %#v, want only %q", candidates, newURL)
+	}
+	if truncated {
+		t.Fatal("expected registered URL not to exhaust the check budget")
 	}
 }
 
