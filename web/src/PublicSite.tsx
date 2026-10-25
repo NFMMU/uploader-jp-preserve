@@ -1383,7 +1383,7 @@ function PreservationRequest() {
           creator_name: creator.trim(),
           source_url: sourceURL.trim(),
           source_password: sourcePassword,
-          details: details.trim() || "保全を希望します。",
+          details: details.trim() || "詳細なし",
           submitter_name: name.trim(),
           contact: contact.trim(),
         }),
