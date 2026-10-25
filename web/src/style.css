@@ -381,13 +381,13 @@ a {
   display: none;
 }
 .blue {
-  background: lightblue;
+  background: lightblue !important;
 }
 .green {
-  background: lightgreen;
+  background: lightgreen !important;
 }
 .red {
-  background: lightsalmon;
+  background: lightsalmon !important;
 }
 .violet,
 .amber,
