@@ -30,7 +30,7 @@ services:
 
   # Prepare persistent named volumes for the non-root distroless containers.
   staging-data-init:
-    image: alpine:3.20
+    image: alpine:3.24
     command:
       [
         "sh",
@@ -42,7 +42,7 @@ services:
     restart: "no"
 
   delivery-data-init:
-    image: alpine:3.20
+    image: alpine:3.24
     command:
       [
         "sh",
