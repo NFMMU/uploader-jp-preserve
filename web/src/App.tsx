@@ -4657,7 +4657,9 @@ function Audit({ api, refresh }: any) {
                 <td>{date(x.created_at)}</td>
                 <td>
                   {x.actor_display_name ||
-                    x.actor_label ||
+                    (x.actor_label === "anonymous"
+                      ? "system"
+                      : x.actor_label) ||
                     x.actor_email ||
                     x.actor_id ||
                     "system"}
