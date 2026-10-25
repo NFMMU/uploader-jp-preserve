@@ -29,7 +29,9 @@ services:
     restart: "no"
 
   api:
-    build: .
+    # build: .
+    image: ghcr.io/nfmmu/uploader-jp-preservation-api:latest
+    pull_policy: always
     env_file:
       - .env
     environment:
@@ -50,7 +52,9 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    #build: ./web
+    image: ghcr.io/nfmmu/uploader-jp-preservation-web:latest
+    pull_policy: always
     env_file:
       - .env
     ports:
