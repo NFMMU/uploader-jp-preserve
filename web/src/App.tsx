@@ -40,11 +40,13 @@ const apiBase = "/api/v1";
 type APIError = { error?: string; message?: string };
 async function publicAPI<T>(
   path: string,
+  token: string,
   options: RequestInit = {},
 ): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: {
+      Authorization: "Bearer " + token,
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     },
@@ -1904,6 +1906,7 @@ function Catalog({ api, refresh, notify, role, token }: any) {
                   setPolicy={setPolicy}
                   setPub={setPub}
                   openMetadata={openMetadata}
+                  token={token}
                 />
               ))}
             </>
@@ -4643,6 +4646,7 @@ function FileRow({
   x,
   role,
   isSelected,
+  token,
   toggleSelected,
   setDetail,
   setPolicy,
@@ -4652,6 +4656,7 @@ function FileRow({
   x: Obj;
   role: string;
   isSelected: boolean;
+  token: string;
   toggleSelected: (id: string, checked: boolean) => void;
   setDetail: React.Dispatch<React.SetStateAction<Obj | null>>;
   setPolicy: React.Dispatch<React.SetStateAction<string>>;
@@ -4667,12 +4672,13 @@ function FileRow({
       const created = await publicAPI<{
         job: { id: string };
         access_token: string;
-      }>(`/files/${x.id}/downloads`, { method: "POST" });
+      }>(`/files/${x.id}/downloads`, token, { method: "POST" });
       let ready = false;
       for (let attempt = 0; attempt < 90; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         const status = await publicAPI<{ status: string; last_error?: string }>(
           `/downloads/${created.job.id}`,
+          token,
           {
             headers: {
               "Download-Authorization": `Bearer ${created.access_token}`,
@@ -4697,6 +4703,7 @@ function FileRow({
         `/api/v1/downloads/${created.job.id}/content`,
         {
           headers: {
+            Authorization: `Bearer ${token}`,
             "Download-Authorization": `Bearer ${created.access_token}`,
           },
         },
