@@ -2497,6 +2497,7 @@ function Nodes({ api, refresh, notify, role }: any) {
             "状態",
             "実容量 / 空き",
             "申告上限",
+            "使用率",
             "最終応答",
             "エージェント",
           ]}
@@ -2514,48 +2515,64 @@ function Nodes({ api, refresh, notify, role }: any) {
               </td>
             </tr>
           ) : (
-            (d.data.items || []).map((x: Obj) => (
-              <tr key={x.id}>
-                <td>
-                  <div className="file-cell">
-                    <div className="file-icon">
-                      <HardDrive size={17} />
+            (d.data.items || []).map((x: Obj) => {
+              const totalBytes =
+                x.total_bytes ??
+                x.actual_capacity_bytes ??
+                x.capacity_bytes ??
+                0;
+              const usedBytes =
+                x.used_bytes ??
+                Math.max(
+                  0,
+                  totalBytes - (x.available_bytes ?? x.free_bytes ?? 0),
+                );
+              const usagePercent =
+                totalBytes > 0
+                  ? `${((usedBytes / totalBytes) * 100).toFixed(1)}%`
+                  : "0.0%";
+
+              return (
+                <tr key={x.id}>
+                  <td>
+                    <div className="file-cell">
+                      <div className="file-icon">
+                        <HardDrive size={17} />
+                      </div>
+                      <div>
+                        <b>{x.name || x.id}</b>
+                        <small>
+                          <code>{String(x.id).slice(0, 8)}</code>
+                        </small>
+                      </div>
                     </div>
-                    <div>
-                      <b>{x.name || x.id}</b>
-                      <small>
-                        <code>{String(x.id).slice(0, 8)}</code>
-                      </small>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span className="type-pill">{x.node_type || "—"}</span>
-                </td>
-                <td>
-                  <Status value={x.status} />
-                </td>
-                <td>
-                  <b>
-                    {bytes(
-                      x.total_bytes ??
-                        x.actual_capacity_bytes ??
-                        x.capacity_bytes,
-                    )}
-                  </b>
-                  <small className="cell-sub">
-                    空き {bytes(x.available_bytes ?? x.free_bytes)}
-                  </small>
-                </td>
-                <td>
-                  {x.requested_capacity_bytes === 0
-                    ? "無制限"
-                    : bytes(x.requested_capacity_bytes ?? x.capacity_bytes)}
-                </td>
-                <td>{date(x.last_seen_at)}</td>
-                <td>{x.agent_version || "—"}</td>
-              </tr>
-            ))
+                  </td>
+                  <td>
+                    <span className="type-pill">{x.node_type || "—"}</span>
+                  </td>
+                  <td>
+                    <Status value={x.status} />
+                  </td>
+                  <td>
+                    <b>{bytes(totalBytes)}</b>
+                    <small className="cell-sub">
+                      空き {bytes(x.available_bytes ?? x.free_bytes)}
+                    </small>
+                  </td>
+                  <td>
+                    {x.requested_capacity_bytes === 0
+                      ? "無制限"
+                      : bytes(x.requested_capacity_bytes ?? x.capacity_bytes)}
+                  </td>
+                  <td>
+                    {usagePercent}
+                    <small className="cell-sub">{x.used_bytes}GB</small>
+                  </td>
+                  <td>{date(x.last_seen_at)}</td>
+                  <td>{x.agent_version || "—"}</td>
+                </tr>
+              );
+            })
           )}
         </Table>
       </section>
