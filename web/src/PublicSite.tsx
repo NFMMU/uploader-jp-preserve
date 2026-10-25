@@ -592,8 +592,13 @@ function NodeParticipationRequest() {
           <label className="check-label">
             <input type="checkbox" name="agree_to_terms" required />{" "}
             <span>
-              <Link to="/terms">利用規約</Link>、
-              <Link to="/privacy">プライバシー・ポリシー</Link>
+              <Link to="/terms" target="_blank">
+                利用規約
+              </Link>
+              、
+              <Link to="/privacy" target="_blank">
+                プライバシー・ポリシー
+              </Link>
               および参加ノード運用上の注意を確認し、ノード参加申請に必要な情報を送信することに同意します。
             </span>
           </label>
