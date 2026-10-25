@@ -42,7 +42,7 @@ async function publicAPI<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -4667,7 +4667,7 @@ function FileRow({
       const created = await publicAPI<{
         job: { id: string };
         access_token: string;
-      }>(`/public/files/${x.id}/downloads`, { method: "POST" });
+      }>(`/files/${x.id}/downloads`, { method: "POST" });
       let ready = false;
       for (let attempt = 0; attempt < 90; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
@@ -4690,7 +4690,7 @@ function FileRow({
           "準備に時間がかかっています。時間をおいて再度お試しください。",
         );
       const response = await fetch(
-        `/api/v1/public/downloads/${created.job.id}/content`,
+        `/api/v1/downloads/${created.job.id}/content`,
         { headers: { Authorization: `Bearer ${created.access_token}` } },
       );
       if (!response.ok) {
