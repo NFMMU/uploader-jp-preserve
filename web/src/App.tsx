@@ -2553,7 +2553,23 @@ function Nodes({ api, refresh, notify, role }: any) {
                     ? "無制限"
                     : bytes(x.requested_capacity_bytes ?? x.capacity_bytes)}
                 </td>
-                <td>{x.used_bytes ? bytes(x.used_bytes) : "不明"}</td>
+                <td>
+                  {x.used_bytes
+                    ? bytes(x.used_bytes) +
+                      `(${Math.trunc(
+                        x.requested_capacity_bytes === 0
+                          ? (x.used_bytes /
+                              (x.total_bytes ??
+                                x.actual_capacity_bytes ??
+                                x.capacity_bytes)) *
+                              100
+                          : (x.used_bytes /
+                              (x.requested_capacity_bytes ??
+                                x.capacity_bytes)) *
+                              100,
+                      )}%)`
+                    : "不明"}
+                </td>
                 <td>{date(x.last_seen_at)}</td>
                 <td>{x.agent_version || "—"}</td>
               </tr>
