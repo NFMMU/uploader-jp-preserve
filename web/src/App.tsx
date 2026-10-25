@@ -4817,7 +4817,7 @@ function FileRow({
           >
             メタデータ
           </button>
-          <button type="button" disabled={busy} onClick={download}>
+          <button type="small-btn" disabled={busy} onClick={download}>
             {busy ? "準備中…" : "ダウンロード"}
           </button>
         </div>
