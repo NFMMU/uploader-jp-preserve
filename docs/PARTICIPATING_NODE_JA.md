@@ -39,7 +39,7 @@ cp deploy/participant-node/.env.example deploy/participant-node/.env
 | `CENTRAL_API_URL`            | 運営から指定された HTTPS URL                        |
 | `NODE_ENROLLMENT_TOKEN`      | 承認後に受け取った一回限りのトークン                |
 | `NODE_NAME`                  | 申請時に承認されたノード名                          |
-| `NODE_TYPE`                  | 運営から指定された `A` または `B`                   |
+| `NODE_TYPE`                  | 基本的に `B` でご登録ください。                     |
 | `NODE_CAPACITY_BYTES`        | 提供する容量（バイト）                              |
 | `NODE_UPLOADER_MIN_INTERVAL` | uploader.jp へのリクエスト間隔。通常は `30s` のまま |
 
