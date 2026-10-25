@@ -373,8 +373,19 @@ func (s *Server) listAuditLogs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count audit logs"})
 		return
 	}
-	var logs []model.AuditLog
-	if err := s.db.WithContext(c.Request.Context()).Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&logs).Error; err != nil {
+	type auditLogView struct {
+		model.AuditLog   `gorm:"embedded"`
+		ActorDisplayName *string `json:"actor_display_name,omitempty"`
+	}
+	var logs []auditLogView
+	if err := s.db.WithContext(c.Request.Context()).
+		Model(&model.AuditLog{}).
+		Select("audit_logs.*, users.display_name AS actor_display_name").
+		Joins("LEFT JOIN users ON users.id = audit_logs.actor_id").
+		Order("audit_logs.created_at DESC").
+		Offset((page - 1) * limit).
+		Limit(limit).
+		Scan(&logs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list audit logs"})
 		return
 	}

@@ -2460,7 +2460,11 @@ function Nodes({ api, refresh, notify, role }: any) {
           label="申告容量"
           value={bytes(
             (d.data.items || []).reduce(
-              (s: number, x: Obj) => s + (x.requested_capacity_bytes || 0),
+              (s: number, x: Obj) =>
+                s +
+                (x.requested_capacity_bytes === 0
+                  ? x.capacity_bytes || 0
+                  : x.requested_capacity_bytes || 0),
               0,
             ),
           )}
@@ -4623,7 +4627,15 @@ function Audit({ api, refresh }: any) {
             (d.data.items || []).map((x: Obj) => (
               <tr key={x.id}>
                 <td>{date(x.created_at)}</td>
-                <td>{x.actor_email || x.actor_id || "system"}</td>
+                <td>
+                  {x.actor_display_name ||
+                    (x.actor_label === "anonymous"
+                      ? "system"
+                      : x.actor_label) ||
+                    x.actor_email ||
+                    x.actor_id ||
+                    "system"}
+                </td>
                 <td>
                   {x.target_type}{" "}
                   <code>{String(x.target_id || "").slice(0, 8)}</code>
