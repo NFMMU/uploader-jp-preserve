@@ -28,6 +28,31 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Prepare persistent named volumes for the non-root distroless containers.
+  staging-data-init:
+    image: alpine:3.20
+    command:
+      [
+        "sh",
+        "-ec",
+        "mkdir -p /data/staging && chown -R 65532:65532 /data/staging",
+      ]
+    volumes:
+      - staging_data:/data/staging
+    restart: "no"
+
+  delivery-data-init:
+    image: alpine:3.20
+    command:
+      [
+        "sh",
+        "-ec",
+        "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery",
+      ]
+    volumes:
+      - delivery_data:/data/delivery
+    restart: "no"
+
   api:
     # build: .
     image: ghcr.io/nfmmu/uploader-jp-preservation-api:latest
@@ -48,6 +73,10 @@ services:
       - delivery_data:/data/delivery
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      staging-data-init:
+        condition: service_completed_successfully
+      delivery-data-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
