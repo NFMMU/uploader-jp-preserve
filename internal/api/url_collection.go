@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,6 +23,41 @@ const (
 	maxURLCollectionCandidates = 100
 	maxURLCollectionPages      = 20
 )
+
+func uploaderCandidateHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects")
+			}
+			if _, err := validateUploaderURL(req.URL.String()); err != nil {
+				return errors.New("redirect target is not an uploader URL")
+			}
+			return nil
+		},
+	}
+}
+
+func checkUploaderCandidate(ctx context.Context, raw string, client *http.Client) (int, error) {
+	validated, err := validateUploaderURL(raw)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validated, nil)
+	if err != nil {
+		return 0, fmt.Errorf("確認リクエストを作成できません: %w", err)
+	}
+	req.Header.Set("User-Agent", "uploader-jp-archive/1.0 (preservation link check)")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/octet-stream,*/*;q=0.8")
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("接続エラー: %w", err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode, nil
+}
 
 type collectedSourceURL struct {
 	URL       string `json:"url"`
@@ -84,6 +121,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	pagesScanned := 0
 	duplicatesInRun := 0
 	var scanErrors []string
+	candidateClient := uploaderCandidateHTTPClient()
 	for _, seed := range seeds {
 		if pagesScanned >= maxURLCollectionPages || len(candidates) >= maxURLCollectionCandidates {
 			break
@@ -98,6 +136,15 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		for _, item := range found {
 			normalized, normErr := normalizeUploaderURL(item.URL)
 			if normErr != nil {
+				continue
+			}
+			status, checkErr := checkUploaderCandidate(c.Request.Context(), normalized, candidateClient)
+			if checkErr != nil {
+				scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: リンク先を確認できませんでした: %s", normalized, checkErr))
+				continue
+			}
+			if status < 200 || status >= 300 {
+				scanErrors = appendCapped(scanErrors, fmt.Sprintf("%s: リンク先がHTTP %dを返したためスキップしました", normalized, status))
 				continue
 			}
 			if seenCandidates[normalized] {

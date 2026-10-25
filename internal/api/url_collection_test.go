@@ -1,10 +1,20 @@
 package api
 
 import (
+	"context"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestNormalizeUploaderURL(t *testing.T) {
 	got, err := normalizeUploaderURL(" HTTPS://UU.GETUPLOADER.COM:443/example/download/12?token=abc#section ")
@@ -14,6 +24,38 @@ func TestNormalizeUploaderURL(t *testing.T) {
 	want := "https://uu.getuploader.com/example/download/12?token=abc"
 	if got != want {
 		t.Fatalf("normalizeUploaderURL() = %q, want %q", got, want)
+	}
+}
+
+func TestCheckUploaderCandidateStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		wantStatus int
+	}{
+		{name: "not found", statusCode: http.StatusNotFound, wantStatus: http.StatusNotFound},
+		{name: "available", statusCode: http.StatusPartialContent, wantStatus: http.StatusPartialContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("Range") != "bytes=0-0" {
+					t.Errorf("Range header = %q, want bytes=0-0", req.Header.Get("Range"))
+				}
+				return &http.Response{
+					StatusCode: tc.statusCode,
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			})}
+			got, err := checkUploaderCandidate(context.Background(), "https://uu.getuploader.com/example/download/12", client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.wantStatus {
+				t.Fatalf("checkUploaderCandidate() status = %d, want %d", got, tc.wantStatus)
+			}
+		})
 	}
 }
 
