@@ -536,6 +536,9 @@ function NodeParticipationRequest() {
               maxLength={120}
               placeholder="例：my-storage-node-01"
             />
+            <small>
+              英数-_小文字が利用可能です。-_が先頭に来る文字列は利用できません。
+            </small>
           </label>
           <label>
             ノード種別 *

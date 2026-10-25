@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,6 +75,11 @@ func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 	}
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.ContactEmail) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ノード名と連絡先を入力してください。"})
+		return
+	}
+	nameRegex := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,15}$`)
+	if nameRegex.MatchString(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ノード名は英数小文字_-の16文字以内で_-が先頭にならないようにしてください。"})
 		return
 	}
 	id := uuid.NewString()
