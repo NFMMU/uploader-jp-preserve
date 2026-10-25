@@ -30,7 +30,7 @@ jobs:
             file: Dockerfile.manager
           - name: web
             context: ./web
-            file: Dockerfile
+            file: ./web/Dockerfile
 
     steps:
       - name: Check out repository
