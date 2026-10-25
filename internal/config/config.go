@@ -60,7 +60,7 @@ func Load() (Config, error) {
 		LibreDeskAPIKey:                  strings.TrimSpace(os.Getenv("LIBREDESK_API_KEY")),
 		LibreDeskAPISecret:               strings.TrimSpace(os.Getenv("LIBREDESK_API_SECRET")),
 		LibreDeskFallbackContactEmail:    strings.TrimSpace(env("LIBREDESK_FALLBACK_CONTACT_EMAIL", "uploaderjp-archive@udonya.moe")),
-		LibreDeskConversationURLTemplate: env("LIBREDESK_CONVERSATION_URL_TEMPLATE", "{{base_url}}/app/inbox/conversations/{{uuid}}"),
+		LibreDeskConversationURLTemplate: env("LIBREDESK_CONVERSATION_URL_TEMPLATE", "{{base_url}}/inboxes/all/conversation/{{uuid}}"),
 		TurnstileSiteKey:                 strings.TrimSpace(os.Getenv("TURNSTILE_SITE_KEY")),
 		TurnstileSecretKey:               strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY")),
 	}
