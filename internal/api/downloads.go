@@ -45,12 +45,24 @@ func randomSecret() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *Server) publicEligible(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
+func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
+	ctx := s.db.WithContext(context.Background())
+	_ = ctx.Exec(`INSERT INTO download_audit_logs (download_job_id,file_object_id,selected_node_id,action,result,reason,bytes_sent,duration_ms) VALUES (NULLIF(?, '')::uuid,NULLIF(?, '')::uuid,?::uuid,?,?,?,?,?)`, jobID, fileID, nodeID, action, result, nullableText(reason), bytes, duration.Milliseconds()).Error
+}
+
+func nullableText(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}
+
+func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
 	var f model.FileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
 		return f, model.Placement{}, err
 	}
-	if !f.PublicDownloadEnabled || f.RedistributionPolicy != "allowed" || f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
+	if f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
 		return f, model.Placement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.Placement
@@ -64,28 +76,16 @@ func (s *Server) publicEligible(c *gin.Context, id string) (model.FileObject, mo
 	return f, rows[0], nil
 }
 
-func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
-	ctx := s.db.WithContext(context.Background())
-	_ = ctx.Exec(`INSERT INTO download_audit_logs (download_job_id,file_object_id,selected_node_id,action,result,reason,bytes_sent,duration_ms) VALUES (NULLIF(?, '')::uuid,NULLIF(?, '')::uuid,?::uuid,?,?,?,?,?)`, jobID, fileID, nodeID, action, result, nullableText(reason), bytes, duration.Milliseconds()).Error
-}
-
-func nullableText(s string) any {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	return s
-}
-
 func (s *Server) createDownloadJob(c *gin.Context) {
 	fileID := c.Param("id")
 	if _, err := uuid.Parse(fileID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file id"})
 		return
 	}
-	f, _, err := s.publicEligible(c, fileID)
+	f, _, err := s.fileDownloadIsAvailable(c, fileID)
 	if err != nil {
-		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_public_or_healthy", 0, 0)
-		c.JSON(http.StatusNotFound, gin.H{"error": "file is not available for public download"})
+		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_healthy", 0, 0)
+		c.JSON(http.StatusNotFound, gin.H{"error": "file is not available for download"})
 		return
 	}
 	token, err := randomSecret()
@@ -99,7 +99,7 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 		return
 	}
 	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
-	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/public/downloads/" + job.ID, "content_url": "/api/v1/public/downloads/" + job.ID + "/content"})
+	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/downloads/" + job.ID, "content_url": "/api/v1/downloads/" + job.ID + "/content"})
 }
 
 func (s *Server) authorizedDownloadJob(c *gin.Context) (downloadJob, bool) {
@@ -139,10 +139,10 @@ func (s *Server) downloadContent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "download is not ready", "status": job.Status})
 		return
 	}
-	f, _, err := s.publicEligible(c, job.FileObjectID)
+	f, _, err := s.fileDownloadIsAvailable(c, job.FileObjectID)
 	if err != nil {
-		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "publication_or_health_changed", 0, time.Since(started))
-		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer public"})
+		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "health_changed", 0, time.Since(started))
+		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
 	path := filepath.Join(s.cfg.DeliveryDir, job.ID)
@@ -182,7 +182,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.public_download_enabled=true AND f.redistribution_policy='allowed' AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
 		if err != nil {
 			return err
 		}
@@ -233,9 +233,9 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
-	if _, _, err := s.publicEligible(c, f.ID); err != nil {
-		s.failDelivery(job, "publication_or_health_changed")
-		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer public"})
+	if _, _, err := s.fileDownloadIsAvailable(c, f.ID); err != nil {
+		s.failDelivery(job, "health_changed")
+		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
 	if err := os.MkdirAll(s.cfg.DeliveryDir, 0o750); err != nil {
