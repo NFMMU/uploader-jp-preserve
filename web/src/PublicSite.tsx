@@ -514,8 +514,7 @@ function NodeParticipationRequest() {
       <h1>ストレージノード参加申請</h1>
       <p className="public-intro">
         ご自身のサーバーや PC
-        のストレージを、ファイル保全ネットワークに提供するための申請です。申請は運営が確認し、承認された場合に限り登録用の一回限りトークンを発行します。ノード種別
-        A/B は運営と相談して決定します。
+        のストレージを、ファイル保全ネットワークに提供するための申請です。申請は運営が確認し、承認された場合に限り登録用の一回限りトークンを発行します。
       </p>
       {success ? (
         <div className="public-success">
@@ -544,6 +543,7 @@ function NodeParticipationRequest() {
               <option value="A">A</option>
               <option value="B">B</option>
             </select>
+            <small>運営者からの指定がない限りBを選択してください。</small>
           </label>
           <label>
             提供容量（バイト） *
@@ -558,6 +558,15 @@ function NodeParticipationRequest() {
             <small>
               0 は参加者側で容量上限を設定しない指定です。例：10 GiB =
               10737418240
+            </small>
+            <small>
+              容量の計算にはこちらのサイトも便利です。
+              <a
+                href="https://keisan.site/ja/exec/user/1355670543"
+                target="_blank"
+              >
+                バイト換算
+              </a>
             </small>
           </label>
           <label>
@@ -669,7 +678,7 @@ function PublicCatalog() {
           aria-label="作品を検索"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="作品名・作者・ファイル名"
+          placeholder="作品・作者・ファイル名・uploader.jpのURL"
         />
         <button type="submit">検索</button>
       </form>
@@ -1294,6 +1303,9 @@ function RedistributionAssistancePage({
           <label>
             お名前・活動名（任意）
             <input name="submitter_name" maxLength={255} />
+            <small>
+              権利者ではなく、ご連絡者様のお名前・活動名をご記入ください。
+            </small>
           </label>
           <label>
             連絡先 *
