@@ -48,7 +48,7 @@ jobs:
       - name: Prepare local environment file
         run: cp .env.example .env
       - name: Validate main Compose file
-        run: docker compose config --quiet
+        run: docker compose -f docker-compose.example.yml  config --quiet
       - name: Validate participant node Compose file
         run: docker compose --env-file deploy/participant-node/.env.example -f deploy/participant-node/compose.yaml config --quiet
       - name: Validate participant GHCR Compose file
