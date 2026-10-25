@@ -161,7 +161,19 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		content := fmt.Sprintf("申請種別: %s\n申請ID: %s\n連絡先: %s\n対象URL: %s\n移設先URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\n\n申請内容:\n%s", typeLabel, contactName, valueOrEmpty(request.Contact), valueOrEmpty(request.SourceURL), valueOrEmpty(request.ExternalURL), valueOrEmpty(request.RightsHolderContact), valueOrEmpty(request.IntakeFileName), request.Details)
 		conversation_id := s.createLibreDeskConversation("public_request", request.ID, subjectTitle, contactName, valueOrEmpty(request.Contact), content)
 		if conversation_id != "" {
-			s.addLibreDeskPrivateNote(conversation_id, "申請URL: https://uploaderjp.udonya.moe/admin/requests/"+request.ID)
+			url := "https://uploaderjp.udonya.moe/admin/requests/" + request.ID
+			way := "臨機応変に"
+			switch req.RequestType {
+			case "preservation":
+				way = "1. 上記URLから内容を確認\n2. ファイルの保全処理を開始\n3. 実際のファイルを確認するなどして権利者と規約を確認\n4. 再配布不可の場合は権利者のSNSを確認\n5. 権利者のSNS上に告知がないようであれば権利者に連絡(新規会話をlibredeskで作成)\n6. 申請者に結果報告"
+			case "deletion":
+				way = "1. 非公開処理を進める\n2. お詫び文をctrl+m→削除申請対応から挿入後、必要事項を穴埋めして送信する"
+			case "external_publication":
+				way = "1. リダイレクトリンクを掲載する\n2. ありがとう文をctrl+m→移設申請対応から挿入後、必要事項を穴埋めして送信する"
+			case "publisher_assistance":
+				way = "1. ctrl+m→配布代行相談を送付する\n2. アサインを谷豊に設定する"
+			}
+			s.addLibreDeskPrivateNote(conversation_id, "申請URL: ["+url+"]("+url+")\n\n**対応手順**\n"+way+"\n\n**メール送信時の注意**\n1. 必ずctrl+m→挨拶を挿入すること\n2. 相手によってはテンプレートを改変して適切な文章にすること\n3. テンプレートの未入力部分がないかを必ず確認すること")
 		}
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": request.ID, "request_type": request.RequestType, "status": request.Status, "created_at": request.CreatedAt})
