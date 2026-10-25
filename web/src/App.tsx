@@ -3541,10 +3541,24 @@ function RequestDetailPage({
           <section className="panel request-files-panel">
             <div className="panel-head">
               <div>
-                <h2>関連ファイル</h2>
+                <div style={{ display: "flex", flexDirection: "row" }}>
+                  <h2>関連ファイル</h2>
+                  <span className="type-pill">{files.length} 件</span>
+                </div>
                 <p>この申請に紐付く作品・ファイル</p>
               </div>
-              <span className="type-pill">{files.length} 件</span>
+              {request.artifact_id && (
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    nav(
+                      `/admin/review?tab=files&artifact_id=${encodeURIComponent(request.artifact_id)}`,
+                    )
+                  }
+                >
+                  作品内の全ファイルを一括操作
+                </button>
+              )}
             </div>
             {!request.artifact_id && !request.file_object_id ? (
               <div className="empty">
@@ -3604,20 +3618,6 @@ function RequestDetailPage({
               </div>
             ) : (
               <div className="empty">関連ファイルはまだありません。</div>
-            )}
-            {request.artifact_id && (
-              <div className="request-files-footer">
-                <button
-                  className="secondary"
-                  onClick={() =>
-                    nav(
-                      `/admin/review?tab=files&artifact_id=${encodeURIComponent(request.artifact_id)}`,
-                    )
-                  }
-                >
-                  作品内の全ファイルを開く
-                </button>
-              </div>
             )}
           </section>
           {role !== "viewer" && (
