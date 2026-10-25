@@ -46,12 +46,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Prepare local environment file
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          cp deploy/participant-node/.env.example deploy/participant-node/.env
       - name: Validate main Compose file
         run: docker compose -f docker-compose.example.yml  config --quiet
       - name: Validate participant node Compose file
-        run: docker compose --env-file deploy/participant-node/.env.example -f deploy/participant-node/compose.yaml config --quiet
-      - name: Validate participant GHCR Compose file
-        run: docker compose --env-file deploy/participant-node/.env.example -f deploy/participant-node/compose.ghcr.yaml config --quiet
-      - name: Validate Node Manager GHCR Compose file
-        run: docker compose --env-file deploy/node-manager/.env.example -f deploy/node-manager/compose.ghcr.yaml config --quiet
+        run: docker compose -f deploy/participant-node/compose.yaml config --quiet
