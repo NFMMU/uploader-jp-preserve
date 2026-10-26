@@ -310,6 +310,35 @@ func (s *Server) listNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
+func (s *Server) deleteNodes(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := uuid.Parse(id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node id"})
+		return
+	}
+	actor, _ := currentUser(c)
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil)
+		if result.Error != nil {
+			return result.Error
+		}
+		result = tx.Delete(&model.Node{ID: id})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("node has been aleady deleted")
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete node"})
+		return
+	}
+	s.audit(c, &actor, "node", id, "node.delete", "success", nil)
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
 func (s *Server) listTasks(c *gin.Context) {
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).
 		// Hide failed source-fetch/store tasks that are obsolete because their

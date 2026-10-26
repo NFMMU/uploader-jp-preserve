@@ -78,6 +78,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/admin/url-collection/search", s.requireRoles("admin"), s.searchUploaderURLs)
 	auth.POST("/admin/url-collection/scan", s.requireRoles("admin"), s.collectUploaderURLs)
 	auth.GET("/nodes", s.requireRoles("admin", "reviewer"), s.listNodes)
+	auth.DELETE("/nodes/:id", s.requireRoles("admin", "reviewer"), s.deleteNodes)
 	auth.GET("/admin/node-enrollment-requests", s.requireRoles("admin"), s.listNodeEnrollmentRequests)
 	auth.GET("/admin/conversation-links", s.requireRoles("admin", "reviewer"), s.listConversationLinks)
 	auth.POST("/admin/conversation-links", s.requireRoles("admin", "reviewer"), s.addConversationLink)

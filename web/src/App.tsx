@@ -2419,7 +2419,22 @@ function Modal({
   );
 }
 function Nodes({ api, refresh, notify, role }: any) {
-  const d = useData(api, "/nodes", refresh);
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const d = useData(api, "/nodes", refresh + localRefresh);
+  const [deletingRows, setDeletingRows] = useState<string[]>([]);
+  const deleteNode = async (id: string) => {
+    setDeletingRows((rows) => [...rows, id]);
+    try {
+      await api(`/nodes/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "エラーが発生しました");
+    } finally {
+      setDeletingRows([...deletingRows.filter((row) => row !== id)]);
+      setLocalRefresh((x) => x + 1);
+    }
+  };
   return (
     <>
       <Heading
@@ -2501,6 +2516,7 @@ function Nodes({ api, refresh, notify, role }: any) {
             "使用量",
             "最終応答",
             "エージェント",
+            "操作",
           ]}
         >
           {d.loading ? (
@@ -2583,13 +2599,32 @@ function Nodes({ api, refresh, notify, role }: any) {
                 </td>
                 <td>{date(x.last_seen_at)}</td>
                 <td>{x.agent_version || "—"}</td>
+                <td>
+                  <div className="row-actions">
+                    <button
+                      className="small-btn"
+                      disabled={
+                        role === "viewer" || deletingRows.includes(x.id)
+                      }
+                      onClick={() => {
+                        deleteNode(x.id);
+                      }}
+                    >
+                      {deletingRows.includes(x.id) ? "処理中..." : "削除"}
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))
           )}
         </Table>
       </section>
       {role === "admin" && (
-        <NodeEnrollmentRequests api={api} refresh={refresh} notify={notify} />
+        <NodeEnrollmentRequests
+          api={api}
+          refresh={refresh + localRefresh}
+          notify={notify}
+        />
       )}
       <div className="info-card">
         <AlertTriangle size={18} />
