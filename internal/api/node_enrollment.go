@@ -78,7 +78,7 @@ func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 		return
 	}
 	nameRegex := regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,15}$`)
-	if nameRegex.MatchString(req.Name) {
+	if !nameRegex.MatchString(req.Name) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ノード名は英数小文字_-の16文字以内で_-が先頭にならないようにしてください。"})
 		return
 	}
