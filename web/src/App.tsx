@@ -3110,10 +3110,12 @@ function RequestDetailPage({
   useEffect(() => {
     if (request) {
       setStatus(request.status === "pending" ? "in_review" : request.status);
-      setTitle(request?.title || "");
       setReason("");
     }
-  }, [request?.id, request?.status, request?.title]);
+  }, [request?.id, request?.status]);
+  useEffect(() => {
+    setTitle(request?.title || "");
+  }, [request?.title]);
   async function ingestAcceptedUpload() {
     if (!request) return;
     if (
