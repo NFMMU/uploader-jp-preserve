@@ -234,9 +234,9 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 	var req struct {
 		Status       *string `json:"status" binding:"omitempty"`
 		Title        *string `json:"title" binding:"omitempty,max=128,min=5"`
-		CreatorName  *string `json:"creator_name"`
+		CreatorName  *string `json:"creator_name" binding:"omitempty,max=255"`
 		SourceURL    *string `json:"source_url"`
-		Contact      *string `json:"contact"`
+		Contact      *string `json:"contact" binding:"omitempty,max=500"`
 		Details      *string `json:"details" binding:"omitempty,min=1"`
 		ExternalURL  *string `json:"external_url"`
 		Reason       string  `json:"reason" binding:"required,min=3,max=2000"`
