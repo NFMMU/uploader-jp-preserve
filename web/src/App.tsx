@@ -3110,12 +3110,7 @@ function RequestDetailPage({
   useEffect(() => {
     if (request) {
       setStatus(request.status === "pending" ? "in_review" : request.status);
-      setTitle(
-        request?.title ||
-          request?.linked_file_name ||
-          request?.linked_artifact_title ||
-          "タイトル未入力の申請",
-      );
+      setTitle(request?.title || "");
       setReason("");
     }
   }, [request?.id, request?.status]);
@@ -3397,9 +3392,9 @@ function RequestDetailPage({
     try {
       await api(`/public-requests/${request.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, reason: "アップローダー名の修正" }),
+        body: JSON.stringify({ value, reason: "アップローダー名の修正" }),
       });
-      notify("申請ステータスを更新しました");
+      notify("タイトルを更新しました");
       setLocalRefresh((x) => x + 1);
       bumpRefresh?.();
       setIsTitleEditing(false);
