@@ -3484,7 +3484,7 @@ function RequestDetailPage({
                 if (isTitleEditing) {
                   saveTitle(title);
                 }
-                setIsTitleEditing(isTitleEditing!);
+                setIsTitleEditing((editing) => !editing);
               }}
             >
               {isTitleEditing ? <Pencil /> : <SaveCheck />}
