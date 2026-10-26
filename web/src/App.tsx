@@ -3113,7 +3113,7 @@ function RequestDetailPage({
       setTitle(request?.title || "");
       setReason("");
     }
-  }, [request?.id, request?.status]);
+  }, [request?.id, request?.status, request?.title]);
   async function ingestAcceptedUpload() {
     if (!request) return;
     if (
