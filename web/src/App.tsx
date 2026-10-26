@@ -3470,6 +3470,7 @@ function RequestDetailPage({
           <>
             {isTitleEditing ? (
               <input
+                minLength={5}
                 maxLength={128}
                 value={title}
                 onChange={(v) => setTitle(v.target.value)}
