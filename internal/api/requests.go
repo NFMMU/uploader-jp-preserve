@@ -249,6 +249,12 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		return
 	}
 
+	if req.Status != nil &&
+		(!requestStatuses[*req.Status] || *req.Status == "pending") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status is invalid"})
+		return
+	}
+
 	db := s.db.WithContext(c.Request.Context())
 
 	var publicRequest model.PublicRequest
