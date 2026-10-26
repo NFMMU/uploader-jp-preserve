@@ -2418,8 +2418,21 @@ function Modal({
     </div>
   );
 }
-function Nodes({ api, refresh, notify, role }: any) {
+function Nodes({ api, token, refresh, notify, role }: any) {
   const d = useData(api, "/nodes", refresh);
+  const [deletingRows, setDeletingRows] = useState<string[]>([]);
+  const deleteNode = async (id: string) => {
+    setDeletingRows([...deletingRows, id]);
+    try {
+      await publicAPI<{}>(`/nodes/${id}`, token, {
+        method: "DELETE",
+      });
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "エラーが発生しました");
+    } finally {
+      setDeletingRows([...deletingRows.filter((row) => row !== id)]);
+    }
+  };
   return (
     <>
       <Heading
@@ -2500,6 +2513,7 @@ function Nodes({ api, refresh, notify, role }: any) {
             "使用量",
             "最終応答",
             "エージェント",
+            "操作",
           ]}
         >
           {d.loading ? (
@@ -2572,6 +2586,19 @@ function Nodes({ api, refresh, notify, role }: any) {
                 </td>
                 <td>{date(x.last_seen_at)}</td>
                 <td>{x.agent_version || "—"}</td>
+                <td>
+                  <div className="row-actions">
+                    <button
+                      className="small-btn"
+                      disabled={role !== "admin" && deletingRows.length !== 0}
+                      onClick={() => {
+                        deleteNode(x.id);
+                      }}
+                    >
+                      {deletingRows ? "処理中..." : "削除"}
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))
           )}
