@@ -2424,7 +2424,8 @@ function Nodes({ api, refresh, notify, role }: any) {
   const [localRefresh, setLocalRefresh] = useState(0);
   const d = useData(api, "/nodes", refresh + localRefresh);
   const [deletingRows, setDeletingRows] = useState<string[]>([]);
-  const deleteNode = async (id: string) => {
+  const deleteNode = async (id: string, name: string) => {
+    if (!window.confirm(`本当に「${name}」を削除しますか？`)) return;
     setDeletingRows((rows) => [...rows, id]);
     try {
       await api(`/nodes/${encodeURIComponent(id)}`, {
@@ -2609,7 +2610,7 @@ function Nodes({ api, refresh, notify, role }: any) {
                         role === "viewer" || deletingRows.includes(x.id)
                       }
                       onClick={() => {
-                        deleteNode(x.id);
+                        deleteNode(x.id, x.name || x.id);
                       }}
                     >
                       {deletingRows.includes(x.id) ? "処理中..." : "削除"}
