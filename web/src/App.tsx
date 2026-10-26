@@ -33,8 +33,6 @@ import {
   Clock3,
   LockKeyhole,
   Globe,
-  Pencil,
-  SaveCheck,
 } from "lucide-react";
 type Obj = Record<string, any>;
 
@@ -490,7 +488,7 @@ function Heading({
   actions,
 }: {
   eyebrow: string;
-  title: string | React.ReactNode;
+  title: string;
   desc: string;
   actions?: React.ReactNode;
 }) {
@@ -3105,17 +3103,12 @@ function RequestDetailPage({
   const [intakeIngestMessage, setIntakeIngestMessage] = useState("");
   const [candidates, setCandidates] = useState<Obj[]>([]);
   const [selectedURLs, setSelectedURLs] = useState<string[]>([]);
-  const [isTitleEditing, setIsTitleEditing] = useState<boolean>(false);
-  const [title, setTitle] = useState<string>("タイトル未入力の申請");
   useEffect(() => {
     if (request) {
       setStatus(request.status === "pending" ? "in_review" : request.status);
       setReason("");
     }
   }, [request?.id, request?.status]);
-  useEffect(() => {
-    setTitle(request?.title || "");
-  }, [request?.id, request?.title]);
   async function ingestAcceptedUpload() {
     if (!request) return;
     if (
@@ -3385,30 +3378,6 @@ function RequestDetailPage({
       setPreserving(false);
     }
   }
-  async function saveTitle(value: string) {
-    if (!request) {
-      notify("内部エラー");
-      return;
-    }
-    setSaving(true);
-    try {
-      await api(`/public-requests/${request.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: value,
-          reason: "アップローダー名の修正",
-        }),
-      });
-      notify("タイトルを更新しました");
-      setLocalRefresh((x) => x + 1);
-      bumpRefresh?.();
-      setIsTitleEditing(false);
-    } catch (e) {
-      notify((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
   if (requests.loading)
     return (
       <>
@@ -3469,35 +3438,10 @@ function RequestDetailPage({
       <Heading
         eyebrow="申請詳細"
         title={
-          <>
-            {isTitleEditing ? (
-              <input
-                maxLength={500}
-                value={title}
-                onChange={(v) => setTitle(v.target.value)}
-                placeholder="アップローダー名"
-              />
-            ) : (
-              title ||
-              request.linked_file_name ||
-              request.linked_artifact_title ||
-              "タイトル未入力の申請"
-            )}
-            <button
-              type="button"
-              aria-label={isTitleEditing ? "タイトルを保存" : "タイトルを編集"}
-              disabled={saving}
-              onClick={() => {
-                if (isTitleEditing) {
-                  saveTitle(title);
-                } else {
-                  setIsTitleEditing(true);
-                }
-              }}
-            >
-              {isTitleEditing ? <SaveCheck /> : <Pencil />}
-            </button>
-          </>
+          request.title ||
+          request.linked_file_name ||
+          request.linked_artifact_title ||
+          "タイトル未入力の申請"
         }
         desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
       />
