@@ -2495,6 +2495,7 @@ function Nodes({ api, refresh, notify, role }: any) {
             "ノード",
             "種別",
             "状態",
+            "連絡先",
             "実容量 / 空き",
             "申告上限",
             "使用量",
@@ -2535,6 +2536,10 @@ function Nodes({ api, refresh, notify, role }: any) {
                 </td>
                 <td>
                   <Status value={x.status} />
+                </td>
+                <td>
+                  <a href={`mailto:${x.contact_email}`}>{x.contact_email}</a>{" "}
+                  <CopyEmail email={String(x.contact_email || "")} />
                 </td>
                 <td>
                   <b>
