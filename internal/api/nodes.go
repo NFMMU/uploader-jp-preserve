@@ -272,7 +272,16 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	if err := s.db.WithContext(c.Request.Context()).Delete(&model.Node{ID: id}).Error; err != nil {
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&model.Node{ID: id}).Error; err != nil {
+			return err
+		}
+		if err := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete node"})
 		return
 	}
