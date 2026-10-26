@@ -3285,7 +3285,7 @@ function RequestDetailPage({
             public_request_id: request.id,
           }),
         });
-        const found: Obj[] = (result.items || []).slice(0, 100);
+        const found: Obj[] = result.items || [];
         setCandidates(found);
         setSelectedURLs(found.map((x: Obj) => x.url));
         setPreserveMessage(
