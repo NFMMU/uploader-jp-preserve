@@ -2538,8 +2538,14 @@ function Nodes({ api, refresh, notify, role }: any) {
                   <Status value={x.status} />
                 </td>
                 <td>
-                  <a href={`mailto:${x.contact_email}`}>{x.contact_email}</a>{" "}
-                  <CopyEmail email={String(x.contact_email || "")} />
+                  {x.contact_email ? (
+                    <>
+                      <a href={`mailto:${x.contact_email}`}>{x.contact_email}</a>{" "}
+                      <CopyEmail email={x.contact_email} />
+                    </>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td>
                   <b>
