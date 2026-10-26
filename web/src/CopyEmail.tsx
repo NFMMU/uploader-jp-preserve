@@ -23,7 +23,7 @@ export default function CopyEmail({ email, label }: CopyEmailProps) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      window.location.href = `mailto:${email}`;
+      window.prompt("メールアドレスを手動でコピーしてください。", email);
     }
   }
 

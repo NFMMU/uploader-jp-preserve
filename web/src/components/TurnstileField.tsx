@@ -24,29 +24,36 @@ let turnstileScriptPromise: Promise<void> | null = null;
 function loadTurnstileScript(): Promise<void> {
   if (window.turnstile) return Promise.resolve();
   if (!turnstileScriptPromise) {
-    turnstileScriptPromise = new Promise((resolve, reject) => {
-      const existing = document.querySelector<HTMLScriptElement>(
-        "script[data-cloudflare-turnstile]",
-      );
-      if (existing) {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener(
-          "error",
-          () => reject(new Error("Turnstile script failed to load")),
-          { once: true },
-        );
-        return;
-      }
-      const script = document.createElement("script");
-      script.src =
-        "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&language=ja";
-      script.async = true;
-      script.defer = true;
-      script.dataset.cloudflareTurnstile = "true";
-      script.onload = () => resolve();
-      script.onerror = () =>
+    // With no API or pending promise, an existing script may have already fired
+    // its load/error event. Replace it rather than waiting for a past event.
+    document.querySelector("script[data-cloudflare-turnstile]")?.remove();
+    const script = document.createElement("script");
+    script.src =
+      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&language=ja";
+    script.async = true;
+    script.defer = true;
+    script.dataset.cloudflareTurnstile = "true";
+    turnstileScriptPromise = new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        script.removeEventListener("load", onLoad);
+        script.removeEventListener("error", onError);
+      };
+      const onLoad = () => {
+        cleanup();
+        if (window.turnstile) resolve();
+        else reject(new Error("Turnstile API unavailable after script load"));
+      };
+      const onError = () => {
+        cleanup();
         reject(new Error("Turnstile script failed to load"));
+      };
+      script.addEventListener("load", onLoad, { once: true });
+      script.addEventListener("error", onError, { once: true });
       document.head.appendChild(script);
+    }).catch((error) => {
+      turnstileScriptPromise = null;
+      script.remove();
+      throw error;
     });
   }
   return turnstileScriptPromise;

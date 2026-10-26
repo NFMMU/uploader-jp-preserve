@@ -10,7 +10,8 @@ import { LockKeyhole, Plus } from "lucide-react";
 import { useState } from "react";
 
 export function UsersPage({ api, refresh, notify, role }: any) {
-  const d = useData(api, "/admin/users", refresh);
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const d = useData(api, "/admin/users", refresh + localRefresh);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({
     email: "",
@@ -23,6 +24,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
     try {
       await api("/admin/users", { method: "POST", body: JSON.stringify(form) });
       notify("ユーザーを作成しました");
+      setForm({ email: "", display_name: "", password: "", role: "reviewer" });
+      setLocalRefresh((x) => x + 1);
       setModal(false);
     } catch (e) {
       notify((e as Error).message);

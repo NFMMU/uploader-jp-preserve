@@ -5,6 +5,12 @@ import { Status } from "../common/Status";
 import { Download, Files } from "lucide-react";
 import React, { useState } from "react";
 
+type SaveFilePicker = (options: {
+  suggestedName: string;
+}) => Promise<{
+  createWritable: () => Promise<WritableStream<Uint8Array>>;
+}>;
+
 export function FileRow({
   x,
   role,
@@ -31,7 +37,19 @@ export function FileRow({
   async function download() {
     setBusy(true);
     setMessage("準備中…");
+    let writable: WritableStream<Uint8Array> | undefined;
     try {
+      const pickerWindow = window as Window & {
+        showSaveFilePicker?: SaveFilePicker;
+      };
+      if (!pickerWindow.showSaveFilePicker)
+        throw new Error(
+          "このブラウザーはストリーム保存に対応していません。HTTPS接続でChromeまたはEdgeをご利用ください。",
+        );
+      // The picker requires a user gesture, so open it before preparing the job.
+      const handle = await pickerWindow.showSaveFilePicker({
+        suggestedName: x.original_filename,
+      });
       const created = await publicAPI<{
         job: { id: string };
         access_token: string;
@@ -62,6 +80,7 @@ export function FileRow({
         throw new Error(
           "準備に時間がかかっています。時間をおいて再度お試しください。",
         );
+      writable = await handle.createWritable();
       const response = await fetch(
         `/api/v1/downloads/${created.job.id}/content`,
         {
@@ -80,16 +99,20 @@ export function FileRow({
         }
         throw new Error(detail || "ダウンロードに失敗しました。");
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = x.original_filename;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage("ダウンロードを開始しました");
+      if (!response.body)
+        throw new Error("ダウンロードの内容を取得できませんでした。");
+      setMessage("保存中…");
+      await response.body.pipeTo(writable);
+      setMessage("ファイルを保存しました");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "エラーが発生しました");
+      if (writable) await writable.abort().catch(() => {});
+      setMessage(
+        e instanceof DOMException && e.name === "AbortError"
+          ? "ダウンロードをキャンセルしました"
+          : e instanceof Error
+            ? e.message
+            : "エラーが発生しました",
+      );
     } finally {
       setBusy(false);
     }

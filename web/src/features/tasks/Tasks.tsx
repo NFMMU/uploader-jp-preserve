@@ -8,7 +8,8 @@ import { Clock3, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 export function Tasks({ api, refresh, notify, role }: any) {
-  const d = useData(api, "/tasks", refresh);
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const d = useData(api, "/tasks", refresh + localRefresh);
   const [filter, setFilter] = useState("all");
   const items = (d.data.items || []).filter(
     (x: Obj) => filter === "all" || x.status === filter,
@@ -17,6 +18,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
     try {
       await api(`/tasks/${id}/retry`, { method: "POST" });
       notify("再試行を開始しました");
+      setLocalRefresh((x) => x + 1);
     } catch (e) {
       notify((e as Error).message);
     }
@@ -28,7 +30,10 @@ export function Tasks({ api, refresh, notify, role }: any) {
         title="タスク"
         desc="処理状況と失敗理由"
         actions={
-          <button className="secondary" onClick={() => location.reload()}>
+          <button
+            className="secondary"
+            onClick={() => setLocalRefresh((x) => x + 1)}
+          >
             <RefreshCw size={16} /> 更新
           </button>
         }
