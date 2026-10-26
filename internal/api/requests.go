@@ -412,8 +412,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				if err := tx.WithContext(c.Request.Context()).Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", *req.SourceURL).First(&existingFile).Error; err == nil {
 					return errSourceUrlConflict
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing source URL"})
-					return errors.New("could not check existing source URL")
+					return fmt.Errorf("could not check existing source URL: %w", err)
 				}
 				var existingRequest model.PublicRequest
 				if err := tx.WithContext(c.Request.Context()).Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", *req.SourceURL).Order("created_at ASC").First(&existingRequest).Error; err == nil {
