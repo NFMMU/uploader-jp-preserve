@@ -3484,7 +3484,14 @@ function RequestDetailPage({
             ) : (
               title
             )}
-            <button onClick={() => setIsTitleEditing(isTitleEditing!)}>
+            <button
+              onClick={() => {
+                if (isTitleEditing) {
+                  saveTitle(title);
+                }
+                setIsTitleEditing(isTitleEditing!);
+              }}
+            >
               {isTitleEditing ? <Pencil /> : <SaveCheck />}
             </button>
           </>
