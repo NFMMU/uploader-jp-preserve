@@ -415,7 +415,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.ExternalURL != nil {
-			if _, err := url.ParseRequestURI(*req.SourceURL); err != nil {
+			if _, err := url.ParseRequestURI(*req.ExternalURL); err != nil {
 				return errUrlValidationFailed
 			}
 			updates["external_url"] = *req.ExternalURL
