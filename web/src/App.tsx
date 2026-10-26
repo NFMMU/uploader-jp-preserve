@@ -3439,6 +3439,12 @@ function RequestDetailPage({
         />
       </>
     );
+  setTitle(
+    request?.title ||
+      request?.linked_file_name ||
+      request?.linked_artifact_title ||
+      "タイトル未入力の申請",
+  );
   return (
     <div className="request-page">
       <div className="request-page-top">
