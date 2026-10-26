@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var requestTypes = map[string]bool{"takedown": true, "deletion": true, "external_publication": true, "preservation": true, "redistribution_assistance": true, "publisher_assistance": true}
@@ -230,7 +231,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
 }
 
-func (s *Server) reviewPublicRequest(c *gin.Context) {
+func (s *Server) patchPublicRequest(c *gin.Context) {
 	var req struct {
 		Status       *string `json:"status" binding:"omitempty"`
 		Title        *string `json:"title" binding:"omitempty,max=128,min=5"`
@@ -245,92 +246,137 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "data is invalid"})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "data is invalid",
+		})
 		return
 	}
 
 	if req.Status != nil &&
 		(!requestStatuses[*req.Status] || *req.Status == "pending") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "status is invalid"})
-		return
-	}
-
-	db := s.db.WithContext(c.Request.Context())
-
-	var publicRequest model.PublicRequest
-	if err := db.First(&publicRequest, "id = ?", c.Param("id")).Error; err != nil {
-		notFoundOrError(c, err, "public request")
-		return
-	}
-
-	if publicRequest.Status == "accepted" &&
-		(req.ArtifactID != nil || req.FileObjectID != nil) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": "cannot change targets of an accepted request",
-		})
-		return
-	}
-
-	if req.ArtifactID != nil {
-		var count int64
-		if err := db.Model(&model.Artifact{}).
-			Where("id = ?", *req.ArtifactID).
-			Count(&count).Error; err != nil || count == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_id does not exist"})
-			return
-		}
-	}
-
-	if req.FileObjectID != nil {
-		query := db.Model(&model.FileObject{}).
-			Where("id = ?", *req.FileObjectID)
-
-		linkedArtifactID := req.ArtifactID
-		if linkedArtifactID == nil {
-			linkedArtifactID = publicRequest.ArtifactID
-		}
-
-		if linkedArtifactID != nil {
-			query = query.Where("artifact_id = ?", *linkedArtifactID)
-		}
-
-		var count int64
-		if err := query.Count(&count).Error; err != nil || count == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "file_object_id does not exist or does not belong to artifact_id",
-			})
-			return
-		}
-	}
-
-	if req.Status != nil &&
-		*req.Status == "accepted" &&
-		publicRequest.RequestType == "deletion" &&
-		req.FileObjectID == nil &&
-		publicRequest.FileObjectID == nil &&
-		req.ArtifactID == nil &&
-		publicRequest.ArtifactID == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "a deletion request must be linked to a file or artifact before acceptance",
+			"error": "status is invalid",
 		})
 		return
 	}
 
 	actor, _ := currentUser(c)
 
-	if req.Status != nil &&
-		*req.Status == "accepted" &&
-		publicRequest.RequestType == "deletion" &&
-		actor.Role != "admin" {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "administrator role is required to approve deletion requests",
-		})
-		return
-	}
+	// These errors distinguish validation failures from database failures.
+	var (
+		errInvalidArtifact = errors.New("artifact_id does not exist")
+		errInvalidFile     = errors.New(
+			"file_object_id does not exist or does not belong to artifact_id",
+		)
+		errAcceptedTargetsImmutable = errors.New(
+			"cannot change targets of an accepted request",
+		)
+		errDeletionTargetRequired = errors.New(
+			"a deletion request must be linked to a file or artifact before acceptance",
+		)
+		errAdminRequired = errors.New(
+			"administrator role is required to approve deletion requests",
+		)
+		errRequestConflict = errors.New(
+			"public request was concurrently modified",
+		)
+	)
+
+	db := s.db.WithContext(c.Request.Context())
+
+	var publicRequest model.PublicRequest
 
 	now := time.Now().UTC()
+	var intakeFilePathToRemove string
 
 	err := db.Transaction(func(tx *gorm.DB) error {
+		// Lock the request row before reading its state.
+		// Concurrent PATCH requests for the same request must wait
+		// until this transaction commits or rolls back.
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&publicRequest, "id = ?", c.Param("id")).Error; err != nil {
+			return err
+		}
+
+		// Remember the status observed under the row lock.
+		originalStatus := publicRequest.Status
+
+		// An accepted request cannot have its targets changed.
+		if originalStatus == "accepted" &&
+			(req.ArtifactID != nil || req.FileObjectID != nil) {
+			return errAcceptedTargetsImmutable
+		}
+
+		// Resolve the effective targets from the locked database state
+		// and the requested changes.
+		targetArtifactID := publicRequest.ArtifactID
+		if req.ArtifactID != nil {
+			targetArtifactID = req.ArtifactID
+		}
+
+		targetFileID := publicRequest.FileObjectID
+		if req.FileObjectID != nil {
+			targetFileID = req.FileObjectID
+		}
+
+		// Validate a newly supplied artifact ID.
+		if req.ArtifactID != nil {
+			var count int64
+
+			if err := tx.Model(&model.Artifact{}).
+				Where("id = ?", *req.ArtifactID).
+				Count(&count).Error; err != nil {
+				return err
+			}
+
+			if count == 0 {
+				return errInvalidArtifact
+			}
+		}
+
+		// Validate the effective file target whenever either target
+		// is being changed. This prevents retaining a file that belongs
+		// to a different artifact after changing artifact_id.
+		if (req.FileObjectID != nil || req.ArtifactID != nil) &&
+			targetFileID != nil {
+			query := tx.Model(&model.FileObject{}).
+				Where("id = ?", *targetFileID)
+
+			if targetArtifactID != nil {
+				query = query.Where(
+					"artifact_id = ?", *targetArtifactID,
+				)
+			}
+
+			var count int64
+
+			if err := query.Count(&count).Error; err != nil {
+				return err
+			}
+
+			if count == 0 {
+				return errInvalidFile
+			}
+		}
+
+		// An accepted deletion request must have a target.
+		if req.Status != nil &&
+			*req.Status == "accepted" &&
+			publicRequest.RequestType == "deletion" &&
+			targetFileID == nil &&
+			targetArtifactID == nil {
+			return errDeletionTargetRequired
+		}
+
+		// Only administrators may approve deletion requests.
+		if req.Status != nil &&
+			*req.Status == "accepted" &&
+			publicRequest.RequestType == "deletion" &&
+			actor.Role != "admin" {
+			return errAdminRequired
+		}
+
 		updates := map[string]any{
 			"updated_at": now,
 		}
@@ -373,6 +419,7 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 			updates["file_object_id"] = *req.FileObjectID
 		}
 
+		// Clear sensitive data when a request is rejected or closed.
 		if req.Status != nil &&
 			(*req.Status == "rejected" || *req.Status == "closed") {
 			updates["source_password_encrypted"] = nil
@@ -381,31 +428,38 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 				publicRequest.RequestType == "publisher_assistance" {
 				updates["intake_file_path"] = ""
 			}
+
+			intakeFilePathToRemove = publicRequest.IntakeFilePath
 		}
 
-		if err := tx.Model(&model.PublicRequest{}).
-			Where("id = ?", publicRequest.ID).
-			Updates(updates).Error; err != nil {
-			return err
+		// Include the observed status in the UPDATE predicate.
+		// The row lock protects the read-modify-write sequence, while
+		// this predicate provides an additional optimistic concurrency
+		// check.
+		result := tx.Model(&model.PublicRequest{}).
+			Where(
+				"id = ? AND status = ?",
+				publicRequest.ID,
+				originalStatus,
+			).
+			Updates(updates)
+
+		if result.Error != nil {
+			return result.Error
 		}
 
-		// Takedown requests immediately stop public access.
-		// Accepted deletion requests enqueue physical deletion tasks
-		// for every linked file.
+		if result.RowsAffected == 0 {
+			return errRequestConflict
+		}
+
+		// Takedown requests immediately disable public downloads.
+		// Accepted deletion requests enqueue physical deletion tasks.
+		// These operations remain in the same transaction as the
+		// request update.
 		if req.Status != nil &&
 			*req.Status == "accepted" &&
 			(publicRequest.RequestType == "takedown" ||
 				publicRequest.RequestType == "deletion") {
-
-			targetFileID := publicRequest.FileObjectID
-			if req.FileObjectID != nil {
-				targetFileID = req.FileObjectID
-			}
-
-			targetArtifactID := publicRequest.ArtifactID
-			if req.ArtifactID != nil {
-				targetArtifactID = req.ArtifactID
-			}
 
 			if targetFileID != nil {
 				if err := tx.Model(&model.FileObject{}).
@@ -416,7 +470,10 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 			} else if publicRequest.RequestType == "takedown" &&
 				targetArtifactID != nil {
 				if err := tx.Model(&model.FileObject{}).
-					Where("artifact_id = ? AND deleted_at IS NULL", *targetArtifactID).
+					Where(
+						"artifact_id = ? AND deleted_at IS NULL",
+						*targetArtifactID,
+					).
 					Update("public_download_enabled", false).Error; err != nil {
 					return err
 				}
@@ -425,29 +482,23 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 			if publicRequest.RequestType == "deletion" {
 				nextRequest := publicRequest
 				nextRequest.Status = *req.Status
-
-				if req.ArtifactID != nil {
-					nextRequest.ArtifactID = req.ArtifactID
-				}
-
-				if req.FileObjectID != nil {
-					nextRequest.FileObjectID = req.FileObjectID
-				}
+				nextRequest.ArtifactID = targetArtifactID
+				nextRequest.FileObjectID = targetFileID
 
 				var files []model.FileObject
 
 				fileQuery := tx.Where("deleted_at IS NULL")
 
-				if nextRequest.FileObjectID != nil {
+				if targetFileID != nil {
 					fileQuery = fileQuery.Where(
-						"id = ?", *nextRequest.FileObjectID,
+						"id = ?", *targetFileID,
 					)
-				} else if nextRequest.ArtifactID != nil {
+				} else if targetArtifactID != nil {
 					fileQuery = fileQuery.Where(
-						"artifact_id = ?", *nextRequest.ArtifactID,
+						"artifact_id = ?", *targetArtifactID,
 					)
 				} else {
-					return nil
+					return errDeletionTargetRequired
 				}
 
 				if err := fileQuery.Find(&files).Error; err != nil {
@@ -456,7 +507,11 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 
 				for _, file := range files {
 					if err := queueFileDeletionTx(
-						tx, file, nextRequest, actor.ID, req.Reason,
+						tx,
+						file,
+						nextRequest,
+						actor.ID,
+						req.Reason,
 					); err != nil {
 						return err
 					}
@@ -468,6 +523,52 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 	})
 
 	if err != nil {
+		// Preserve the existing not-found handling.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			notFoundOrError(c, err, "public request")
+			return
+		}
+
+		switch {
+		case errors.Is(err, errInvalidArtifact):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errInvalidFile):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errAcceptedTargetsImmutable):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errDeletionTargetRequired):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errAdminRequired):
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errRequestConflict):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// Preserve the existing conflict handling for deletion
+		// operations that cannot proceed.
 		statusCode := http.StatusInternalServerError
 
 		if strings.Contains(err.Error(), "running preservation task") ||
@@ -475,35 +576,18 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 			statusCode = http.StatusConflict
 		}
 
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		c.JSON(statusCode, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
 
-	if req.Status != nil &&
-		(*req.Status == "rejected" || *req.Status == "closed") &&
-		publicRequest.IntakeFilePath != "" {
-
-		path := filepath.Clean(publicRequest.IntakeFilePath)
-
-		if !filepath.IsAbs(path) &&
-			strings.HasPrefix(path, "public-intake"+string(os.PathSeparator)) &&
-			!strings.Contains(path, "..") {
-
-			if removeErr := os.Remove(
-				filepath.Join(s.cfg.StagingDir, path),
-			); removeErr != nil && !os.IsNotExist(removeErr) {
-				s.logger.Warn(
-					"could not remove closed public intake file",
-					"request_id", publicRequest.ID,
-					"error", removeErr,
-				)
-			}
-		}
-	}
-
-	// Reflect the updated values in the response.
+	// The transaction has committed successfully. Reflect the changes
+	// in the in-memory model used for the response and audit log.
 	if req.Status != nil {
 		publicRequest.Status = *req.Status
+		publicRequest.ReviewedBy = &actor.ID
+		publicRequest.ReviewedAt = &now
 	}
 
 	if req.Title != nil {
@@ -543,12 +627,35 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		publicRequest.IntakeFilePath = ""
 	}
 
-	publicRequest.ReviewedBy = &actor.ID
-	publicRequest.ReviewedAt = &now
 	publicRequest.UpdatedAt = now
 
+	// Remove the intake file only after the database transaction
+	// has committed successfully.
+	if intakeFilePathToRemove != "" {
+		path := filepath.Clean(intakeFilePathToRemove)
+
+		if !filepath.IsAbs(path) &&
+			strings.HasPrefix(
+				path,
+				"public-intake"+string(os.PathSeparator),
+			) &&
+			!strings.Contains(path, "..") {
+
+			if removeErr := os.Remove(
+				filepath.Join(s.cfg.StagingDir, path),
+			); removeErr != nil && !os.IsNotExist(removeErr) {
+				s.logger.Warn(
+					"could not remove closed public intake file",
+					"request_id", publicRequest.ID,
+					"error", removeErr,
+				)
+			}
+		}
+	}
+
 	s.audit(
-		c, &actor,
+		c,
+		&actor,
 		"public_request",
 		publicRequest.ID,
 		"public_request.review",
@@ -560,7 +667,8 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		*req.Status == "accepted" &&
 		publicRequest.RequestType == "deletion" {
 		s.audit(
-			c, &actor,
+			c,
+			&actor,
 			"public_request",
 			publicRequest.ID,
 			"public_request.deletion.queued",
