@@ -104,7 +104,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
                 </td>
                 <td>{x.attempt_count ?? 0} / 5</td>
                 <td className="error-cell">{x.last_error || "—"}</td>
-                <td>{x.target_node ? x.source_node : "-"}</td>
+                <td>{x.target_node_id || x.source_node_id || "-"}</td>
                 <td>{date(x.updated_at)}</td>
                 <td>
                   {role === "admin" && x.status === "failed" && (
