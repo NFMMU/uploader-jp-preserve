@@ -481,6 +481,17 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			return errRequestConflict
 		}
 
+		if publicRequest.RequestType == "preservation" && publicRequest.SourceURL != nil {
+			result := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
+				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *publicRequest.SourceURL, *publicRequest.SourceURL, publicRequest.ID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errDuplicateSourceURL
+			}
+		}
+
 		// Takedown requests immediately disable public downloads.
 		// Accepted deletion requests enqueue physical deletion tasks.
 		// These operations remain in the same transaction as the
