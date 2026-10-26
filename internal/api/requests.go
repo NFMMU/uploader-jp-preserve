@@ -411,6 +411,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 					currentURL, _ = normalizeUploaderURL(*publicRequest.SourceURL)
 				}
 				if normalizedURL != currentURL {
+					if originalStatus == "accepted" {
+						return errAcceptedTargetsImmutable
+					}
+
 					var existingFile model.FileObject
 					err := tx.Where(
 						"split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL",
