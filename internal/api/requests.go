@@ -681,6 +681,11 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				"error": err.Error(),
 			})
 			return
+		case errors.Is(err, errSourceUrlConflict):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": err.Error(),
+			})
+			return
 		}
 
 		// Preserve the existing conflict handling for deletion
