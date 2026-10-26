@@ -234,7 +234,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 func (s *Server) patchPublicRequest(c *gin.Context) {
 	var req struct {
 		Status       *string `json:"status" binding:"omitempty"`
-		Title        *string `json:"title" binding:"omitempty,max=128,min=5"`
+		Title        *string `json:"title" binding:"omitempty,max=500"`
 		CreatorName  *string `json:"creator_name" binding:"omitempty,max=255"`
 		SourceURL    *string `json:"source_url"`
 		Contact      *string `json:"contact" binding:"omitempty,max=500"`

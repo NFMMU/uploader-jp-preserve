@@ -3472,8 +3472,7 @@ function RequestDetailPage({
           <>
             {isTitleEditing ? (
               <input
-                minLength={5}
-                maxLength={128}
+                maxLength={500}
                 value={title}
                 onChange={(v) => setTitle(v.target.value)}
                 placeholder="アップローダー名"
