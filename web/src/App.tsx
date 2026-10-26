@@ -3106,15 +3106,16 @@ function RequestDetailPage({
   const [candidates, setCandidates] = useState<Obj[]>([]);
   const [selectedURLs, setSelectedURLs] = useState<string[]>([]);
   const [isTitleEditing, setIsTitleEditing] = useState<boolean>(false);
-  const [title, setTitle] = useState<string>(
-    request?.title ||
-      request?.linked_file_name ||
-      request?.linked_artifact_title ||
-      "タイトル未入力の申請",
-  );
+  const [title, setTitle] = useState<string>("タイトル未入力の申請");
   useEffect(() => {
     if (request) {
       setStatus(request.status === "pending" ? "in_review" : request.status);
+      setTitle(
+        request?.title ||
+          request?.linked_file_name ||
+          request?.linked_artifact_title ||
+          "タイトル未入力の申請",
+      );
       setReason("");
     }
   }, [request?.id, request?.status]);
@@ -3439,12 +3440,6 @@ function RequestDetailPage({
         />
       </>
     );
-  setTitle(
-    request?.title ||
-      request?.linked_file_name ||
-      request?.linked_artifact_title ||
-      "タイトル未入力の申請",
-  );
   return (
     <div className="request-page">
       <div className="request-page-top">
