@@ -3481,6 +3481,9 @@ function RequestDetailPage({
               title
             )}
             <button
+              type="button"
+              aria-label={isTitleEditing ? "タイトルを保存" : "タイトルを編集"}
+              disabled={saving}
               onClick={() => {
                 if (isTitleEditing) {
                   saveTitle(title);
@@ -3489,7 +3492,7 @@ function RequestDetailPage({
                 }
               }}
             >
-              {isTitleEditing ? <Pencil /> : <SaveCheck />}
+              {isTitleEditing ? <SaveCheck /> : <Pencil />}
             </button>
           </>
         }
