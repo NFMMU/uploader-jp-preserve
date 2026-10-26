@@ -112,11 +112,15 @@ export function Tasks({ api, refresh, notify, role }: any) {
                 <td>{x.target_node_id || x.source_node_id || "-"}</td>
                 <td>{date(x.updated_at)}</td>
                 <td>
-                  {role === "admin" && x.status === "failed" && (
-                    <button className="small-btn" onClick={() => retry(x.id)}>
-                      再試行
-                    </button>
-                  )}
+                  {role === "admin" &&
+                    x.status === "failed" &&
+                    (x.task_type === "store" ||
+                      x.task_type === "source_fetch") &&
+                    x.target_node_id != null && (
+                      <button className="small-btn" onClick={() => retry(x.id)}>
+                        再試行
+                      </button>
+                    )}
                 </td>
               </tr>
             ))
