@@ -240,6 +240,7 @@ func (s *Server) listNodes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list nodes"})
 		return
 	}
+
 	type nodeView struct {
 		ID                     string     `json:"id"`
 		Name                   string     `json:"name"`
@@ -249,19 +250,63 @@ func (s *Server) listNodes(c *gin.Context) {
 		UsedBytes              int64      `json:"used_bytes"`
 		AvailableBytes         int64      `json:"available_bytes"`
 		RequestedCapacityBytes int64      `json:"requested_capacity_bytes"`
+		ContactEmail           *string    `json:"contact_email,omitempty"`
 		LastSeenAt             *time.Time `json:"last_seen_at,omitempty"`
 		AgentVersion           *string    `json:"agent_version,omitempty"`
 		CreatedAt              time.Time  `json:"created_at"`
 		UpdatedAt              time.Time  `json:"updated_at"`
 	}
+
+	type enrollmentContact struct {
+		NodeID       string `gorm:"column:node_id"`
+		ContactEmail string `gorm:"column:contact_email"`
+	}
+	nodeIDs := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		nodeIDs = append(nodeIDs, node.ID)
+	}
+	contacts := make(map[string]*string, len(nodes))
+	if len(nodeIDs) > 0 {
+		var latestContacts []enrollmentContact
+		if err := s.db.WithContext(c.Request.Context()).
+			Table("node_enrollment_requests").
+			Select("DISTINCT ON (node_id) node_id, contact_email").
+			Where("node_id IN ? AND status = ?", nodeIDs, "enrolled").
+			Order("node_id, created_at DESC").
+			Scan(&latestContacts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list node contacts"})
+			return
+		}
+		for _, contact := range latestContacts {
+			email := contact.ContactEmail
+			contacts[contact.NodeID] = &email
+		}
+	}
+
 	items := make([]nodeView, 0, len(nodes))
 	for _, node := range nodes {
 		status := node.Status
 		if node.LastSeenAt == nil || time.Since(*node.LastSeenAt) > 2*time.Minute {
 			status = "offline"
 		}
-		items = append(items, nodeView{ID: node.ID, Name: node.Name, NodeType: node.NodeType, Status: status, CapacityBytes: node.CapacityBytes, UsedBytes: node.UsedBytes, AvailableBytes: node.AvailableBytes, RequestedCapacityBytes: node.RequestedCapacityBytes, LastSeenAt: node.LastSeenAt, AgentVersion: node.AgentVersion, CreatedAt: node.CreatedAt, UpdatedAt: node.UpdatedAt})
+
+		items = append(items, nodeView{
+			ID:                     node.ID,
+			Name:                   node.Name,
+			NodeType:               node.NodeType,
+			Status:                 status,
+			CapacityBytes:          node.CapacityBytes,
+			UsedBytes:              node.UsedBytes,
+			AvailableBytes:         node.AvailableBytes,
+			RequestedCapacityBytes: node.RequestedCapacityBytes,
+			ContactEmail:           contacts[node.ID],
+			LastSeenAt:             node.LastSeenAt,
+			AgentVersion:           node.AgentVersion,
+			CreatedAt:              node.CreatedAt,
+			UpdatedAt:              node.UpdatedAt,
+		})
 	}
+
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
