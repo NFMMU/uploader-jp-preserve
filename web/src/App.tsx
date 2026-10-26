@@ -2423,7 +2423,7 @@ function Nodes({ api, refresh, notify, role }: any) {
   const d = useData(api, "/nodes", refresh + localRefresh);
   const [deletingRows, setDeletingRows] = useState<string[]>([]);
   const deleteNode = async (id: string) => {
-    setDeletingRows([...deletingRows, id]);
+    setDeletingRows((rows) => [...rows, id]);
     try {
       await api(`/nodes/${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -2609,7 +2609,11 @@ function Nodes({ api, refresh, notify, role }: any) {
         </Table>
       </section>
       {role === "admin" && (
-        <NodeEnrollmentRequests api={api} refresh={refresh} notify={notify} />
+        <NodeEnrollmentRequests
+          api={api}
+          refresh={refresh + localRefresh}
+          notify={notify}
+        />
       )}
       <div className="info-card">
         <AlertTriangle size={18} />
