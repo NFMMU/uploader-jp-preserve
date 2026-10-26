@@ -468,7 +468,7 @@ type uploaderListingCandidate struct {
 
 const (
 	maxUploaderListingPages      = 10
-	maxUploaderListingCandidates = 100
+	maxUploaderListingCandidates = 1000
 )
 
 // discoverUploaderFiles previews file links from a specific uploader page. It does not
