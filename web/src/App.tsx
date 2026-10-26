@@ -2559,7 +2559,9 @@ function Nodes({ api, refresh, notify, role }: any) {
                 <td>
                   {x.contact_email ? (
                     <>
-                      <a href={`mailto:${x.contact_email}`}>{x.contact_email}</a>{" "}
+                      <a href={`mailto:${x.contact_email}`}>
+                        {x.contact_email}
+                      </a>{" "}
                       <CopyEmail email={x.contact_email} />
                     </>
                   ) : (
@@ -3517,34 +3519,46 @@ function RequestDetailPage({
         eyebrow="申請詳細"
         title={
           <>
-            {isTitleEditing ? (
-              <input
-                maxLength={500}
-                value={title}
-                onChange={(v) => setTitle(v.target.value)}
-                placeholder="アップローダー・ファイル名"
-                aria-label="申請のタイトル(アップローダー・ファイル名)"
-              />
-            ) : (
-              title ||
-              request.linked_file_name ||
-              request.linked_artifact_title ||
-              "タイトル未入力の申請"
-            )}
-            <button
-              type="button"
-              aria-label={isTitleEditing ? "タイトルを保存" : "タイトルを編集"}
-              disabled={saving}
-              onClick={() => {
-                if (isTitleEditing) {
-                  saveTitle(title);
-                } else {
-                  setIsTitleEditing(true);
-                }
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: "4px",
               }}
             >
-              {isTitleEditing ? <SaveCheck /> : <Pencil />}
-            </button>
+              {isTitleEditing ? (
+                <input
+                  maxLength={500}
+                  value={title}
+                  onChange={(v) => setTitle(v.target.value)}
+                  placeholder="アップローダー・ファイル名"
+                  aria-label="申請のタイトル(アップローダー・ファイル名)"
+                />
+              ) : (
+                title ||
+                request.linked_file_name ||
+                request.linked_artifact_title ||
+                "タイトル未入力の申請"
+              )}
+              <button
+                type="button"
+                aria-label={
+                  isTitleEditing ? "タイトルを保存" : "タイトルを編集"
+                }
+                disabled={saving}
+                onClick={() => {
+                  if (isTitleEditing) {
+                    saveTitle(title);
+                  } else {
+                    setIsTitleEditing(true);
+                  }
+                }}
+              >
+                {isTitleEditing ? <SaveCheck /> : <Pencil />}
+              </button>
+            </div>
           </>
         }
         desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
