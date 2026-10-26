@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -400,7 +399,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.SourceURL != nil {
-			if _, err := url.ParseRequestURI(*req.SourceURL); err != nil {
+			if _, err := normalizeUploaderURL(*req.SourceURL); err != nil {
 				return errUrlValidationFailed
 			}
 			updates["source_url"] = *req.SourceURL
@@ -415,7 +414,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.ExternalURL != nil {
-			if _, err := url.ParseRequestURI(*req.ExternalURL); err != nil {
+			if _, err := validateHTTPURL(*req.ExternalURL); err != nil {
 				return errUrlValidationFailed
 			}
 			updates["external_url"] = *req.ExternalURL
