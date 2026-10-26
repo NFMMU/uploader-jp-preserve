@@ -1530,6 +1530,7 @@ footer > span {
 .candidate-row input {
   margin-top: 3px;
   flex: 0 0 auto;
+  width: initial !important;
 }
 .candidate-row span {
   min-width: 0;
