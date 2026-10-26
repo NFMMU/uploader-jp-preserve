@@ -2592,7 +2592,9 @@ function Nodes({ api, token, refresh, notify, role }: any) {
                       className="small-btn"
                       disabled={role !== "admin" && deletingRows.length !== 0}
                       onClick={() => {
-                        deleteNode(x.id);
+                        if (window.confirm(`「${x.name || x.id}」を削除しますか？`)) {
+                          deleteNode(x.id);
+                        }
                       }}
                     >
                       {deletingRows ? "処理中..." : "削除"}
