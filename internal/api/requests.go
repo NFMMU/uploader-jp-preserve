@@ -326,13 +326,13 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{
-			"reviewed_by": actor.ID,
-			"reviewed_at": now,
-			"updated_at":  now,
+			"updated_at": now,
 		}
 
 		if req.Status != nil {
 			updates["status"] = *req.Status
+			updates["reviewed_by"] = actor.ID
+			updates["reviewed_at"] = now
 		}
 
 		if req.Title != nil {
