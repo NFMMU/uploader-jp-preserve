@@ -470,10 +470,11 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.ExternalURL != nil {
-			if _, err := validateHTTPURL(*req.ExternalURL); err != nil {
+			validated, err := validateHTTPURL(*req.ExternalURL)
+			if err != nil {
 				return errUrlValidationFailed
 			}
-			updates["external_url"] = *req.ExternalURL
+			updates["external_url"] = validated
 		}
 
 		if req.ArtifactID != nil {
