@@ -579,6 +579,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
+			return
 		}
 
 		// Preserve the existing conflict handling for deletion
