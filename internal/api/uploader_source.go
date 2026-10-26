@@ -467,7 +467,7 @@ type uploaderListingCandidate struct {
 }
 
 const (
-	maxUploaderListingPages      = 10
+	maxUploaderListingPages      = 100
 	maxUploaderListingCandidates = 1000
 )
 
