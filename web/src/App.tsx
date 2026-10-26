@@ -3392,7 +3392,10 @@ function RequestDetailPage({
     try {
       await api(`/public-requests/${request.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ value, reason: "アップローダー名の修正" }),
+        body: JSON.stringify({
+          title: value,
+          reason: "アップローダー名の修正",
+        }),
       });
       notify("タイトルを更新しました");
       setLocalRefresh((x) => x + 1);
@@ -3473,7 +3476,10 @@ function RequestDetailPage({
                 placeholder="アップローダー名"
               />
             ) : (
-              title
+              title ||
+              request.linked_file_name ||
+              request.linked_artifact_title ||
+              "タイトル未入力の申請"
             )}
             <button
               type="button"

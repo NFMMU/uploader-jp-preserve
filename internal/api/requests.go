@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -280,6 +281,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		errRequestConflict = errors.New(
 			"public request was concurrently modified",
 		)
+		errUrlValidationFailed = errors.New(
+			"provided url is invalid",
+		)
 	)
 
 	db := s.db.WithContext(c.Request.Context())
@@ -396,6 +400,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.SourceURL != nil {
+			if _, err := url.ParseRequestURI(*req.SourceURL); err != nil {
+				return errUrlValidationFailed
+			}
 			updates["source_url"] = *req.SourceURL
 		}
 
@@ -408,6 +415,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.ExternalURL != nil {
+			if _, err := url.ParseRequestURI(*req.SourceURL); err != nil {
+				return errUrlValidationFailed
+			}
 			updates["external_url"] = *req.ExternalURL
 		}
 
@@ -565,6 +575,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				"error": err.Error(),
 			})
 			return
+		case errors.Is(err, errUrlValidationFailed):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
 		}
 
 		// Preserve the existing conflict handling for deletion
