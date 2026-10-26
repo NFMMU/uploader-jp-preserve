@@ -399,8 +399,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		if req.SourceURL != nil {
-			if _, err := normalizeUploaderURL(*req.SourceURL); err != nil {
-				return errUrlValidationFailed
+			if publicRequest.RequestType == "preservation" {
+				if _, err := normalizeUploaderURL(*req.SourceURL); err != nil {
+					return errUrlValidationFailed
+				}
 			}
 			updates["source_url"] = *req.SourceURL
 		}
