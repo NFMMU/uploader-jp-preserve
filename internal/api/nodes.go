@@ -265,6 +265,21 @@ func (s *Server) listNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
+func (s *Server) deleteNodes(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := uuid.Parse(id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node id"})
+		return
+	}
+	actor, _ := currentUser(c)
+	if err := s.db.WithContext(c.Request.Context()).Delete(&model.Node{ID: id}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete node"})
+		return
+	}
+	s.audit(c, &actor, "node", id, "node.delete", "success", nil)
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
 func (s *Server) listTasks(c *gin.Context) {
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).
 		// Hide failed source-fetch/store tasks that are obsolete because their
