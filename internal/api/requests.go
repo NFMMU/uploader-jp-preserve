@@ -486,9 +486,12 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			return errRequestConflict
 		}
 
-		if publicRequest.RequestType == "preservation" && publicRequest.SourceURL != nil {
+		sourceURLChanged := req.SourceURL != nil &&
+			(publicRequest.SourceURL == nil ||
+				*req.SourceURL != *publicRequest.SourceURL)
+		if publicRequest.RequestType == "preservation" && sourceURLChanged {
 			result := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
-				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *publicRequest.SourceURL, *publicRequest.SourceURL, publicRequest.ID)
+				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *&req.SourceURL, *&req.SourceURL, publicRequest.ID)
 			if result.Error != nil {
 				return result.Error
 			}
