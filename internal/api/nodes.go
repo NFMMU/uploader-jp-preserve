@@ -277,9 +277,6 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		if result.Error != nil {
 			return result.Error
 		}
-		if result.RowsAffected != 1 {
-			return errors.New("node has been aleady deleted")
-		}
 		result = tx.Delete(&model.Node{ID: id})
 		if result.Error != nil {
 			return result.Error
