@@ -3402,6 +3402,7 @@ function RequestDetailPage({
       notify("申請ステータスを更新しました");
       setLocalRefresh((x) => x + 1);
       bumpRefresh?.();
+      setIsTitleEditing(false);
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -3483,8 +3484,9 @@ function RequestDetailPage({
               onClick={() => {
                 if (isTitleEditing) {
                   saveTitle(title);
+                } else {
+                  setIsTitleEditing(true);
                 }
-                setIsTitleEditing((editing) => !editing);
               }}
             >
               {isTitleEditing ? <Pencil /> : <SaveCheck />}
