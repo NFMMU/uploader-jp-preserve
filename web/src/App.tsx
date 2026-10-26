@@ -2424,7 +2424,7 @@ function Nodes({ api, token, refresh, notify, role }: any) {
   const deleteNode = async (id: string) => {
     setDeletingRows([...deletingRows, id]);
     try {
-      await publicAPI<{}>(`/nodes/${id}`, token, {
+      await api(`/nodes/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
     } catch (e) {
