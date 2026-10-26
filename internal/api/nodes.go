@@ -273,10 +273,10 @@ func (s *Server) deleteNodes(c *gin.Context) {
 	}
 	actor, _ := currentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.Node{ID: id}).Error; err != nil {
+		if err := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil).Error; err != nil {
 			return err
 		}
-		if err := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil).Error; err != nil {
+		if err := tx.Delete(&model.Node{ID: id}).Error; err != nil {
 			return err
 		}
 		return nil
