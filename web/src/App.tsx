@@ -3115,7 +3115,7 @@ function RequestDetailPage({
   }, [request?.id, request?.status]);
   useEffect(() => {
     setTitle(request?.title || "");
-  }, [request?.title]);
+  }, [request?.id, request?.title]);
   async function ingestAcceptedUpload() {
     if (!request) return;
     if (
