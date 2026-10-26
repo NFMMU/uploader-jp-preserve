@@ -280,6 +280,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		errRequestConflict = errors.New(
 			"public request was concurrently modified",
 		)
+		errSourceUrlConflict = errors.New(
+			"source url conflict",
+		)
 		errUrlValidationFailed = errors.New(
 			"provided url is invalid",
 		)
@@ -400,8 +403,23 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		if req.SourceURL != nil {
 			if publicRequest.RequestType == "preservation" {
-				if _, err := normalizeUploaderURL(*req.SourceURL); err != nil {
+				url, err := normalizeUploaderURL(*req.SourceURL)
+				if err != nil {
 					return errUrlValidationFailed
+				}
+				req.SourceURL = &url
+				var existingFile model.FileObject
+				if err := tx.WithContext(c.Request.Context()).Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", *req.SourceURL).First(&existingFile).Error; err == nil {
+					return errSourceUrlConflict
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing source URL"})
+					return errors.New("could not check existing source URL")
+				}
+				var existingRequest model.PublicRequest
+				if err := tx.WithContext(c.Request.Context()).Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", *req.SourceURL).Order("created_at ASC").First(&existingRequest).Error; err == nil {
+					return errSourceUrlConflict
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.New("could not check existing source URL")
 				}
 			}
 			updates["source_url"] = *req.SourceURL
