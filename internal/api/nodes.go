@@ -234,42 +234,6 @@ func (s *Server) nodeHeartbeat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "online", "last_seen_at": now})
 }
 
-func (s *Server) listNodes(c *gin.Context) {
-	type nodeView struct {
-		ID                     string     `json:"id"`
-		Name                   string     `json:"name"`
-		NodeType               string     `json:"node_type"`
-		Status                 string     `json:"status"`
-		CapacityBytes          int64      `json:"capacity_bytes"`
-		UsedBytes              int64      `json:"used_bytes"`
-		AvailableBytes         int64      `json:"available_bytes"`
-		RequestedCapacityBytes int64      `json:"requested_capacity_bytes"`
-		ContactEmail           *string    `json:"contact_email,omitempty"`
-		LastSeenAt             *time.Time `json:"last_seen_at,omitempty"`
-		AgentVersion           *string    `json:"agent_version,omitempty"`
-		CreatedAt              time.Time  `json:"created_at"`
-		UpdatedAt              time.Time  `json:"updated_at"`
-	}
-	var items []nodeView
-	if err := s.db.WithContext(c.Request.Context()).Table("nodes AS n").
-		Select(`n.id, n.name, n.node_type, n.status, n.capacity_bytes, n.used_bytes,
-			n.available_bytes, n.requested_capacity_bytes,
-			(SELECT contact_email FROM node_enrollment_requests
-			 WHERE node_id = n.id AND status = 'enrolled'
-			 ORDER BY created_at DESC LIMIT 1) AS contact_email,
-			n.last_seen_at, n.agent_version, n.created_at, n.updated_at`).
-		Order("n.created_at DESC").Limit(500).Scan(&items).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list nodes"})
-		return
-	}
-	for i := range items {
-		if items[i].LastSeenAt == nil || time.Since(*items[i].LastSeenAt) > 2*time.Minute {
-			items[i].Status = "offline"
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
 func (s *Server) listTasks(c *gin.Context) {
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).
 		// Hide failed source-fetch/store tasks that are obsolete because their
