@@ -421,6 +421,12 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 					return errors.New("could not check existing source URL")
 				}
+			} else {
+				normalized, err := validateHTTPURL(*req.SourceURL)
+				if err != nil {
+					return errUrlValidationFailed
+				}
+				req.SourceURL = &normalized
 			}
 			updates["source_url"] = *req.SourceURL
 		}
