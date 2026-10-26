@@ -2418,7 +2418,7 @@ function Modal({
     </div>
   );
 }
-function Nodes({ api, token, refresh, notify, role }: any) {
+function Nodes({ api, refresh, notify, role }: any) {
   const [localRefresh, setLocalRefresh] = useState(0);
   const d = useData(api, "/nodes", refresh + localRefresh);
   const [deletingRows, setDeletingRows] = useState<string[]>([]);
@@ -2592,9 +2592,9 @@ function Nodes({ api, token, refresh, notify, role }: any) {
                   <div className="row-actions">
                     <button
                       className="small-btn"
-                      disabled={role !== "admin" && deletingRows.length !== 0}
-                      onClick={() => {
-                      disabled={role === "viewer" || deletingRows.includes(x.id)}
+                      disabled={
+                        role === "viewer" || deletingRows.includes(x.id)
+                      }
                       onClick={() => {
                         deleteNode(x.id);
                       }}
