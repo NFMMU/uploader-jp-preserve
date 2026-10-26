@@ -400,8 +400,82 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		if req.SourceURL != nil {
 			if publicRequest.RequestType == "preservation" {
-				if _, err := normalizeUploaderURL(*req.SourceURL); err != nil {
+				normalizedURL, err := normalizeUploaderURL(*req.SourceURL)
+				if err != nil {
 					return errUrlValidationFailed
+				}
+				req.SourceURL = &normalizedURL
+
+				currentURL := ""
+				if publicRequest.SourceURL != nil {
+					currentURL, _ = normalizeUploaderURL(*publicRequest.SourceURL)
+				}
+				if normalizedURL != currentURL {
+					var existingFile model.FileObject
+					err := tx.Where(
+						"split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL",
+						normalizedURL,
+					).First(&existingFile).Error
+					if err == nil {
+						return errDuplicateSourceURL
+					}
+					if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+				}
+
+				var existingRequest model.PublicRequest
+				err = tx.Where(
+					"request_type = 'preservation' AND id <> ? AND split_part(trim(source_url), '#', 1) = ?",
+					publicRequest.ID,
+					normalizedURL,
+				).First(&existingRequest).Error
+				if err == nil {
+					return errDuplicateSourceURL
+				}
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+
+				reservation := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
+					VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`,
+					normalizedURL,
+					normalizedURL,
+					publicRequest.ID,
+				)
+				if reservation.Error != nil {
+					return reservation.Error
+				}
+				if reservation.RowsAffected == 0 {
+					var existing struct {
+						PublicRequestID *string `gorm:"column:public_request_id"`
+					}
+					if err := tx.Table("source_url_registry").
+						Select("public_request_id").
+						Where("normalized_url = ?", normalizedURL).
+						Scan(&existing).Error; err != nil {
+						return err
+					}
+					if existing.PublicRequestID == nil || *existing.PublicRequestID != publicRequest.ID {
+						return errDuplicateSourceURL
+					}
+				}
+
+				if err := tx.Exec(
+					"UPDATE source_url_registry SET source_url = ?, updated_at = now() WHERE normalized_url = ? AND public_request_id = ?",
+					normalizedURL,
+					normalizedURL,
+					publicRequest.ID,
+				).Error; err != nil {
+					return err
+				}
+
+				if err := tx.Exec(
+					"DELETE FROM source_url_registry WHERE public_request_id = ? AND normalized_url <> ? AND origin = 'public_request'",
+					publicRequest.ID,
+					normalizedURL,
+				).Error; err != nil {
+					return err
 				}
 			}
 			updates["source_url"] = *req.SourceURL
@@ -578,6 +652,12 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			return
 		case errors.Is(err, errUrlValidationFailed):
 			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+
+		case errors.Is(err, errDuplicateSourceURL):
+			c.JSON(http.StatusConflict, gin.H{
 				"error": err.Error(),
 			})
 			return
