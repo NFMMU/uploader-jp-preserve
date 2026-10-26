@@ -387,6 +387,8 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			"updated_at": now,
 		}
 
+		sourceURLChanged := false
+
 		if req.Status != nil {
 			updates["status"] = *req.Status
 			updates["reviewed_by"] = actor.ID
@@ -408,17 +410,45 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 					return errUrlValidationFailed
 				}
 				req.SourceURL = &url
-				var existingFile model.FileObject
-				if err := tx.WithContext(c.Request.Context()).Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", *req.SourceURL).First(&existingFile).Error; err == nil {
-					return errSourceUrlConflict
-				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return fmt.Errorf("could not check existing source URL: %w", err)
-				}
-				var existingRequest model.PublicRequest
-				if err := tx.WithContext(c.Request.Context()).Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", *req.SourceURL).Order("created_at ASC").First(&existingRequest).Error; err == nil {
-					return errSourceUrlConflict
-				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.New("could not check existing source URL")
+
+				// Compare normalized URLs, not the raw request value.
+				sourceURLChanged = publicRequest.SourceURL == nil ||
+					*req.SourceURL != *publicRequest.SourceURL
+
+				// Check for duplicates only when the URL actually changes.
+				// Otherwise, the existing request could conflict with itself.
+				if sourceURLChanged {
+					var existingFile model.FileObject
+					if err := tx.
+						Where(
+							"split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL",
+							*req.SourceURL,
+						).
+						First(&existingFile).Error; err == nil {
+						return errSourceUrlConflict
+					} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return fmt.Errorf(
+							"could not check existing source URL: %w",
+							err,
+						)
+					}
+
+					var existingRequest model.PublicRequest
+					if err := tx.
+						Where(
+							"request_type = 'preservation' AND id <> ? AND split_part(trim(source_url), '#', 1) = ?",
+							publicRequest.ID,
+							*req.SourceURL,
+						).
+						Order("created_at ASC").
+						First(&existingRequest).Error; err == nil {
+						return errSourceUrlConflict
+					} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+						return fmt.Errorf(
+							"could not check existing preservation requests: %w",
+							err,
+						)
+					}
 				}
 			} else {
 				normalized, err := validateHTTPURL(*req.SourceURL)
@@ -427,6 +457,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				}
 				req.SourceURL = &normalized
 			}
+
 			updates["source_url"] = *req.SourceURL
 		}
 
@@ -486,17 +517,49 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			return errRequestConflict
 		}
 
-		sourceURLChanged := req.SourceURL != nil &&
-			(publicRequest.SourceURL == nil ||
-				*req.SourceURL != *publicRequest.SourceURL)
-		if publicRequest.RequestType == "preservation" && sourceURLChanged {
-			result := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
-				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *&req.SourceURL, *&req.SourceURL, publicRequest.ID)
+		if publicRequest.RequestType == "preservation" &&
+			sourceURLChanged {
+			// Register the new normalized URL. A conflict with the same
+			// request is allowed; a conflict with another request is not.
+			result := tx.Exec(`
+		INSERT INTO source_url_registry (
+			normalized_url,
+			source_url,
+			origin,
+			public_request_id,
+			created_at,
+			updated_at
+		)
+		VALUES (?, ?, 'public_request', ?, now(), now())
+		ON CONFLICT (normalized_url) DO UPDATE
+		SET
+			source_url = EXCLUDED.source_url,
+			updated_at = now()
+		WHERE source_url_registry.public_request_id =
+			EXCLUDED.public_request_id
+	`, *req.SourceURL, *req.SourceURL, publicRequest.ID)
+
 			if result.Error != nil {
 				return result.Error
 			}
+
+			// Zero affected rows means the conflicting registry entry
+			// belongs to a different request.
 			if result.RowsAffected == 0 {
 				return errDuplicateSourceURL
+			}
+
+			// Remove obsolete registry entries owned by this request.
+			// Keep the newly registered URL.
+			result = tx.Exec(`
+		DELETE FROM source_url_registry
+		WHERE origin = 'public_request'
+			AND public_request_id = ?
+			AND normalized_url <> ?
+	`, publicRequest.ID, *req.SourceURL)
+
+			if result.Error != nil {
+				return result.Error
 			}
 		}
 
