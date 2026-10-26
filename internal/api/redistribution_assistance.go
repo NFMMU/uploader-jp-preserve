@@ -96,7 +96,7 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 	contact := strings.TrimSpace(c.PostForm("contact"))
 	details := strings.TrimSpace(c.PostForm("details"))
 	if title == "" || len([]rune(title)) > 500 || contact == "" || len([]rune(contact)) > 500 || len([]rune(details)) < 5 || len([]rune(details)) > 10000 || len([]rune(creator)) > 255 || len([]rune(rightsContact)) > 1000 || len([]rune(name)) > 255 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "作品名、連絡先、5文字以上の説明を入力してください。"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "アップローダー・ファイル名、連絡先、5文字以上の説明を入力してください。"})
 		return
 	}
 	if c.PostForm("agree_to_terms") != "on" {
@@ -195,7 +195,7 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 	if requestType == "publisher_assistance" {
 		label = "配布元からの配布代行相談"
 	}
-	content := fmt.Sprintf("申請種別: %s\nn申請者: %s\n連絡先: %s\n作品名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
+	content := fmt.Sprintf("申請種別: %s\nn申請者: %s\n連絡先: %s\nアップローダー・ファイル名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
 	conversation_id := s.createLibreDeskConversation("public_request", request.ID, "【uploader.jp保全】"+label+": "+title, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), content)
 	if conversation_id != "" {
 		url := "https://uploaderjp.udonya.moe/admin/requests/" + request.ID

@@ -1253,7 +1253,7 @@ function RedistributionAssistancePage({
             }
           />
           <label>
-            アップローダー名・ファイルの名前 *
+            アップローダー・ファイル名 *
             <input
               name="title"
               required
@@ -1439,13 +1439,13 @@ function PreservationRequest() {
       ) : (
         <form className="public-request-form" onSubmit={submit}>
           <label>
-            アップローダー名・ファイル名 *
+            アップローダー・ファイル名 *
             <input
               required
               maxLength={500}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="アップローダー名・ファイル名"
+              placeholder="アップローダー・ファイル名"
             />
           </label>
           <label>

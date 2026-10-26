@@ -3475,7 +3475,8 @@ function RequestDetailPage({
                 maxLength={500}
                 value={title}
                 onChange={(v) => setTitle(v.target.value)}
-                placeholder="アップローダー名"
+                placeholder="アップローダー・ファイル名"
+                aria-label="申請のタイトル(アップローダー・ファイル名)"
               />
             ) : (
               title ||
