@@ -24,7 +24,7 @@ export function Nodes({ api, refresh, notify, role }: any) {
     } catch (e) {
       notify(e instanceof Error ? e.message : "エラーが発生しました");
     } finally {
-      setDeletingRows([...deletingRows.filter((row) => row !== id)]);
+      setDeletingRows((rows) => rows.filter((row) => row !== id));
       setLocalRefresh((x) => x + 1);
     }
   };
