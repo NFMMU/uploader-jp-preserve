@@ -257,6 +257,14 @@ func (s *Server) reviewPublicRequest(c *gin.Context) {
 		return
 	}
 
+	if publicRequest.Status == "accepted" &&
+		(req.ArtifactID != nil || req.FileObjectID != nil) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "cannot change targets of an accepted request",
+		})
+		return
+	}
+
 	if req.ArtifactID != nil {
 		var count int64
 		if err := db.Model(&model.Artifact{}).
