@@ -86,13 +86,20 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 
   useEffect(() => {
     if (!linkedFileID || f.loading) return;
-    const target = (f.data.items || []).find((x: Obj) => x.id === linkedFileID);
-    if (target) {
-      setDetail(target);
-      setPolicy(target.redistribution_policy || "unknown");
-      setPub(!!target.public_download_enabled);
-      nav("/admin/review?tab=files", { replace: true });
-    }
+    let live = true;
+    const local = (f.data.items || []).find((x: Obj) => x.id === linkedFileID);
+    (local ? Promise.resolve(local) : api(`/files/${encodeURIComponent(linkedFileID)}`))
+      .then((target: Obj) => {
+        if (!live || !target) return;
+        setDetail(target);
+        setPolicy(target.redistribution_policy || "unknown");
+        setPub(!!target.public_download_enabled);
+      })
+      .catch((e: Error) => live && notify(e.message))
+      .finally(() => live && nav("/admin/review?tab=files", { replace: true }));
+    return () => {
+      live = false;
+    };
   }, [linkedFileID, f.loading, f.data.items]);
 
   function openMetadata(x: Obj) {
