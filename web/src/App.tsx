@@ -2419,7 +2419,8 @@ function Modal({
   );
 }
 function Nodes({ api, token, refresh, notify, role }: any) {
-  const d = useData(api, "/nodes", refresh);
+  const [localRefresh, setLocalRefresh] = useState(0);
+  const d = useData(api, "/nodes", refresh + localRefresh);
   const [deletingRows, setDeletingRows] = useState<string[]>([]);
   const deleteNode = async (id: string) => {
     setDeletingRows([...deletingRows, id]);
@@ -2431,6 +2432,7 @@ function Nodes({ api, token, refresh, notify, role }: any) {
       notify(e instanceof Error ? e.message : "エラーが発生しました");
     } finally {
       setDeletingRows([...deletingRows.filter((row) => row !== id)]);
+      setLocalRefresh((x) => x + 1);
     }
   };
   return (
