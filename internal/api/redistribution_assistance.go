@@ -195,7 +195,7 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 	if requestType == "publisher_assistance" {
 		label = "配布元からの配布代行相談"
 	}
-	content := fmt.Sprintf("申請種別: %s\nn申請者: %s\n連絡先: %s\nアップローダー・ファイル名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
+	content := fmt.Sprintf("申請種別: %s\n申請者: %s\n連絡先: %s\nアップローダー・ファイル名: %s\n作者・配布元: %s\n対象URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\nファイルサイズ: %d bytes\nSHA-256: %s\n\n申請内容:\n%s", label, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), title, creator, valueOrEmpty(sourceURLPtr), rightsContact, valueOrEmpty(fileNamePtr), valueOrZero(sizePtr), valueOrEmpty(shaPtr), details)
 	conversation_id := s.createLibreDeskConversation("public_request", request.ID, "【uploader.jp保全】"+label+": "+title, valueOrEmpty(request.SubmitterName), valueOrEmpty(request.Contact), content)
 	if conversation_id != "" {
 		url := "https://uploaderjp.udonya.moe/admin/requests/" + request.ID
