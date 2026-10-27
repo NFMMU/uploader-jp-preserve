@@ -16,7 +16,7 @@
 cp .env.example .env
 ```
 
-`.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから、起動します。
+`.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。
 
 ```sh
 docker compose up --build -d
@@ -25,16 +25,16 @@ docker compose logs -f api
 
 アクセス先：
 
-- Web 管理画面：<http://localhost:3000>
+- Web：<http://localhost:3000>
 - API ヘルスチェック：<http://localhost:8080/healthz>
 
-この Compose 構成はローカル確認用で、デモノードも起動します。インターネットへ公開する本番構成として、そのまま使用しないでください。
+この構成は**ローカル確認用**です。デモ用ノードも起動します。本番公開用の設定としてそのまま使用しないでください。
 
 ## 3. 公開フォームの Turnstile 設定
 
 公開停止・削除、保全、再配布相談、配布元向け代行、移設先情報、ノード参加の各フォームには Cloudflare Turnstile を表示します。API は送信されたトークンを Cloudflare の Siteverify API で検証するため、フロント側だけのチェックではありません。
 
-本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、公開するドメインを許可ホスト名に登録して、ルートの `.env` に次を設定してください。
+本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、公開するドメインを許可ホスト名に登録して、をルートの `.env` に次を設定してください。
 
 ```dotenv
 APP_ENV=production
@@ -74,10 +74,12 @@ cd web && npm install && npm run build
 
 ## 6. 環境変数の使い分け
 
-- ルートの `.env.example`：運営者・開発者向け。中央サービスとローカル動作確認に使います。
-- `deploy/participant-node/.env.example`：ノード参加者向け。参加するノードだけに使います。
+| ファイル                       | 使う人         | 用途                                              |
+| ------------------------------ | -------------- | ------------------------------------------------- |
+| ルートの `.env`                | 運営者・開発者 | 中央 API、DB、管理者初期設定、ローカル確認用設定  |
+| `deploy/participant-node/.env` | ノード参加者   | 参加するノード1台の接続先、登録トークン、容量など |
 
-この2つを混ぜたり、運営者用 `.env` を参加者へ配布したりしないでください。ノード参加の手順は[参加ノードの始め方](PARTICIPATING_NODE_JA.md)を参照してください。
+この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](PARTICIPATING_NODE_JA.md)を参照してください。
 
 ## 7. 詳細な開発手順
 

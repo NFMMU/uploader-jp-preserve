@@ -1,4 +1,4 @@
-# uploader.jp保全プロジェクト
+# uploader.jp 保全プロジェクト
 
 **運営元：全国もちもちうどん連盟**  
 **連絡先：uploaderjp-archive@udonya.moe**
@@ -152,7 +152,7 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 
 ## MVP-2 / MVP-3 の API 一覧
 
-- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一度限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
+- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一回限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
 - `POST /api/v1/nodes/:id/heartbeat` — ノードトークン認証付きの容量報告
 - `GET /api/v1/nodes` — 管理者／レビュアー向けノード一覧
 - `GET /api/v1/tasks?status=...` — 管理者／レビュアー向けタスク一覧

@@ -13,7 +13,13 @@ uploader.jp などの配布ファイルと説明・権利情報を記録し、�
 
 ## 運営者向け：ローカル起動
 
-必要なもの：Docker Engine と Docker Compose v2。
+必要なもの
+
+- Docker Engine
+- Docker Compose v2
+- Git（ソースコードを取得する場合）
+
+リポジトリのルートで実行します。
 
 ```sh
 cp .env.example .env
@@ -22,11 +28,12 @@ cp .env.example .env
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、`TURNSTILE_SITE_KEY` と `TURNSTILE_SECRET_KEY` を設定してください。
 
 ```sh
-docker compose up --build
+docker compose up --build -d
+docker compose logs -f api
 ```
 
-- API：<http://localhost:8080/healthz>
 - Web：<http://localhost:3000>
+- API ヘルスチェック：<http://localhost:8080/healthz>
 
 この構成は**ローカル確認用**です。デモ用ノードも起動します。本番公開用の設定としてそのまま使用しないでください。
 
@@ -37,7 +44,7 @@ docker compose up --build
 | ルートの `.env`                | 運営者・開発者 | 中央 API、DB、管理者初期設定、ローカル確認用設定  |
 | `deploy/participant-node/.env` | ノード参加者   | 参加するノード1台の接続先、登録トークン、容量など |
 
-**運営者の `.env` を参加者に渡さないでください。** 参加者には参加ノード用の設定ファイルだけを使ってもらいます。
+この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](PARTICIPATING_NODE_JA.md)を参照してください。
 
 ## 主な機能
 
