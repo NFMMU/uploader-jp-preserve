@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { downloadExport } from "../../api/admin";
 import { Heading } from "../../components/common/Heading";
 import { Modal } from "../../components/common/Modal";
+import { Pagination } from "../../components/common/Pagination";
 import { Table } from "../../components/common/Table";
 import { FileRow } from "../../components/files/FileRow";
 import { useData } from "../../hooks/useData";
@@ -718,80 +719,17 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 					)}
 				</Table>
 			</section>
-			<div className="pagination">
-				<div className="pagination-info">
-					<span>
-						全 {total.toLocaleString()} 件中 {startItem.toLocaleString()}～
-						{endItem.toLocaleString()} 件を表示
-					</span>
-
-					<label className="pagination-limit">
-						表示件数
-						<select
-							value={limit}
-							onChange={(e) => {
-								setLimit(Number(e.target.value));
-								setPage(1);
-							}}
-						>
-							<option value={10}>10件</option>
-							<option value={20}>20件</option>
-							<option value={50}>50件</option>
-							<option value={100}>100件</option>
-						</select>
-					</label>
-				</div>
-
-				<div className="pagination-controls">
-					<button
-						type="button"
-						className="secondary"
-						disabled={page <= 1 || f.loading}
-						onClick={() => setPage((p) => Math.max(1, p - 1))}
-					>
-						前へ
-					</button>
-
-					{Array.from({ length: totalPages }, (_, i) => i + 1)
-						.filter(
-							(p) => p === 1 || p === totalPages || Math.abs(p - page) <= 2,
-						)
-						.reduce<(number | "...")[]>((acc, p, index, pages) => {
-							if (index > 0 && p - pages[index - 1] > 1) {
-								acc.push("...");
-							}
-							acc.push(p);
-							return acc;
-						}, [])
-						.map((p, index) =>
-							p === "..." ? (
-								<span key={`ellipsis-${index}`} className="pagination-ellipsis">
-									…
-								</span>
-							) : (
-								<button
-									key={p}
-									type="button"
-									className={p === page ? "primary" : "secondary"}
-									aria-current={p === page ? "page" : undefined}
-									disabled={f.loading}
-									onClick={() => setPage(p)}
-								>
-									{p}
-								</button>
-							),
-						)}
-
-					<button
-						type="button"
-						className="secondary"
-						disabled={page >= totalPages || f.loading}
-						onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-					>
-						次へ
-					</button>
-				</div>
-			</div>
+			<Pagination
+				page={page}
+				limit={limit}
+				total={Number(f.data.total ?? 0)}
+				loading={f.loading}
+				onPageChange={setPage}
+				onLimitChange={(nextLimit) => {
+					setLimit(nextLimit);
+					setPage(1);
+				}}
+			/>
 			{modal && (
 				<Modal title="作品を登録" close={() => setModal(false)}>
 					<form onSubmit={create} className="form-stack">
