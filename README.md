@@ -35,7 +35,6 @@ docker compose -f docker-compose.test2.yml logs -f api
 - Web：<http://localhost:3000>
 - API ヘルスチェック：<http://localhost:8080/healthz>
 
-この構成は**ローカル確認用**です。デモ用ノードも起動します。本番公開用の設定としてそのまま使用しないでください。
 
 ## 設定ファイルは2種類あります
 
