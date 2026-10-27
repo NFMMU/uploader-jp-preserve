@@ -73,19 +73,19 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search public catalog"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
 		return
 	}
 	var artifacts []model.Artifact
 	if err := query.Order("artifacts.title ASC").Offset((page - 1) * limit).Limit(limit).Find(&artifacts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search public catalog"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
 		return
 	}
 	items := make([]publicCatalogArtifact, 0, len(artifacts))
 	for _, artifact := range artifacts {
 		files, err := s.publicCatalogFilesAll(c, artifact.ID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load public files"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "公開ファイル一覧を取得できませんでした。"})
 			return
 		}
 		if len(files) == 0 {
@@ -144,7 +144,7 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 	files, err := s.publicCatalogFiles(c, artifact.ID, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "could not load public files",
+			"error": "公開ファイル一覧を取得できませんでした。",
 		})
 		return
 	}

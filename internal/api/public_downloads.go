@@ -37,23 +37,23 @@ func (s *Server) publicEligible(c *gin.Context, id string) (model.FileObject, mo
 func (s *Server) createPublicDownloadJob(c *gin.Context) {
 	fileID := c.Param("id")
 	if _, err := uuid.Parse(fileID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ファイル識別子が正しくありません。"})
 		return
 	}
 	f, _, err := s.publicEligible(c, fileID)
 	if err != nil {
 		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_public_or_healthy", 0, 0)
-		c.JSON(http.StatusNotFound, gin.H{"error": "file is not available for public download"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "このファイルは現在公開されていないため、ダウンロードできません。"})
 		return
 	}
 	token, err := randomSecret()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ダウンロード用トークンを作成できませんでした。"})
 		return
 	}
 	job := downloadJob{FileObjectID: f.ID, Status: "queued", AccessTokenHash: tokenHash(token), ExpiresAt: time.Now().Add(30 * time.Minute)}
 	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download job"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ダウンロード処理を開始できませんでした。"})
 		return
 	}
 	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
@@ -63,18 +63,18 @@ func (s *Server) createPublicDownloadJob(c *gin.Context) {
 func (s *Server) authorizedPublicDownloadJob(c *gin.Context) (downloadJob, bool) {
 	id := c.Param("id")
 	if _, err := uuid.Parse(id); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid download id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ダウンロード識別子が正しくありません。"})
 		return downloadJob{}, false
 	}
 	header := c.GetHeader("Download-Authorization")
 	if !strings.HasPrefix(header, "Bearer ") {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "download bearer token required"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "ダウンロードに必要な認証情報がありません。"})
 		return downloadJob{}, false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	var job downloadJob
 	if err := s.db.WithContext(c.Request.Context()).First(&job, "id = ?", id).Error; err != nil || job.ExpiresAt.Before(time.Now()) || tokenHash(token) != job.AccessTokenHash {
-		c.JSON(http.StatusNotFound, gin.H{"error": "download job unavailable"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "ダウンロード処理が見つかりません。"})
 		return downloadJob{}, false
 	}
 	return job, true
@@ -95,19 +95,19 @@ func (s *Server) downloadPublicContent(c *gin.Context) {
 		return
 	}
 	if job.Status != "ready" {
-		c.JSON(http.StatusConflict, gin.H{"error": "download is not ready", "status": job.Status})
+		c.JSON(http.StatusConflict, gin.H{"error": "ダウンロードの準備がまだ完了していません。", "status": job.Status})
 		return
 	}
 	f, _, err := s.publicEligible(c, job.FileObjectID)
 	if err != nil {
 		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "publication_or_health_changed", 0, time.Since(started))
-		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer public"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "このファイルは公開対象外になったためダウンロードできません。"})
 		return
 	}
 	path := filepath.Join(s.cfg.DeliveryDir, job.ID)
 	file, err := os.Open(path)
 	if err != nil {
-		c.JSON(http.StatusGone, gin.H{"error": "prepared content expired"})
+		c.JSON(http.StatusGone, gin.H{"error": "ダウンロード可能な期間が終了しました。"})
 		return
 	}
 	defer file.Close()
