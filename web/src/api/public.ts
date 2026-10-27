@@ -55,23 +55,31 @@ const STATUS_ERROR_MESSAGES: Record<number, string> = {
     400: "入力内容が正しくありません。",
     401: "認証が必要です。",
     403: "この操作を実行する権限がないか、対象が利用できません。",
-    404: "対象の情報が見つかりません。",
+    404: "対象が見つかりません。",
+	408: "リクエストがタイムアウトしました。",
     409: "処理が競合しました。内容を更新してから再度お試しください。",
+	410: "対象の情報は期限切れか削除されています。",
     429: "リクエストが集中しています。しばらく待ってから再度お試しください。",
-    410: "対象の情報は期限切れか削除されています。",
     500: "サーバーで問題が発生しました。しばらく待ってから再度お試しください。",
+	502: "不正なリクエストを受け取りました。",
     503: "現在サービスを利用できません。しばらく待ってから再度お試しください。",
+	504: "中継サーバーからの応答がタイムアウトしました。"
 };
 
 function translatePublicAPIError(
-	serverMessage: string | undefined,
-	statuscode: number
-): string {
-	if (serverMessage) {
-		const translated = `${statuscode}: ${PUBLIC_API_ERROR_MESSAGES[serverMessage]}`
-		if (translated) return translated;
-	}
-	return `${statuscode}: ${STATUS_ERROR_MESSAGES[statuscode] ?? "リクエストを処理できませんでした。しばらく待ってから再度お試しください。"}`;
+	status: number,
+	message: string | undefined
+): APIError {
+	if (message && PUBLIC_API_ERROR_MESSAGES[message]) {
+		return {
+			error: status,
+			message: PUBLIC_API_ERROR_MESSAGES[message]
+		};
+	};
+	return {
+		error: status,
+		message: STATUS_ERROR_MESSAGES[status] ?? "リクエストを処理できませんでした。しばらく待ってから再度お試しください。"
+	};
 }
 
 export async function publicAPI<T>(
@@ -92,9 +100,11 @@ export async function publicAPI<T>(
 	} catch {
 		data = { message: text };
 	}
-	if (!response.ok)
+	if (!response.ok) {
+		const api_error = translatePublicAPIError(response.status, data.error || data.message);
 		throw new Error(
-			translatePublicAPIError(data.error || data.message, response.status)
+			api_error.message
 		);
+	};
 	return data as T;
 }
