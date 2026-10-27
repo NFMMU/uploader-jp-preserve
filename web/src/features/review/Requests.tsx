@@ -24,6 +24,14 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	const items: Obj[] = d.data.items || [];
 	const total = Number(d.data.total ?? 0);
 
+	const lastPage = Math.max(1, Math.ceil(total / limit));
+
+	useEffect(() => {
+		if (d.loading || d.error) return;
+
+		setPage((currentPage) => Math.max(1, Math.min(currentPage, lastPage)));
+	}, [d.loading, d.error, lastPage]);
+
 	// 統計
 	const pendingCountData = useData(
 		api,
@@ -442,6 +450,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 						["all", "すべて"],
 						["accepted", "承認"],
 						["rejected", "却下"],
+						["closed", "終了"],
 					].map(([v, l]) => (
 						<button
 							key={v}

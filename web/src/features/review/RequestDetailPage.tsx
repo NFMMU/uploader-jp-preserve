@@ -20,14 +20,12 @@ export function RequestDetailPage({
 	const { id = "" } = useParams();
 	const nav = useNavigate();
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const requests = useData(
+	const requestData = useData(
 		api,
-		"/public-requests?limit=100",
+		`/public-requests/${encodeURIComponent(id)}`,
 		refresh + localRefresh,
 	);
-	const request: Obj | undefined = (requests.data.items || []).find(
-		(x: Obj) => String(x.id) === id,
-	);
+	const request: Obj | undefined = requestData.data.item;
 	const artifactID = String(request?.artifact_id || "");
 	const filesData = useData(
 		api,
@@ -357,7 +355,7 @@ export function RequestDetailPage({
 			setSaving(false);
 		}
 	}
-	if (requests.loading)
+	if (requestData.loading)
 		return (
 			<>
 				<Heading
@@ -368,14 +366,14 @@ export function RequestDetailPage({
 				<div className="panel empty">読み込み中…</div>
 			</>
 		);
-	if (requests.error || !request)
+	if (requestData.error || !request)
 		return (
 			<>
 				<Heading
 					eyebrow="申請詳細"
 					title="申請が見つかりません"
 					desc={
-						requests.error ||
+						requestData.error ||
 						"一覧から削除されたか、表示権限がない可能性があります。"
 					}
 					actions={

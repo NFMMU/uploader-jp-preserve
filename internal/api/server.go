@@ -94,6 +94,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.GET("/downloads/:id/content", s.downloadContent)
 	auth.GET("/export", s.exportCatalog)
 	auth.GET("/public-requests", s.requireRoles("admin", "reviewer"), s.listPublicRequests)
+	auth.GET("/public-requests/:id", s.requireRoles("admin", "reviewer"), s.getPublicRequest)
 	auth.PATCH("/public-requests/:id", s.requireRoles("admin", "reviewer"), s.patchPublicRequest)
 	auth.GET("/public-requests/:id/intake-file", s.requireRoles("admin", "reviewer"), s.downloadPublicRequestIntakeFile)
 	auth.POST("/public-requests/:id/ingest-upload", s.requireRoles("admin"), s.ingestPublicRequestUpload)
