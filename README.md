@@ -17,18 +17,19 @@ uploader.jp などの配布ファイルと説明・権利情報を記録し、�
 
 ```sh
 cp .env.example .env
+cp docker-compose.example.yml docker-compose.yml
 ```
 
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、`TURNSTILE_SITE_KEY` と `TURNSTILE_SECRET_KEY` を設定してください。
 
 ```sh
-docker compose up --build
+docker compose up --build -d
+docker compose logs -f api
 ```
 
-- API：<http://localhost:8080/healthz>
 - Web：<http://localhost:3000>
+- API ヘルスチェック：<http://localhost:8080/healthz>
 
-この構成は**ローカル確認用**です。デモ用ノードも起動します。本番公開用の設定としてそのまま使用しないでください。
 
 ## 設定ファイルは2種類あります
 

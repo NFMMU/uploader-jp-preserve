@@ -1,4 +1,4 @@
-# uploader.jp保全プロジェクト
+# uploader.jp 保全プロジェクト
 
 **運営元：全国もちもちうどん連盟**  
 **連絡先：uploaderjp-archive@udonya.moe**
@@ -65,7 +65,7 @@ GitHub Actions で API、Web、ノード agent、Node Manager のイメージを
 
 ```sh
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
 ```
 
 Compose は PostgreSQL、Atlas マイグレーション、API、Go 製ノードエージェント 3 台（`local-node-a`、`local-node-b`、`local-node-c`）を起動します。各エージェントは個別に登録され、それぞれの永続ボリュームに認証情報を保存します。初回起動時は、3 台すべての最初のハートビートが届くまで少し待ってください。
@@ -73,7 +73,7 @@ Compose は PostgreSQL、Atlas マイグレーション、API、Go 製ノード�
 ```sh
 curl -i http://localhost:8080/healthz
 docker compose ps
-docker compose logs --tail=100 node-agent node-agent-b node-agent-c
+docker compose logs --tail=100 node-agent node-agent-b node-agent-c node-agent-d
 ```
 
 API は `http://localhost:8080` で待ち受けます。ヘルスチェック用エンドポイントは `GET /healthz` です。
@@ -135,7 +135,7 @@ curl -sS "http://localhost:8080/api/v1/files/$FILE_ID/placements" \
 ```sh
 curl -sS http://localhost:8080/api/v1/nodes -H "Authorization: Bearer $TOKEN"
 curl -sS 'http://localhost:8080/api/v1/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
-docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
+docker compose logs --tail=200 node-agent node-agent-b node-agent-c node-agent-d api migrate
 ```
 
 ## MVP-1 の API 一覧
@@ -152,7 +152,7 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 
 ## MVP-2 / MVP-3 の API 一覧
 
-- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一度限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
+- `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一回限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
 - `POST /api/v1/nodes/:id/heartbeat` — ノードトークン認証付きの容量報告
 - `GET /api/v1/nodes` — 管理者／レビュアー向けノード一覧
 - `GET /api/v1/tasks?status=...` — 管理者／レビュアー向けタスク一覧
