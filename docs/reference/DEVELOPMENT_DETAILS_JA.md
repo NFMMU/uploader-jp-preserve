@@ -73,7 +73,7 @@ Compose は PostgreSQL、Atlas マイグレーション、API、Go 製ノード�
 ```sh
 curl -i http://localhost:8080/healthz
 docker compose -f docker-compose.test2.yml ps
-docker compose -f docker-compose.test2.yml logs --tail=100 node-agent node-agent-b node-agent-c
+docker compose -f docker-compose.test2.yml logs --tail=100 node-agent node-agent-b node-agent-c node-agent-d
 ```
 
 API は `http://localhost:8080` で待ち受けます。ヘルスチェック用エンドポイントは `GET /healthz` です。
@@ -135,7 +135,7 @@ curl -sS "http://localhost:8080/api/v1/files/$FILE_ID/placements" \
 ```sh
 curl -sS http://localhost:8080/api/v1/nodes -H "Authorization: Bearer $TOKEN"
 curl -sS 'http://localhost:8080/api/v1/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
-docker compose -f docker-compose.test2.yml logs --tail=200 node-agent node-agent-b node-agent-c api migrate
+docker compose -f docker-compose.test2.yml logs --tail=200 node-agent node-agent-b node-agent-c node-agent-d api migrate
 ```
 
 ## MVP-1 の API 一覧
