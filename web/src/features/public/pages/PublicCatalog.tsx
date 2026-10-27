@@ -1,43 +1,63 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
+import { Pagination } from "../../../components/common/Pagination";
 import type { PublicArtifact } from "../../../types/public";
+
+type PublicArtifactsResponse = {
+	items: PublicArtifact[];
+	page: number;
+	limit: number;
+	total: number;
+};
 
 export function PublicCatalog() {
 	const [query, setQuery] = useState("");
 	const [submitted, setSubmitted] = useState("");
 	const [items, setItems] = useState<PublicArtifact[]>([]);
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
+
 	useEffect(() => {
 		let active = true;
+
 		setLoading(true);
-		publicAPI<{ items: PublicArtifact[] }>(
-			`/public/artifacts?q=${encodeURIComponent(submitted)}`,
+		setError("");
+
+		publicAPI<PublicArtifactsResponse>(
+			`/public/artifacts?q=${encodeURIComponent(submitted)}&page=${page}&limit=${limit}`,
 		)
 			.then((data) => {
 				if (active) {
 					setItems(data.items || []);
-					setError("");
+					setTotal(Number(data.total ?? 0));
 				}
 			})
-			.catch((e) => {
+			.catch((e: Error) => {
 				if (active) setError(e.message);
 			})
 			.finally(() => {
 				if (active) setLoading(false);
 			});
+
 		return () => {
 			active = false;
 		};
-	}, [submitted]);
+	}, [submitted, page, limit]);
+
 	function search(event: FormEvent) {
 		event.preventDefault();
+		setPage(1);
 		setSubmitted(query.trim());
 	}
+
 	return (
 		<>
 			<h1>作品一覧</h1>
+
 			<section
 				className="project-description"
 				aria-labelledby="project-description-title"
@@ -50,6 +70,7 @@ export function PublicCatalog() {
 					ゲームに関するアセットについては、受付はいたしますが対応の優先順位が低く対応されにくいことをご了承ください。
 				</p>
 			</section>
+
 			<section className="public-service-cards" aria-label="再配布支援サービス">
 				<Link to="/redistribution-support" className="public-service-card">
 					<span className="public-service-label">ファイルを持っている方</span>
@@ -62,7 +83,9 @@ export function PublicCatalog() {
 					<span>配布先探しや管理の手間を相談する →</span>
 				</Link>
 			</section>
+
 			<p className="public-intro">公開が許可されたファイルを掲載しています。</p>
+
 			<form className="public-search" onSubmit={search}>
 				<input
 					aria-label="作品を検索"
@@ -72,6 +95,7 @@ export function PublicCatalog() {
 				/>
 				<button type="submit">検索</button>
 			</form>
+
 			{loading ? (
 				<p className="public-muted">読み込み中…</p>
 			) : error ? (
@@ -100,6 +124,20 @@ export function PublicCatalog() {
 						</article>
 					))}
 				</div>
+			)}
+
+			{total > 0 && (
+				<Pagination
+					page={page}
+					limit={limit}
+					total={total}
+					loading={loading}
+					onPageChange={setPage}
+					onLimitChange={(nextLimit) => {
+						setLimit(nextLimit);
+						setPage(1);
+					}}
+				/>
 			)}
 		</>
 	);

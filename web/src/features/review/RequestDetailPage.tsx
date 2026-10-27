@@ -20,27 +20,131 @@ export function RequestDetailPage({
 	const { id = "" } = useParams();
 	const nav = useNavigate();
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const requests = useData(
+
+	const [filesPage, setFilesPage] = useState(1);
+	const [filesTotal, setFilesTotal] = useState(0);
+	const filesLimit = 20;
+	const filesTotalPages = Math.max(1, Math.ceil(filesTotal / filesLimit));
+
+	// 基本データの取得
+	const requestData = useData(
 		api,
-		"/public-requests?limit=100",
+		`/public-requests/${encodeURIComponent(id)}`,
 		refresh + localRefresh,
 	);
-	const request: Obj | undefined = (requests.data.items || []).find(
-		(x: Obj) => String(x.id) === id,
-	);
+	const request: Obj | undefined = requestData.data.item;
 	const artifactID = String(request?.artifact_id || "");
-	const filesData = useData(
+
+	// ファイルデータの取得
+	const [files, setFiles] = useState<Obj[]>([]);
+	const [filesLoading, setFilesLoading] = useState(false);
+	const [filesError, setFilesError] = useState("");
+
+	async function fetchAllArtifactFiles(aid: string): Promise<Obj[]> {
+		const limit = 100;
+		const allFiles: Obj[] = [];
+		let page = 1;
+		let total: number | undefined;
+
+		while (total === undefined || allFiles.length < total) {
+			const result = await api(
+				`/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
+			);
+			const items: Obj[] = result.items || [];
+
+			allFiles.push(...items);
+
+			if (typeof result.total === "number") {
+				total = result.total;
+			} else if (items.length < limit) {
+				break;
+			}
+
+			if (items.length === 0) break;
+			page++;
+		}
+
+		return allFiles;
+	}
+
+	useEffect(() => {
+		let cancelled = false;
+
+		async function loadFiles() {
+			setFiles([]);
+			setFilesTotal(0);
+			setFilesError("");
+
+			if (!artifactID && !request?.file_object_id) {
+				setFilesLoading(false);
+				return;
+			}
+
+			setFilesLoading(true);
+
+			try {
+				let loadedFiles: Obj[];
+				let total: number;
+
+				if (
+					request?.file_object_id &&
+					(request.linked_file_name || !artifactID)
+				) {
+					const result = await api(
+						`/files/${encodeURIComponent(String(request.file_object_id))}`,
+					);
+
+					loadedFiles = result.file ? [result.file] : [];
+					total = loadedFiles.length;
+				} else {
+					const result = await api(
+						`/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
+					);
+
+					loadedFiles = result.items || [];
+					total = Number(result.total || 0);
+				}
+
+				if (!cancelled) {
+					setFiles(loadedFiles);
+					setFilesTotal(total);
+					if (loadedFiles.length === 0 && total > 0) {
+						const lastPage = Math.max(1, Math.ceil(total / filesLimit));
+						if (filesPage !== lastPage) {
+							setFilesPage(lastPage);
+						}
+					}
+				}
+			} catch (e) {
+				if (!cancelled) {
+					setFilesError((e as Error).message);
+				}
+			} finally {
+				if (!cancelled) {
+					setFilesLoading(false);
+				}
+			}
+		}
+
+		void loadFiles();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [
 		api,
-		artifactID
-			? `/files?artifact_id=${encodeURIComponent(artifactID)}&limit=100`
-			: "/files?limit=100",
-		refresh + localRefresh,
-	);
-	const files: Obj[] = (filesData.data.items || []).filter((x: Obj) =>
-		artifactID
-			? String(x.artifact_id || artifactID) === artifactID
-			: request?.file_object_id && x.id === request.file_object_id,
-	);
+		artifactID,
+		request?.file_object_id,
+		request?.linked_file_name,
+		filesPage,
+		refresh,
+		localRefresh,
+	]);
+
+	useEffect(() => {
+		setFilesPage(1);
+	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
+
 	const [status, setStatus] = useState("in_review");
 	const [reason, setReason] = useState("");
 	const [saving, setSaving] = useState(false);
@@ -177,14 +281,22 @@ export function RequestDetailPage({
 		try {
 			const aid = await ensureArtifact(request);
 			if (individualURL(request.source_url)) {
-				const current = await api(
-					`/files?artifact_id=${encodeURIComponent(aid)}&limit=100`,
-				);
-				let file: Obj | undefined = (current.items || []).find(
-					(x: Obj) =>
-						x.id === request.file_object_id ||
-						x.source_url === request.source_url,
-				);
+				let file: Obj | undefined;
+				if (request.file_object_id) {
+					try {
+						const result = await api(
+							`/files/${encodeURIComponent(String(request.file_object_id))}`,
+						);
+						file = result.file;
+					} catch {
+						// 直接取得できない場合は、作品内の全ファイルから検索する。
+					}
+				}
+				if (!file) {
+					const current = await fetchAllArtifactFiles(aid);
+					file = current.find((x: Obj) => x.source_url === request.source_url);
+				}
+
 				if (file?.preservation_status === "verified") {
 					setPreserveMessage(
 						"このファイルはすでに検証済みです。重複取得を行いません。",
@@ -261,10 +373,7 @@ export function RequestDetailPage({
 			skipped = 0;
 		const errors: string[] = [];
 		try {
-			const current = await api(
-				`/files?artifact_id=${encodeURIComponent(aid)}&limit=100`,
-			);
-			const existing: Obj[] = [...(current.items || [])];
+			const existing = await fetchAllArtifactFiles(aid);
 			let linked = String(request.file_object_id || "");
 			for (const item of candidates.filter((x: Obj) =>
 				selectedURLs.includes(x.url),
@@ -357,7 +466,7 @@ export function RequestDetailPage({
 			setSaving(false);
 		}
 	}
-	if (requests.loading)
+	if (requestData.loading)
 		return (
 			<>
 				<Heading
@@ -368,14 +477,14 @@ export function RequestDetailPage({
 				<div className="panel empty">読み込み中…</div>
 			</>
 		);
-	if (requests.error || !request)
+	if (requestData.error || !request)
 		return (
 			<>
 				<Heading
 					eyebrow="申請詳細"
 					title="申請が見つかりません"
 					desc={
-						requests.error ||
+						requestData.error ||
 						"一覧から削除されたか、表示権限がない可能性があります。"
 					}
 					actions={
@@ -574,7 +683,7 @@ export function RequestDetailPage({
 							<div>
 								<div style={{ display: "flex", flexDirection: "row" }}>
 									<h2>関連ファイル</h2>
-									<span className="type-pill">{files.length} 件</span>
+									<span className="type-pill">{filesTotal} 件</span>
 								</div>
 								<p>この申請に紐付く作品・ファイル</p>
 							</div>
@@ -595,11 +704,11 @@ export function RequestDetailPage({
 							<div className="empty">
 								公開カタログのファイルはまだ紐付いていません。添付ファイルがある場合は、上の「申請時の添付ファイル」から確認できます。
 							</div>
-						) : filesData.loading ? (
+						) : filesLoading ? (
 							<div className="empty">ファイルを読み込んでいます…</div>
-						) : filesData.error ? (
+						) : filesError ? (
 							<div className="empty">
-								ファイル一覧を読み込めませんでした：{filesData.error}
+								ファイル一覧を読み込めませんでした：{filesError}
 							</div>
 						) : files.length ? (
 							<div className="request-file-list">
@@ -646,6 +755,37 @@ export function RequestDetailPage({
 										</button>
 									</article>
 								))}
+								{filesTotal > filesLimit && (
+									<div className="request-file-pagination">
+										<span>
+											{(filesPage - 1) * filesLimit + 1}～
+											{Math.min(filesPage * filesLimit, filesTotal)} 件 / 全
+											{filesTotal} 件
+										</span>
+
+										<div className="request-file-pagination__controls">
+											<button
+												type="button"
+												disabled={filesLoading || filesPage <= 1}
+												onClick={() => setFilesPage((page) => page - 1)}
+											>
+												前へ
+											</button>
+
+											<span className="request-file-pagination__page">
+												{filesPage} / {filesTotalPages}
+											</span>
+
+											<button
+												type="button"
+												disabled={filesLoading || filesPage >= filesTotalPages}
+												onClick={() => setFilesPage((page) => page + 1)}
+											>
+												次へ
+											</button>
+										</div>
+									</div>
+								)}
 							</div>
 						) : (
 							<div className="empty">関連ファイルはまだありません。</div>

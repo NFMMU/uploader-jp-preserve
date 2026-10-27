@@ -217,6 +217,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 				item.LinkedFileName = file.OriginalFilename
 				if artifactID == nil {
 					artifactID = &file.ArtifactID
+					item.ArtifactID = artifactID
 				}
 			}
 		}
@@ -229,6 +230,54 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		items = append(items, item)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
+}
+
+func (s *Server) getPublicRequest(c *gin.Context) {
+	var request model.PublicRequest
+
+	db := s.db.WithContext(c.Request.Context())
+	if err := db.First(&request, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "public request")
+		return
+	}
+
+	item := publicRequestListItem{
+		PublicRequest: request,
+		HasSourcePassword: request.SourcePasswordEncrypted != nil &&
+			*request.SourcePasswordEncrypted != "",
+	}
+
+	artifactID := request.ArtifactID
+
+	if request.FileObjectID != nil {
+		var file model.FileObject
+		if err := db.First(&file, "id = ?", *request.FileObjectID).Error; err == nil {
+			item.LinkedFileName = file.OriginalFilename
+			if artifactID == nil {
+				artifactID = &file.ArtifactID
+				item.ArtifactID = artifactID
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not load linked file",
+			})
+			return
+		}
+	}
+
+	if artifactID != nil {
+		var artifact model.Artifact
+		if err := db.First(&artifact, "id = ?", *artifactID).Error; err == nil {
+			item.LinkedArtifactTitle = artifact.Title
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not load linked artifact",
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"item": item})
 }
 
 func (s *Server) patchPublicRequest(c *gin.Context) {

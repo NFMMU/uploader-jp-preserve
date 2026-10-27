@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { downloadExport } from "../../api/admin";
 import { Heading } from "../../components/common/Heading";
 import { Modal } from "../../components/common/Modal";
+import { Pagination } from "../../components/common/Pagination";
 import { Table } from "../../components/common/Table";
 import { FileRow } from "../../components/files/FileRow";
 import { useData } from "../../hooks/useData";
@@ -59,7 +60,9 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 		source_url: "",
 		description: "",
 	});
-	let filePath = "/files?limit=100";
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+	let filePath = `/files?page=${page}&limit=${limit}`;
 	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
 	if (preservationFilter)
 		filePath +=
@@ -70,6 +73,7 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 		filePath += "&publication=" + encodeURIComponent(publicationFilter);
 	if (linkedArtifactID)
 		filePath += "&artifact_id=" + encodeURIComponent(linkedArtifactID);
+
 	const f = useData(api, filePath, refresh + unused);
 	const requestData = useData(
 		api,
@@ -83,6 +87,12 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 			x.status === "in_review" ||
 			x.status === "pending",
 	);
+
+	const total = Number(f.data.total ?? files.length);
+	const totalPages = Math.max(1, Math.ceil(total / limit));
+
+	const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
+	const endItem = Math.min(page * limit, total);
 
 	useEffect(() => {
 		if (!linkedFileID || f.loading) return;
@@ -106,6 +116,17 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 			live = false;
 		};
 	}, [linkedFileID, f.loading, f.data.items]);
+
+	useEffect(() => {
+		setPage(1);
+	}, [
+		query,
+		preservationFilter,
+		policyFilter,
+		publicationFilter,
+		linkedArtifactID,
+		limit,
+	]);
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
@@ -698,6 +719,17 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 					)}
 				</Table>
 			</section>
+			<Pagination
+				page={page}
+				limit={limit}
+				total={Number(f.data.total ?? 0)}
+				loading={f.loading}
+				onPageChange={setPage}
+				onLimitChange={(nextLimit) => {
+					setLimit(nextLimit);
+					setPage(1);
+				}}
+			/>
 			{modal && (
 				<Modal title="作品を登録" close={() => setModal(false)}>
 					<form onSubmit={create} className="form-stack">

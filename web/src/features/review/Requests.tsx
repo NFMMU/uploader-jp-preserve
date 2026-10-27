@@ -1,7 +1,8 @@
 import { AlertTriangle, ClipboardList, ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Heading } from "../../components/common/Heading";
+import { Pagination } from "../../components/common/Pagination";
 import { Status } from "../../components/common/Status";
 import { useData } from "../../hooks/useData";
 import { date } from "../../lib/format";
@@ -9,16 +10,55 @@ import type { Obj } from "../../types/common";
 
 export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	const nav = useNavigate();
-	const d = useData(api, "/public-requests?limit=100", refresh);
+
+	// 実データの取得
 	const [filter, setFilter] = useState("pending");
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+
+	const requestPath =
+		`/public-requests?page=${page}&limit=${limit}` +
+		(filter !== "all" ? `&status=${encodeURIComponent(filter)}` : "");
+
+	const d = useData(api, requestPath, refresh);
+	const items: Obj[] = d.data.items || [];
+	const total = Number(d.data.total ?? 0);
+
+	const lastPage = Math.max(1, Math.ceil(total / limit));
+
+	useEffect(() => {
+		if (d.loading || d.error) return;
+
+		setPage((currentPage) => Math.max(1, Math.min(currentPage, lastPage)));
+	}, [d.loading, d.error, lastPage]);
+
+	// 統計
+	const pendingCountData = useData(
+		api,
+		"/public-requests?page=1&limit=1&status=pending",
+		refresh,
+	);
+	const inReviewCountData = useData(
+		api,
+		"/public-requests?page=1&limit=1&status=in_review",
+		refresh,
+	);
+	const allCountData = useData(api, "/public-requests?page=1&limit=1", refresh);
+
+	const pendingCount = Number(pendingCountData.data.total ?? 0);
+	const inReviewCount = Number(inReviewCountData.data.total ?? 0);
+	const allCount = Number(allCountData.data.total ?? 0);
+
+	useEffect(() => {
+		setPage(1);
+		setSelectedRequestIDs([]);
+	}, [filter, limit]);
+
 	const [selectedRequestIDs, setSelectedRequestIDs] = useState<string[]>([]);
 	const [bulkPreserveTerms, setBulkPreserveTerms] = useState(false);
 	const [bulkPreserveBusy, setBulkPreserveBusy] = useState(false);
 	const [bulkReviewBusy, setBulkReviewBusy] = useState(false);
 	const [bulkPreserveStatus, setBulkPreserveStatus] = useState("");
-	const items = (d.data.items || []).filter(
-		(x: Obj) => filter === "all" || x.status === filter,
-	);
 	function toggleRequest(id: string, checked: boolean) {
 		setSelectedRequestIDs((old) =>
 			checked
@@ -370,12 +410,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					}}
 				>
 					<span>未処理</span>
-					<b>
-						{
-							(d.data.items || []).filter((x: Obj) => x.status === "pending")
-								.length
-						}
-					</b>
+					<b>{pendingCount}</b>
 					<small>まず確認する申請</small>
 				</button>
 				<button
@@ -389,12 +424,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					}}
 				>
 					<span>確認中</span>
-					<b>
-						{
-							(d.data.items || []).filter((x: Obj) => x.status === "in_review")
-								.length
-						}
-					</b>
+					<b>{inReviewCount}</b>
 					<small>対応を進めている申請</small>
 				</button>
 				<button
@@ -408,7 +438,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					}}
 				>
 					<span>すべて</span>
-					<b>{(d.data.items || []).length}</b>
+					<b>{allCount}</b>
 					<small>受付済みの申請</small>
 				</button>
 			</div>
@@ -632,6 +662,21 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					<div className="panel empty">この条件の申請はありません。</div>
 				)}
 			</section>
+			<Pagination
+				page={page}
+				limit={limit}
+				total={total}
+				loading={d.loading}
+				onPageChange={(nextPage) => {
+					setSelectedRequestIDs([]);
+					setPage(nextPage);
+				}}
+				onLimitChange={(nextLimit) => {
+					setSelectedRequestIDs([]);
+					setLimit(nextLimit);
+					setPage(1);
+				}}
+			/>
 		</>
 	);
 }
