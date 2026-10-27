@@ -1,7 +1,7 @@
 name: 不具合報告
 description: 再現可能な不具合を報告する
-title: "[Bug]: "
-labels: ["bug"]
+title: "fix: "
+labels: ["kind/bug"]
 body:
   - type: markdown
     attributes:
