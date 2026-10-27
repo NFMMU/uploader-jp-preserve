@@ -19,7 +19,7 @@ cp .env.example .env
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。
 
 ```sh
-docker compose up --build -d
+docker compose up --build
 docker compose logs -f api
 ```
 
@@ -34,7 +34,7 @@ docker compose logs -f api
 
 公開停止・削除、保全、再配布相談、配布元向け代行、移設先情報、ノード参加の各フォームには Cloudflare Turnstile を表示します。API は送信されたトークンを Cloudflare の Siteverify API で検証するため、フロント側だけのチェックではありません。
 
-本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、公開するドメインを許可ホスト名に登録して、をルートの `.env` に次を設定してください。
+本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、公開するドメインを許可ホスト名に登録して、ルートの `.env` に次を設定してください。
 
 ```dotenv
 APP_ENV=production

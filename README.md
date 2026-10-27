@@ -28,7 +28,7 @@ cp .env.example .env
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、`TURNSTILE_SITE_KEY` と `TURNSTILE_SECRET_KEY` を設定してください。
 
 ```sh
-docker compose up --build -d
+docker compose up --build
 docker compose logs -f api
 ```
 
@@ -44,7 +44,7 @@ docker compose logs -f api
 | ルートの `.env`                | 運営者・開発者 | 中央 API、DB、管理者初期設定、ローカル確認用設定  |
 | `deploy/participant-node/.env` | ノード参加者   | 参加するノード1台の接続先、登録トークン、容量など |
 
-この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](PARTICIPATING_NODE_JA.md)を参照してください。
+この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](docs/PARTICIPATING_NODE_JA.md)を参照してください。
 
 ## 主な機能
 
