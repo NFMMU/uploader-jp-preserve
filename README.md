@@ -28,8 +28,8 @@ cp .env.example .env
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、`TURNSTILE_SITE_KEY` と `TURNSTILE_SECRET_KEY` を設定してください。
 
 ```sh
-docker compose up --build
-docker compose logs -f api
+docker compose -f docker-compose.test2.yml up --build -d
+docker compose -f docker-compose.test2.yml logs -f api
 ```
 
 - Web：<http://localhost:3000>
