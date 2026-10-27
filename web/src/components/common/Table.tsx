@@ -1,4 +1,5 @@
 import type React from "react";
+import { Children } from "react";
 export function Table({
   headers,
   children,
@@ -19,7 +20,7 @@ export function Table({
           </tr>
         </thead>
         <tbody>
-          {children || (
+          {Children.count(children) > 0 ? children : (
             <tr>
               <td colSpan={headers.length} className="empty">
                 {empty}

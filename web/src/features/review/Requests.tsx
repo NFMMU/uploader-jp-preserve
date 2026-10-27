@@ -14,6 +14,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
   const [selectedRequestIDs, setSelectedRequestIDs] = useState<string[]>([]);
   const [bulkPreserveTerms, setBulkPreserveTerms] = useState(false);
   const [bulkPreserveBusy, setBulkPreserveBusy] = useState(false);
+  const [bulkReviewBusy, setBulkReviewBusy] = useState(false);
   const [bulkPreserveStatus, setBulkPreserveStatus] = useState("");
   const items = (d.data.items || []).filter(
     (x: Obj) => filter === "all" || x.status === filter,
@@ -28,6 +29,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
     );
   }
   async function bulkReview(nextStatus: "accepted" | "rejected") {
+    if (bulkReviewBusy) return;
     const selected = (d.data.items || []).filter((x: Obj) =>
       selectedRequestIDs.includes(x.id),
     );
@@ -69,26 +71,31 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
       )
     )
       return;
-    let ok = 0;
-    const failures: string[] = [];
-    for (const item of selected) {
-      try {
-        await api(`/public-requests/${item.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: nextStatus, reason: reason.trim() }),
-        });
-        ok++;
-      } catch (e) {
-        failures.push(
-          `${String(item.id).slice(0, 8)}: ${(e as Error).message}`,
-        );
+    setBulkReviewBusy(true);
+    try {
+      let ok = 0;
+      const failures: string[] = [];
+      for (const item of selected) {
+        try {
+          await api(`/public-requests/${item.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: nextStatus, reason: reason.trim() }),
+          });
+          ok++;
+        } catch (e) {
+          failures.push(
+            `${String(item.id).slice(0, 8)}: ${(e as Error).message}`,
+          );
+        }
       }
+      setSelectedRequestIDs([]);
+      bumpRefresh?.();
+      notify(
+        `${ok} 件を処理しました${failures.length ? `。失敗 ${failures.length} 件：${failures[0]}` : ""}`,
+      );
+    } finally {
+      setBulkReviewBusy(false);
     }
-    setSelectedRequestIDs([]);
-    bumpRefresh?.();
-    notify(
-      `${ok} 件を処理しました${failures.length ? `。失敗 ${failures.length} 件：${failures[0]}` : ""}`,
-    );
   }
   async function bulkPreserveSelected() {
     const selected = (d.data.items || []).filter((x: Obj) =>
@@ -490,7 +497,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
                 </label>
                 <button
                   className="secondary"
-                  disabled={bulkPreserveBusy}
+                  disabled={bulkPreserveBusy || bulkReviewBusy}
                   onClick={() => bulkReview("accepted")}
                 >
                   公開停止・削除を一括承認
@@ -499,7 +506,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
             )}
             <button
               className="secondary"
-              disabled={bulkPreserveBusy}
+              disabled={bulkPreserveBusy || bulkReviewBusy}
               onClick={() => bulkReview("rejected")}
             >
               一括却下

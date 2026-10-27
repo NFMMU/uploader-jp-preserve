@@ -74,13 +74,13 @@ export function Tasks({ api, refresh, notify, role }: any) {
         >
           {d.loading ? (
             <tr>
-              <td colSpan={8} className="empty">
+              <td colSpan={9} className="empty">
                 読み込み中…
               </td>
             </tr>
           ) : d.error ? (
             <tr>
-              <td colSpan={8} className="empty">
+              <td colSpan={9} className="empty">
                 {d.error}
               </td>
             </tr>
@@ -126,7 +126,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
             ))
           ) : (
             <tr>
-              <td colSpan={8} className="empty">
+              <td colSpan={9} className="empty">
                 タスクがありません
               </td>
             </tr>

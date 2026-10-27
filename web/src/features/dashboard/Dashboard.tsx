@@ -4,7 +4,7 @@ import { Stat } from "../../components/common/Stat";
 import { TaskTable } from "../../components/common/TaskTable";
 import { useData } from "../../hooks/useData";
 import type { Obj } from "../../types/common";
-import { Archive, ClipboardList, Download, Files, HardDrive, Plus, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
+import { AlertTriangle, Archive, ClipboardList, Download, Files, HardDrive, Plus, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 export function Dashboard({ api, refresh, notify, token }: any) {
@@ -20,6 +20,8 @@ export function Dashboard({ api, refresh, notify, token }: any) {
     ["degraded", "missing", "error"].includes(x.preservation_status),
   ).length;
   const failed = tasks.filter((x: Obj) => x.status === "failed").length;
+  const errors = [a.error, f.error, n.error, r.error].filter(Boolean);
+  const filesUnavailable = f.loading || !!f.error;
   return (
     <>
       <Heading
@@ -57,30 +59,43 @@ export function Dashboard({ api, refresh, notify, token }: any) {
         </div>
         <span className="notice-tag"></span>
       </div>
+      {errors.length > 0 && (
+        <div className="policy-warning" role="alert">
+          <AlertTriangle size={16} /> {errors.join(" / ")}
+        </div>
+      )}
       <div className="stat-grid">
         <Stat
           label="作品数"
-          value={a.data.total ?? (a.data.items || []).length}
+          value={
+            a.loading || a.error
+              ? "—"
+              : a.data.total ?? (a.data.items || []).length
+          }
           sub="登録済み"
           icon={Files}
         />
         <Stat
           label="保存ファイル"
-          value={files.length}
+          value={filesUnavailable ? "—" : files.length}
           sub="登録ファイル数"
           icon={Archive}
           tone="violet"
         />
         <Stat
           label="稼働ノード"
-          value={`${nodes.filter((x: Obj) => x.status === "online").length} / ${nodes.length}`}
+          value={
+            n.loading || n.error
+              ? "—"
+              : `${nodes.filter((x: Obj) => x.status === "online").length} / ${nodes.length}`
+          }
           sub="稼働状況"
           icon={HardDrive}
           tone="green"
         />
         <Stat
           label="要対応"
-          value={failed}
+          value={t.loading || t.error ? "—" : failed}
           sub="失敗したタスク"
           icon={Workflow}
           tone={failed ? "red" : "amber"}
@@ -112,12 +127,12 @@ export function Dashboard({ api, refresh, notify, token }: any) {
                 <div className="health-row" key={key}>
                   <span className={"health-dot " + tone} />
                   <span>{label}</span>
-                  <b>{count}</b>
+                  <b>{filesUnavailable ? "—" : count}</b>
                   <div className="mini-bar">
                     <i
                       className={tone}
                       style={{
-                        width: `${files.length ? (count / files.length) * 100 : 0}%`,
+                        width: `${!filesUnavailable && files.length ? (count / files.length) * 100 : 0}%`,
                       }}
                     />
                   </div>
@@ -127,7 +142,7 @@ export function Dashboard({ api, refresh, notify, token }: any) {
           </div>
           <div className="panel-foot">
             <span>
-              要対応: <b>{degraded}</b>
+              要対応: <b>{filesUnavailable ? "—" : degraded}</b>
             </span>
             <NavLink to="/admin/review?tab=files">一覧を見る →</NavLink>
           </div>
@@ -167,7 +182,9 @@ export function Dashboard({ api, refresh, notify, token }: any) {
               <div>
                 <b>申請を確認</b>
                 <small>
-                  未処理 {r.data.total ?? (r.data.items || []).length} 件
+                  未処理 {r.loading || r.error
+                    ? "—"
+                    : r.data.total ?? (r.data.items || []).length} 件
                 </small>
               </div>
               <span>→</span>

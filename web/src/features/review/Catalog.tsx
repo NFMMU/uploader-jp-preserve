@@ -88,7 +88,11 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
     if (!linkedFileID || f.loading) return;
     let live = true;
     const local = (f.data.items || []).find((x: Obj) => x.id === linkedFileID);
-    (local ? Promise.resolve(local) : api(`/files/${encodeURIComponent(linkedFileID)}`))
+    (local
+      ? Promise.resolve(local)
+      : api(`/files/${encodeURIComponent(linkedFileID)}`).then(
+          (result: Obj) => result.file,
+        ))
       .then((target: Obj) => {
         if (!live || !target) return;
         setDetail(target);
@@ -439,10 +443,12 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
           reason: reason.trim(),
         }),
       });
-      await api(`/files/${detail.id}/publication`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: pub, reason: reason.trim() }),
-      });
+      if (role === "admin" && pub !== detail.public_download_enabled) {
+        await api(`/files/${detail.id}/publication`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: pub, reason: reason.trim() }),
+        });
+      }
       notify("公開ポリシーを更新しました");
       setDetail(null);
       setRefreshDummy((x) => x + 1);
@@ -1035,6 +1041,7 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
               <input
                 type="checkbox"
                 checked={pub}
+                disabled={role !== "admin"}
                 onChange={(e) => setPub(e.target.checked)}
               />{" "}
               一般公開する

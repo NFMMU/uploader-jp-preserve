@@ -114,13 +114,13 @@ export function Nodes({ api, refresh, notify, role }: any) {
         >
           {d.loading ? (
             <tr>
-              <td colSpan={7} className="empty">
+              <td colSpan={10} className="empty">
                 読み込み中…
               </td>
             </tr>
           ) : d.error ? (
             <tr>
-              <td colSpan={7} className="empty">
+              <td colSpan={10} className="empty">
                 {d.error}
               </td>
             </tr>
