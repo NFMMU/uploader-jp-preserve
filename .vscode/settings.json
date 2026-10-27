@@ -12,5 +12,14 @@
     },
     "editor.suggest.insertMode": "replace",
     "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[jsx-tags]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
   }
 }
