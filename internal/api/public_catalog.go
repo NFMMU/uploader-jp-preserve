@@ -130,13 +130,13 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 	total, err := s.publicCatalogFileCount(c, artifact.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "could not count public files",
+			"error": "公開ファイル数を取得できませんでした。",
 		})
 		return
 	}
 	if total == 0 {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": "public artifact not found",
+			"error": "公開成果物が見つかりません。",
 		})
 		return
 	}

@@ -65,7 +65,10 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		var err error
 		encryptedSourcePassword, err = s.encryptSourcePassword(req.SourcePassword)
 		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			if s.logger != nil {
+				s.logger.Error("public_request_source_password_encryption_failed", "error", err)
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ソースパスワードを暗号化できませんでした。しばらく待ってから再度お試しください。"})
 			return
 		}
 	}
