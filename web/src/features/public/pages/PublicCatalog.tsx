@@ -126,7 +126,7 @@ export function PublicCatalog() {
 				</div>
 			)}
 
-			{!loading && !error && total > 0 && (
+			{total > 0 && (
 				<Pagination
 					page={page}
 					limit={limit}
