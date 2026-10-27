@@ -63,7 +63,13 @@ function App() {
 			data = { message: text };
 		}
 		if (!r.ok)
-			throw new Error(data.error || data.message || `HTTP ${r.status}`);
+			if (r.status === 401) {
+				localStorage.removeItem("archive_token");
+				localStorage.removeItem("archive_user");
+				setToken("");
+				setUser(null);
+				nav("/admin/login");
+			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
 		return data;
 	}
 	function notify(s: string) {
@@ -115,6 +121,7 @@ function App() {
 			? links
 			: links.filter(([to]) => to !== "/admin/url-collector");
 	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
+
 	if (!token || !user)
 		return (
 			<div className="login-shell">
