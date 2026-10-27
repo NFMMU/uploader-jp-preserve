@@ -61,7 +61,7 @@ const STATUS_ERROR_MESSAGES: Record<number, string> = {
 	410: "対象の情報は期限切れか削除されています。",
     429: "リクエストが集中しています。しばらく待ってから再度お試しください。",
     500: "サーバーで問題が発生しました。しばらく待ってから再度お試しください。",
-	502: "不正なリクエストを受け取りました。",
+	502: "中継サーバーが上流サービスから不正な応答を受け取りました。",
     503: "現在サービスを利用できません。しばらく待ってから再度お試しください。",
 	504: "中継サーバーからの応答がタイムアウトしました。"
 };
@@ -101,7 +101,13 @@ export async function publicAPI<T>(
 		data = { message: text };
 	}
 	if (!response.ok) {
-		const api_error = translatePublicAPIError(response.status, data.error || data.message);
+		const message =
+			typeof data.message === "string"
+				? data.message
+				: typeof data.error === "string"
+					? data.error
+					: undefined;
+		const api_error = translatePublicAPIError(response.status, message);
 		throw new Error(
 			api_error.message
 		);
