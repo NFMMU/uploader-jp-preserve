@@ -65,15 +65,15 @@ GitHub Actions で API、Web、ノード agent、Node Manager のイメージを
 
 ```sh
 cp .env.example .env
-docker compose up --build
+docker compose -f docker-compose.test2.yml up --build -d
 ```
 
 Compose は PostgreSQL、Atlas マイグレーション、API、Go 製ノードエージェント 3 台（`local-node-a`、`local-node-b`、`local-node-c`）を起動します。各エージェントは個別に登録され、それぞれの永続ボリュームに認証情報を保存します。初回起動時は、3 台すべての最初のハートビートが届くまで少し待ってください。
 
 ```sh
 curl -i http://localhost:8080/healthz
-docker compose ps
-docker compose logs --tail=100 node-agent node-agent-b node-agent-c
+docker compose -f docker-compose.test2.yml ps
+docker compose -f docker-compose.test2.yml logs --tail=100 node-agent node-agent-b node-agent-c
 ```
 
 API は `http://localhost:8080` で待ち受けます。ヘルスチェック用エンドポイントは `GET /healthz` です。
@@ -135,7 +135,7 @@ curl -sS "http://localhost:8080/api/v1/files/$FILE_ID/placements" \
 ```sh
 curl -sS http://localhost:8080/api/v1/nodes -H "Authorization: Bearer $TOKEN"
 curl -sS 'http://localhost:8080/api/v1/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
-docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
+docker compose -f docker-compose.test2.yml logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 ```
 
 ## MVP-1 の API 一覧
@@ -173,7 +173,7 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c api migrate
 - `NODE_UPLOADER_MIN_INTERVAL` は **agent ごと**に、uploader.jp への各 HTTP リクエスト（ページ取得、フォーム送信、リダイレクトを含む）の間隔を制限します。既定値は `30s` です。例えば `1m` にすると、その agent は前回のリクエスト開始から最低 1 分空けます。
 - この制限を中央 API や全ノード共通のロックとして実装していません。別々の agent はそれぞれの設定に従って独立して動作します。
 - 最終取得開始時刻は agent の状態ファイルに隣接するファイルへ保存されるため、agent を再起動しても間隔を引き継ぎます。値 `0s` は制限なしです。通常は既定値以上を推奨します。
-- この機能を使うには、全ノードの agent を新しいイメージで再ビルド・再起動してください（`docker compose up -d --build node-agent node-agent-b node-agent-c node-agent-d`）。旧 agent は `source_fetch` タスクに対応していません。
+- この機能を使うには、全ノードの agent を新しいイメージで再ビルド・再起動してください（`docker compose -f docker-compose.test2.yml up -d --build node-agent node-agent-b node-agent-c node-agent-d`）。旧 agent は `source_fetch` タスクに対応していません。
 - 一覧URLの候補確認は中央 API が最大 10 ページ・100 候補に制限して行います。これはファイル本体のダウンロードではなく、HTML 一覧を読む処理です。
 - `POST /api/v1/nodes/:id/tasks/:taskID/replica-content?lease_token=...` — コピー元ノードからの認証付き複製データ中継アップロード
 - `POST /api/v1/nodes/:id/tasks/:taskID/result` — 認証付きのハッシュ／サイズ結果報告
