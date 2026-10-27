@@ -217,6 +217,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 				item.LinkedFileName = file.OriginalFilename
 				if artifactID == nil {
 					artifactID = &file.ArtifactID
+					item.ArtifactID = artifactID
 				}
 			}
 		}
@@ -254,6 +255,7 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 			item.LinkedFileName = file.OriginalFilename
 			if artifactID == nil {
 				artifactID = &file.ArtifactID
+				item.ArtifactID = artifactID
 			}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{
