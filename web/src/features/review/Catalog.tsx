@@ -88,12 +88,6 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 			x.status === "pending",
 	);
 
-	const total = Number(f.data.total ?? files.length);
-	const totalPages = Math.max(1, Math.ceil(total / limit));
-
-	const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
-	const endItem = Math.min(page * limit, total);
-
 	useEffect(() => {
 		if (!linkedFileID || f.loading) return;
 		let live = true;
