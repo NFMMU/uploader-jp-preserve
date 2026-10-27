@@ -47,16 +47,15 @@ cp deploy/participant-node/.env.example deploy/participant-node/.env
 
 ## 2. 起動する
 
-ローカルでイメージをビルドして起動する場合：
+> [!CAUTION]
+> データの保存先がOSのインストールディスクではない方については、`deploy/participant-node/compose.yaml`ファイルを編集してボリュームの設定を変更する必要があります。
 
 ```sh
 docker compose \
   --env-file deploy/participant-node/.env \
   -f deploy/participant-node/compose.yaml \
-  up -d --build
+  up -d
 ```
-
-公開済みの GHCR イメージを使う場合は、同じ `.env` を編集したうえで `compose.yaml` を `compose.ghcr.yaml` に置き換えます。詳しくは[GHCR ガイド](CONTAINER_REGISTRY_JA.md)を参照してください。
 
 ## 3. 状態を確認する
 
