@@ -422,7 +422,7 @@ export function RequestDetailPage({
               style={{
                 display: "flex",
                 flexDirection: "row",
-                justifyContent: "center",
+                justifyContent: "flex-start",
                 alignItems: "center",
                 gap: "4px",
               }}
@@ -446,6 +446,7 @@ export function RequestDetailPage({
                 aria-label={
                   isTitleEditing ? "タイトルを保存" : "タイトルを編集"
                 }
+                className="small-btn"
                 disabled={saving}
                 onClick={() => {
                   if (isTitleEditing) {
@@ -455,7 +456,11 @@ export function RequestDetailPage({
                   }
                 }}
               >
-                {isTitleEditing ? <SaveCheck /> : <Pencil />}
+                {isTitleEditing ? (
+                  <SaveCheck size={12} />
+                ) : (
+                  <Pencil size={12} />
+                )}
               </button>
             </div>
           </>
