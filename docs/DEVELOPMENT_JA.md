@@ -19,8 +19,8 @@ cp .env.example .env
 `.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。
 
 ```sh
-docker compose -f docker-compose.test2.yml up --build -d
-docker compose -f docker-compose.test2.yml logs -f api
+docker compose up --build -d
+docker compose logs -f api
 ```
 
 アクセス先：
@@ -52,16 +52,16 @@ TURNSTILE_SECRET_KEY=Cloudflareから取得したシークレットキー
 
 ```sh
 # ログを見る
-docker compose -f docker-compose.test2.yml logs -f api
+docker compose logs -f api
 
 # 起動中のサービスを確認
-docker compose -f docker-compose.test2.yml ps
+docker compose ps
 
 # 停止する
-docker compose -f docker-compose.test2.yml down
+docker compose down
 
 # 再ビルドして起動
-docker compose -f docker-compose.test2.yml up --build -d
+docker compose up --build -d
 
 # Go のテストを実行
 go test ./...
@@ -70,7 +70,7 @@ go test ./...
 cd web && npm install && npm run build
 ```
 
-通常の `docker compose -f docker-compose.test2.yml down` は名前付きボリュームを削除しません。`docker compose -f docker-compose.test2.yml down -v` は DB や保存データを削除するため、必要性を確認せず実行しないでください。
+通常の `docker compose down` は名前付きボリュームを削除しません。`docker compose down -v` は DB や保存データを削除するため、必要性を確認せず実行しないでください。
 
 ## 6. 環境変数の使い分け
 
