@@ -49,6 +49,9 @@ export function NodeParticipationRequest() {
 				ご自身のサーバーや PC
 				のストレージを、ファイル保全ネットワークに提供するための申請です。申請は運営が確認し、承認された場合に限り登録用の一回限りトークンを発行します。
 			</p>
+			<p>
+				詳細はこちらもご覧ください。<a href="https://github.com/NFMMU/uploader-jp-preserve/blob/main/docs/PARTICIPATING_NODE_JA.md" target="_blank" className="bold" >GitHub</a>
+			</p>
 			{success ? (
 				<div className="public-success">
 					<h2>申請を受け付けました</h2>
