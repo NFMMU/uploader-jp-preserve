@@ -86,25 +86,34 @@ export function RequestDetailPage({
 				let loadedFiles: Obj[];
 				let total: number;
 
-				if (artifactID) {
+				if (
+					request?.file_object_id &&
+					(request.linked_file_name || !artifactID)
+				) {
+					const result = await api(
+						`/files/${encodeURIComponent(String(request.file_object_id))}`,
+					);
+
+					loadedFiles = result.file ? [result.file] : [];
+					total = loadedFiles.length;
+				} else {
 					const result = await api(
 						`/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
 					);
 
 					loadedFiles = result.items || [];
 					total = Number(result.total || 0);
-				} else {
-					const result = await api(
-						`/files/${encodeURIComponent(String(request!.file_object_id))}`,
-					);
-
-					loadedFiles = result.file ? [result.file] : [];
-					total = loadedFiles.length;
 				}
 
 				if (!cancelled) {
 					setFiles(loadedFiles);
 					setFilesTotal(total);
+					if (loadedFiles.length === 0 && total > 0) {
+						const lastPage = Math.max(1, Math.ceil(total / filesLimit));
+						if (filesPage !== lastPage) {
+							setFilesPage(lastPage);
+						}
+					}
 				}
 			} catch (e) {
 				if (!cancelled) {
@@ -126,6 +135,7 @@ export function RequestDetailPage({
 		api,
 		artifactID,
 		request?.file_object_id,
+		request?.linked_file_name,
 		filesPage,
 		refresh,
 		localRefresh,
@@ -133,7 +143,7 @@ export function RequestDetailPage({
 
 	useEffect(() => {
 		setFilesPage(1);
-	}, [artifactID, request?.file_object_id]);
+	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
 
 	const [status, setStatus] = useState("in_review");
 	const [reason, setReason] = useState("");
@@ -271,8 +281,6 @@ export function RequestDetailPage({
 		try {
 			const aid = await ensureArtifact(request);
 			if (individualURL(request.source_url)) {
-				const current = await fetchAllArtifactFiles(aid);
-
 				let file: Obj | undefined;
 				if (request.file_object_id) {
 					try {
@@ -285,6 +293,7 @@ export function RequestDetailPage({
 					}
 				}
 				if (!file) {
+					const current = await fetchAllArtifactFiles(aid);
 					file = current.find((x: Obj) => x.source_url === request.source_url);
 				}
 
