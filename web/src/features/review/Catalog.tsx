@@ -59,7 +59,9 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 		source_url: "",
 		description: "",
 	});
-	let filePath = "/files?limit=100";
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+	let filePath = `/files?page=${page}&limit=${limit}`;
 	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
 	if (preservationFilter)
 		filePath +=
@@ -70,6 +72,7 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 		filePath += "&publication=" + encodeURIComponent(publicationFilter);
 	if (linkedArtifactID)
 		filePath += "&artifact_id=" + encodeURIComponent(linkedArtifactID);
+
 	const f = useData(api, filePath, refresh + unused);
 	const requestData = useData(
 		api,
@@ -83,6 +86,12 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 			x.status === "in_review" ||
 			x.status === "pending",
 	);
+
+	const total = Number(f.data.total ?? files.length);
+	const totalPages = Math.max(1, Math.ceil(total / limit));
+
+	const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
+	const endItem = Math.min(page * limit, total);
 
 	useEffect(() => {
 		if (!linkedFileID || f.loading) return;
@@ -106,6 +115,17 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 			live = false;
 		};
 	}, [linkedFileID, f.loading, f.data.items]);
+
+	useEffect(() => {
+		setPage(1);
+	}, [
+		query,
+		preservationFilter,
+		policyFilter,
+		publicationFilter,
+		linkedArtifactID,
+		limit,
+	]);
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
@@ -698,6 +718,80 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 					)}
 				</Table>
 			</section>
+			<div className="pagination">
+				<div className="pagination-info">
+					<span>
+						全 {total.toLocaleString()} 件中 {startItem.toLocaleString()}～
+						{endItem.toLocaleString()} 件を表示
+					</span>
+
+					<label className="pagination-limit">
+						表示件数
+						<select
+							value={limit}
+							onChange={(e) => {
+								setLimit(Number(e.target.value));
+								setPage(1);
+							}}
+						>
+							<option value={10}>10件</option>
+							<option value={20}>20件</option>
+							<option value={50}>50件</option>
+							<option value={100}>100件</option>
+						</select>
+					</label>
+				</div>
+
+				<div className="pagination-controls">
+					<button
+						type="button"
+						className="secondary"
+						disabled={page <= 1 || f.loading}
+						onClick={() => setPage((p) => Math.max(1, p - 1))}
+					>
+						前へ
+					</button>
+
+					{Array.from({ length: totalPages }, (_, i) => i + 1)
+						.filter(
+							(p) => p === 1 || p === totalPages || Math.abs(p - page) <= 2,
+						)
+						.reduce<(number | "...")[]>((acc, p, index, pages) => {
+							if (index > 0 && p - pages[index - 1] > 1) {
+								acc.push("...");
+							}
+							acc.push(p);
+							return acc;
+						}, [])
+						.map((p, index) =>
+							p === "..." ? (
+								<span key={`ellipsis-${index}`} className="pagination-ellipsis">
+									…
+								</span>
+							) : (
+								<button
+									key={p}
+									type="button"
+									className={p === page ? "primary" : "secondary"}
+									aria-current={p === page ? "page" : undefined}
+									disabled={f.loading}
+									onClick={() => setPage(p)}
+								>
+									{p}
+								</button>
+							),
+						)}
+
+					<button
+						type="button"
+						className="secondary"
+						disabled={page >= totalPages || f.loading}
+						onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+					>
+						次へ
+					</button>
+				</div>
+			</div>
 			{modal && (
 				<Modal title="作品を登録" close={() => setModal(false)}>
 					<form onSubmit={create} className="form-stack">

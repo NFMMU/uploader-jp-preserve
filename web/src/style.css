@@ -1543,7 +1543,7 @@ footer > span {
 }
 .candidate-row small {
 	display: block;
-	color: var(--muted, #6b7280);
+	color: #666;
 	font-size: 11px;
 	overflow-wrap: anywhere;
 	margin-top: 3px;
@@ -1555,7 +1555,7 @@ footer > span {
 	align-items: flex-start;
 	gap: 9px;
 	padding: 8px 0;
-	border-top: 1px solid var(--line, #e5e7eb);
+	border-top: 1px solid #ddd;
 	font-size: 12px;
 	font-weight: 400;
 }
@@ -2520,4 +2520,75 @@ footer > span {
 	line-height: 1.6;
 	color: #777;
 	margin: 0;
+}
+
+.pagination {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 16px;
+	margin: 20px 0;
+}
+
+.pagination-info {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 16px;
+	color: #666;
+	font-size: 14px;
+}
+
+.pagination-limit {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.pagination-limit select {
+	padding: 6px 10px;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	background: #fff;
+	color: inherit;
+}
+
+.pagination-controls {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.pagination-controls button {
+	min-width: 36px;
+	min-height: 36px;
+	padding: 6px 10px;
+}
+
+.pagination-controls button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+	padding: 0 4px;
+	color: #666;
+}
+
+@media (max-width: 640px) {
+	.pagination {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.pagination-info {
+		justify-content: space-between;
+	}
+
+	.pagination-controls {
+		justify-content: flex-start;
+	}
 }
