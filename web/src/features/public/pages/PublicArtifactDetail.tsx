@@ -108,7 +108,7 @@ export function PublicArtifactDetail() {
         </div>
       )}
 
-      {!error && total > 0 && (
+      {total > 0 && (
         <Pagination
           page={page}
           limit={limit}
