@@ -171,7 +171,7 @@ function App() {
 								autoComplete="current-password"
 							/>
 						</label>
-						<button className="primary wide" disabled={busy}>
+						<button className="primary wide" disabled={busy} type="submit">
 							{busy ? "認証中…" : "ログインする"} <span>→</span>
 						</button>
 						<div className="login-note">
@@ -196,6 +196,7 @@ function App() {
 					<button
 						className="icon-btn mobile-close"
 						onClick={() => setMobile(false)}
+						type="button"
 					>
 						<X />
 					</button>
@@ -240,7 +241,12 @@ function App() {
 										: "閲覧者"}
 							</small>
 						</div>
-						<button className="icon-btn" title="ログアウト" onClick={logout}>
+						<button
+							className="icon-btn"
+							title="ログアウト"
+							onClick={logout}
+							type="button"
+						>
 							<LogOut size={16} />
 						</button>
 					</div>
@@ -251,6 +257,7 @@ function App() {
 					<button
 						className="icon-btn mobile-menu"
 						onClick={() => setMobile(true)}
+						type="button"
 					>
 						<Menu />
 					</button>
@@ -266,6 +273,7 @@ function App() {
 							className="icon-btn"
 							title="再読み込み"
 							onClick={() => setRefresh((x) => x + 1)}
+							type="button"
 						>
 							<RefreshCw size={17} />
 						</button>

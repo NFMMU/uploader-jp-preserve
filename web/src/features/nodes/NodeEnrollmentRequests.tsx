@@ -66,6 +66,7 @@ export function NodeEnrollmentRequests({ api, refresh, notify }: any) {
 					<button
 						className="secondary"
 						onClick={() => setLocalRefresh((x) => x + 1)}
+						type="button"
 					>
 						<RefreshCw size={14} /> 更新
 					</button>
@@ -133,6 +134,7 @@ export function NodeEnrollmentRequests({ api, refresh, notify }: any) {
 													className="small-btn"
 													disabled={!!busyID}
 													onClick={() => review(x, "approved")}
+													type="button"
 												>
 													{x.status === "approved" ? "再発行" : "承認・発行"}
 												</button>
@@ -140,6 +142,7 @@ export function NodeEnrollmentRequests({ api, refresh, notify }: any) {
 													className="small-btn"
 													disabled={!!busyID}
 													onClick={() => review(x, "rejected")}
+													type="button"
 												>
 													却下
 												</button>
@@ -149,6 +152,7 @@ export function NodeEnrollmentRequests({ api, refresh, notify }: any) {
 										<button
 											className="small-btn"
 											onClick={() => setConversationTarget(x)}
+											type="button"
 										>
 											連絡・会話URL
 										</button>

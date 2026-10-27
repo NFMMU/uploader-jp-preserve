@@ -168,6 +168,7 @@ export function FileRow({
 							setPolicy(x.redistribution_policy || "unknown");
 							setPub(!!x.public_download_enabled);
 						}}
+						type="button"
 					>
 						公開設定
 					</button>
@@ -177,6 +178,7 @@ export function FileRow({
 							role === "viewer" || !!x.deletion_requested_at || !!x.deleted_at
 						}
 						onClick={() => openMetadata(x)}
+						type="button"
 					>
 						メタデータ
 					</button>

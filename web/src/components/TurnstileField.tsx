@@ -116,7 +116,7 @@ function TurnstileField() {
 	}, [siteKey]);
 
 	return (
-		<div className="turnstile-field" aria-label="Cloudflare Turnstile 認証">
+		<div className="turnstile-field">
 			<div ref={containerRef} />
 			{status === "loading" && (
 				<p className="turnstile-note">認証を準備しています…</p>
