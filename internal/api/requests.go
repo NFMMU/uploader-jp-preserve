@@ -30,7 +30,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		SourcePassword string  `json:"source_password" binding:"omitempty,max=1024"`
 		SubmitterName  *string `json:"submitter_name" binding:"omitempty,max=255"`
 		Contact        *string `json:"contact" binding:"omitempty,max=500"`
-		Details        string  `json:"details" binding:"required,min=5,max=10000"`
+		Details        string  `json:"details" binding:"required,max=10000"`
 		ExternalURL    *string `json:"external_url" binding:"omitempty,max=4096"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || !requestTypes[req.RequestType] || req.RequestType == "redistribution_assistance" || req.RequestType == "publisher_assistance" {
