@@ -2,7 +2,7 @@
 
 ## 脆弱性の報告
 
-セキュリティ上の問題を発見した場合は、公開 Issue や Pull Request で詳細を公開する前に、**uploaderjp-archive@udonya.moe** へ連絡してください。
+セキュリティ上の問題を発見した場合は、公開 Issue や Pull Request で詳細を公開する前に、**uploaderjp-archive@udonya.moe** もしくはGitHub Security Advisoryにて連絡してください。
 
 可能な範囲で、影響するコンポーネント、再現手順、影響範囲、緩和策を含めてください。実際のトークン、Cookie、秘密鍵、個人情報、保全ファイル本体は送らないでください。ログを添付する場合は秘密情報を除去してください。
 
