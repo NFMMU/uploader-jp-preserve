@@ -66,7 +66,8 @@ export function NodeParticipationRequest() {
               name="name"
               required
               minLength={1}
-              maxLength={120}
+              maxLength={16}
+              pattern="[a-z0-9][a-z0-9_-]{0,15}"
               placeholder="例：my-storage-node-01"
             />
             <small>

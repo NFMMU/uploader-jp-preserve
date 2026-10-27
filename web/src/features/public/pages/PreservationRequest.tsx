@@ -36,7 +36,7 @@ export function PreservationRequest() {
           creator_name: creator.trim(),
           source_url: sourceURL.trim(),
           source_password: sourcePassword,
-          details: details.trim() || "詳細なし",
+          details: details.trim() || "詳細はありません",
           submitter_name: name.trim(),
           contact: contact.trim(),
         }),
