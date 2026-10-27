@@ -49,6 +49,35 @@ cp deploy/participant-node/.env.example deploy/participant-node/.env
 
 > [!CAUTION]
 > データの保存先がOSのインストールディスクではない方については、`deploy/participant-node/compose.yaml`ファイルを編集してボリュームの設定を変更する必要があります。
+> <details><summary>設定例</summary>
+```diff
+services:
+  node-agent:
+    image: ghcr.io/nfmmu/uploader-jp-preservation-node-agent:latest
+    pull_policy: always
+    env_file:
+      - .env
+    environment:
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+-      - participant_node_data:/data
++      - /path/to/dir:/data
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    stop_grace_period: 30s
+
+-volumes:
+-  participant_node_data:
+-    name: ${NODE_DATA_VOLUME:-uploader-jp-preservation-node-data}
+```
+</details>
 
 ```sh
 docker compose \
