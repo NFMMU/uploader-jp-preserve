@@ -88,6 +88,7 @@ export function NodeParticipationRequest() {
               type="number"
               min="0"
               step="1"
+              max={Number.MAX_SAFE_INTEGER}
               required
               value={capacity}
               onChange={(e) => setCapacity(e.target.value)}

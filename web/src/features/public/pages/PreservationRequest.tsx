@@ -113,6 +113,7 @@ export function PreservationRequest() {
               required
               type="url"
               maxLength={4096}
+              pattern="[Hh][Tt][Tt][Pp][Ss]://(?:(?:[A-Za-z0-9]|-)+\.)*(?:[Uu][Pp][Ll][Oo][Aa][Dd][Ee][Rr]\.[Jj][Pp]|[Gg][Ee][Tt][Uu][Pp][Ll][Oo][Aa][Dd][Ee][Rr]\.[Cc][Oo][Mm])\.?(?::443)?(?:[/?#].*)?"
               value={sourceURL}
               onChange={(e) => setSourceURL(e.target.value)}
               placeholder="https://uu.getuploader.com/名前/ または /download/123"
