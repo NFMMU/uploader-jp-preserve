@@ -43,7 +43,7 @@ docker compose -f docker-compose.test2.yml logs -f api
 | ルートの `.env`                | 運営者・開発者 | 中央 API、DB、管理者初期設定、ローカル確認用設定  |
 | `deploy/participant-node/.env` | ノード参加者   | 参加するノード1台の接続先、登録トークン、容量など |
 
-この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](docs/PARTICIPATING_NODE_JA.md)を参照してください。
+**運営者の `.env` を参加者に渡さないでください。** 参加者には参加ノード用の設定ファイルだけを使ってもらいます。
 
 ## 主な機能
 
