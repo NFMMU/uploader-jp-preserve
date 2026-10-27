@@ -34,7 +34,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		ExternalURL    *string `json:"external_url" binding:"omitempty,max=4096"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || !requestTypes[req.RequestType] || req.RequestType == "redistribution_assistance" || req.RequestType == "publisher_assistance" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "valid request_type and details are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "申請種類と申請内容を正しく入力してください。"})
 		return
 	}
 	if !s.verifyTurnstile(c, req.TurnstileToken) {
@@ -42,41 +42,44 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 	}
 	if req.RequestType == "preservation" {
 		if req.SourceURL == nil || strings.TrimSpace(*req.SourceURL) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url is required for preservation requests"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "保存申請ではアップロード元URLが必要です。"})
 			return
 		}
 		validated, err := normalizeUploaderURL(*req.SourceURL)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "アップロード元URLは、uploader.jpまたはgetuploader.comのHTTPS URLを指定してください。"})
 			return
 		}
 		req.SourceURL = &validated
 		if req.Title == nil || strings.TrimSpace(*req.Title) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "title is required for preservation requests"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "保存申請ではタイトルを入力してください。"})
 			return
 		}
 	}
 	var encryptedSourcePassword *string
 	if req.SourcePassword != "" {
 		if req.RequestType != "preservation" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "source_password is only supported for preservation requests"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ソースパスワードは保存申請でのみ指定できます。"})
 			return
 		}
 		var err error
 		encryptedSourcePassword, err = s.encryptSourcePassword(req.SourcePassword)
 		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			if s.logger != nil {
+				s.logger.Error("public_request_source_password_encryption_failed", "error", err)
+			}
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ソースパスワードを暗号化できませんでした。しばらく待ってから再度お試しください。"})
 			return
 		}
 	}
 	if req.RequestType == "external_publication" {
 		if req.ExternalURL == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "external_url is required for external_publication requests"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "外部公開申請では公開先URLを入力してください。"})
 			return
 		}
 		validated, err := validateHTTPURL(*req.ExternalURL)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "external_url must be an http(s) URL"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "公開先URLは有効なhttpまたはhttpsのURLを指定してください。"})
 			return
 		}
 		req.ExternalURL = &validated
@@ -84,14 +87,14 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 	if req.ArtifactID != nil {
 		var count int64
 		if err := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{}).Where("id = ?", *req.ArtifactID).Count(&count).Error; err != nil || count == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_id does not exist"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "指定された成果物が存在しません。"})
 			return
 		}
 	}
 	if req.FileObjectID != nil {
 		var count int64
 		if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", *req.FileObjectID).Count(&count).Error; err != nil || count == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "file_object_id does not exist"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "指定されたファイルが存在しません。"})
 			return
 		}
 	}
@@ -106,7 +109,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "file_object_id": existingFile.ID, "message": "このURLはすでにカタログに登録されているため、重複申請を破棄しました。"})
 			return
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing source URL"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "アップロード元URLの確認に失敗しました。"})
 			return
 		}
 		var existingRequest model.PublicRequest
@@ -114,7 +117,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existingRequest.ID, "message": "同じURLの保全リクエストがすでに存在するため、重複リクエストを破棄しました。"})
 			return
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing preservation requests"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "既存の保存申請の確認に失敗しました。"})
 			return
 		}
 	}
@@ -143,7 +146,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existing.PublicRequestID, "message": "同じURLの申請・収集リクエストがすでに存在するため、重複リクエストを破棄しました。"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not submit request"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "申請を送信できませんでした。しばらく待ってから再度お試しください。"})
 		return
 	}
 	s.audit(c, nil, "public_request", request.ID, "public_request.submit", "success", nil)
