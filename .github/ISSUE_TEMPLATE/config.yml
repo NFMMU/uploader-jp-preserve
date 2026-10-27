@@ -1,5 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: セキュリティ問題の非公開報告
-    url: mailto:uploaderjp-archive@udonya.moe
-    about: 脆弱性を公開 Issue に書かず、メールで報告してください。
