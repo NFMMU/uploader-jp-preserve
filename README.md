@@ -13,13 +13,7 @@ uploader.jp などの配布ファイルと説明・権利情報を記録し、�
 
 ## 運営者向け：ローカル起動
 
-必要なもの
-
-- Docker Engine
-- Docker Compose v2
-- Git（ソースコードを取得する場合）
-
-リポジトリのルートで実行します。
+必要なもの：Docker Engine と Docker Compose v2。
 
 ```sh
 cp .env.example .env
