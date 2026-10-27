@@ -48,8 +48,11 @@ cp deploy/participant-node/.env.example deploy/participant-node/.env
 ## 2. 起動する
 
 > [!CAUTION]
-> データの保存先がOSのインストールディスクではない方については、`deploy/participant-node/compose.yaml`ファイルを編集してボリュームの設定を変更する必要があります。
-> <details><summary>設定例</summary>
+> データの保存先がOSのインストールディスクではない場合は、`deploy/participant-node/compose.yaml` ファイルを編集して、ボリュームの設定を変更する必要があります。
+
+<details>
+<summary>異なるディスクにデータを置く場合の設定例</summary>
+
 ```diff
 services:
   node-agent:
@@ -77,6 +80,7 @@ services:
 -  participant_node_data:
 -    name: ${NODE_DATA_VOLUME:-uploader-jp-preservation-node-data}
 ```
+
 </details>
 
 ```sh
