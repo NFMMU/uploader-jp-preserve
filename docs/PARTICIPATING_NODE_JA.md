@@ -27,8 +27,8 @@
 リポジトリを取得し、ルートで実行します。
 
 ```sh
-git clone https://github.com/nfmmu/uploaderjp-archive.git
-cd uploadejp-archive
+git clone https://github.com/nfmmu/uploader-jp-preserve.git
+cd uploader-jp-preserve
 cp deploy/participant-node/.env.example deploy/participant-node/.env
 ```
 
