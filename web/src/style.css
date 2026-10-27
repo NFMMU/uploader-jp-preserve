@@ -2592,3 +2592,82 @@ footer > span {
 		justify-content: flex-start;
 	}
 }
+
+/* 関連ファイルのページネーション */
+.request-file-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 16px;
+	padding-top: 12px;
+	border-top: 1px solid #e5e7eb;
+	font-size: 14px;
+	color: #6b7280;
+}
+
+.request-file-pagination__controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.request-file-pagination__page {
+	min-width: 64px;
+	text-align: center;
+	color: #374151;
+	font-weight: 500;
+}
+
+.request-file-pagination button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 36px;
+	padding: 6px 14px;
+	border: 1px solid #d1d5db;
+	border-radius: 6px;
+	background-color: #ffffff;
+	color: #374151;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease,
+		color 0.15s ease;
+}
+
+.request-file-pagination button:hover:not(:disabled) {
+	background-color: #f3f4f6;
+	border-color: #9ca3af;
+}
+
+.request-file-pagination button:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: 2px;
+}
+
+.request-file-pagination button:disabled {
+	background-color: #f9fafb;
+	color: #9ca3af;
+	border-color: #e5e7eb;
+	cursor: not-allowed;
+}
+
+/* スマートフォン対応 */
+@media (max-width: 480px) {
+	.request-file-pagination {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.request-file-pagination__controls {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	.request-file-pagination button {
+		flex: 1;
+	}
+}

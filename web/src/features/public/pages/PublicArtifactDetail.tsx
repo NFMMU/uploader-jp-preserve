@@ -108,19 +108,19 @@ export function PublicArtifactDetail() {
 				</div>
 			)}
 
-      {total > 0 && (
-        <Pagination
-          page={page}
-          limit={limit}
-          total={total}
-          loading={loading}
-          onPageChange={setPage}
-          onLimitChange={(nextLimit) => {
-            setLimit(nextLimit);
-            setPage(1);
-          }}
-        />
-      )}
+			{total > 0 && (
+				<Pagination
+					page={page}
+					limit={limit}
+					total={total}
+					loading={loading}
+					onPageChange={setPage}
+					onLimitChange={(nextLimit) => {
+						setLimit(nextLimit);
+						setPage(1);
+					}}
+				/>
+			)}
 
 			<p className="public-footnote">
 				ダウンロードできるのは、公開条件と保存状態を確認できたファイルだけです。
