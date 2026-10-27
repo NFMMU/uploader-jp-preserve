@@ -108,7 +108,9 @@ export function Tasks({ api, refresh, notify, role }: any) {
 									<span className="priority">{x.priority ?? "—"}</span>
 								</td>
 								<td>{x.attempt_count ?? 0} / 5</td>
-								<td className="error-cell">{x.last_error || "—"}</td>
+								<td className="error-cell" title={x.last_error || ""}>
+									{x.last_error || "—"}
+								</td>
 								<td>{x.target_node_id || x.source_node_id || "-"}</td>
 								<td>{date(x.updated_at)}</td>
 								<td>
