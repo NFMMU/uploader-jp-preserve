@@ -20,15 +20,15 @@ test-surplus-cleanup:
 build:
 	go build ./cmd/api ./cmd/generate
 
-# Schema source of truth: atlas/schema.hcl
+# Schema source of truth: atlas/
 migrate-diff:
-	atlas migrate diff $(name) --env local
+	cd atlas && atlas migrate diff $(name) --env local
 
 migrate-hash:
 	atlas migrate hash --dir file://atlas/migrations --force
 
 migrate-apply: migrate-hash
-	atlas migrate apply --env local
+	cd atlas && atlas migrate apply --env local
 
 generate:
 	go run ./cmd/generate
