@@ -10,6 +10,10 @@ import type { Obj } from "../../types/common";
 export function Tasks({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/tasks", refresh + localRefresh);
+	const nodes = useData(api, "/nodes", refresh + localRefresh);
+	const nodeNames = Object.fromEntries(
+		(nodes.data.items || []).map((node: Obj) => [node.id, node.name]),
+	);
 	const [filter, setFilter] = useState("all");
 	const items = (d.data.items || []).filter(
 		(x: Obj) => filter === "all" || x.status === filter,
@@ -111,7 +115,13 @@ export function Tasks({ api, refresh, notify, role }: any) {
 								<td className="error-cell" title={x.last_error || ""}>
 									{x.last_error || "—"}
 								</td>
-								<td>{x.target_node_id || x.source_node_id || "-"}</td>
+								<td>
+									{nodeNames[x.target_node_id] ||
+										nodeNames[x.source_node_id] ||
+										x.target_node_id ||
+										x.source_node_id ||
+										"-"}
+								</td>
 								<td>{date(x.updated_at)}</td>
 								<td>
 									{role === "admin" &&
