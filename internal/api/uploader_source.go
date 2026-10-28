@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -678,6 +679,13 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 				case "link":
 					rel := attr(n, "rel")
 					href := strings.TrimSpace(attr(n, "href"))
+
+					log.Printf(
+						"[uploader-crawl] link element: page=%s rel=%q href=%q",
+						baseURL.String(),
+						rel,
+						href,
+					)
 
 					hasNext := slices.Contains(
 						strings.Fields(strings.ToLower(rel)),
