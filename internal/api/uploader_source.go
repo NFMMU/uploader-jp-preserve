@@ -676,65 +676,93 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 					}
 
 				case "link":
-					href := strings.TrimSpace(attr(n, "href"))
 					rel := attr(n, "rel")
+					href := strings.TrimSpace(attr(n, "href"))
 
-					// rel="next" 以外は無視する
 					hasNext := slices.Contains(
 						strings.Fields(strings.ToLower(rel)),
 						"next",
 					)
-					if !hasNext || href == "" {
+					if !hasNext {
 						break
 					}
 
-					resolved, e := baseURL.Parse(href)
-					if e != nil {
+					// rel="next" の検出そのものを必ず記録する。
+					fmt.Printf(
+						"[uploader-crawl] next link detected: page=%s rel=%q href=%q\n",
+						baseURL.String(),
+						rel,
+						href,
+					)
+
+					if href == "" {
 						fmt.Printf(
-							"[uploader-crawl] invalid next link: base=%s href=%q err=%v\n",
-							baseURL, href, e,
+							"[uploader-crawl] next link skipped: empty href page=%s\n",
+							baseURL.String(),
+						)
+						break
+					}
+
+					resolved, err := baseURL.Parse(href)
+					if err != nil {
+						fmt.Printf(
+							"[uploader-crawl] next link parse failed: base=%s href=%q err=%v\n",
+							baseURL.String(),
+							href,
+							err,
 						)
 						break
 					}
 					resolved.Fragment = ""
 
-					normalized, e := validateUploaderURL(resolved.String())
-					if e != nil {
+					normalized, err := validateUploaderURL(resolved.String())
+					if err != nil {
 						fmt.Printf(
-							"[uploader-crawl] rejected next link: href=%s err=%v\n",
-							resolved, e,
+							"[uploader-crawl] next link validation failed: url=%s err=%v\n",
+							resolved.String(),
+							err,
 						)
 						break
 					}
 
-					_, alreadySeen := seenPages[normalized]
+					parsedNext, err := url.Parse(normalized)
+					if err != nil || parsedNext == nil ||
+						!strings.EqualFold(parsedNext.Hostname(), start.Hostname()) {
+						fmt.Printf(
+							"[uploader-crawl] next link host mismatch: url=%s start_host=%s\n",
+							normalized,
+							start.Hostname(),
+						)
+						break
+					}
+
+					if seenPages[normalized] {
+						fmt.Printf(
+							"[uploader-crawl] next link already seen: %s\n",
+							normalized,
+						)
+						break
+					}
+
+					if len(queue)+pagesScanned >= pageLimit {
+						fmt.Printf(
+							"[uploader-crawl] next link blocked by page limit: limit=%d scanned=%d queue=%d\n",
+							pageLimit,
+							pagesScanned,
+							len(queue),
+						)
+						break
+					}
+
+					queue = append(queue, normalized)
+
 					fmt.Printf(
-						"[uploader-crawl] next link: current=%s next=%s seen=%v queue=%d scanned=%d\n",
-						baseURL.String(),
+						"[uploader-crawl] next link queued: url=%s queue=%d scanned=%d\n",
 						normalized,
-						alreadySeen,
 						len(queue),
 						pagesScanned,
 					)
 
-					if !alreadySeen && len(queue)+pagesScanned < pageLimit {
-						queue = append(queue, normalized)
-						fmt.Printf(
-							"[uploader-crawl] queued next: %s queue=%d\n",
-							normalized,
-							len(queue),
-						)
-					} else if alreadySeen {
-						fmt.Printf(
-							"[uploader-crawl] skipped duplicate next: %s\n",
-							normalized,
-						)
-					} else {
-						fmt.Printf(
-							"[uploader-crawl] page limit reached: limit=%d\n",
-							pageLimit,
-						)
-					}
 				}
 			}
 
