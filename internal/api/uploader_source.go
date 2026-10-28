@@ -621,29 +621,89 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 		pagesScanned++
 		var walk func(*xhtml.Node)
 		walk = func(n *xhtml.Node) {
-			if n.Type == xhtml.ElementNode && n.Data == "a" {
-				href := strings.TrimSpace(attr(n, "href"))
-				if href != "" {
-					resolved, e := baseURL.Parse(href)
-					if e == nil {
-						resolved.Fragment = ""
-						if normalized, e := validateUploaderURL(resolved.String()); e == nil {
-							if isUploaderDownloadPage(normalized) && !seenCandidates[normalized] {
-								seenCandidates[normalized] = true
-								label := strings.TrimSpace(htmlText(n))
-								if label == "" || len(label) > 300 {
-									label = safeSourceFilename(path.Base(resolved.Path))
+			if n.Type == xhtml.ElementNode {
+				switch n.Data {
+				case "a":
+					href := strings.TrimSpace(attr(n, "href"))
+					if href != "" {
+						resolved, e := baseURL.Parse(href)
+						if e == nil {
+							resolved.Fragment = ""
+
+							if normalized, e := validateUploaderURL(resolved.String()); e == nil {
+								if isUploaderDownloadPage(normalized) &&
+									!seenCandidates[normalized] {
+									seenCandidates[normalized] = true
+
+									label := strings.TrimSpace(htmlText(n))
+									if label == "" || len(label) > 300 {
+										label = safeSourceFilename(
+											path.Base(resolved.Path),
+										)
+									}
+
+									items = append(items, uploaderListingCandidate{
+										URL:   normalized,
+										Label: label,
+									})
 								}
-								items = append(items, uploaderListingCandidate{URL: normalized, Label: label})
+
+								if isUploaderPaginationLink(
+									normalized,
+									attr(n, "rel"),
+									strings.TrimSpace(htmlText(n)),
+									baseURL,
+								) &&
+									len(queue)+pagesScanned < pageLimit &&
+									!seenPages[normalized] {
+									queue = append(queue, normalized)
+								}
 							}
-							if isUploaderPaginationLink(normalized, attr(n, "rel"), strings.TrimSpace(htmlText(n)), baseURL) && len(queue)+pagesScanned < pageLimit && !seenPages[normalized] {
-								queue = append(queue, normalized)
+						}
+					}
+
+				case "link":
+					// <head><link rel="next" href="..."></head> に対応する。
+					href := strings.TrimSpace(attr(n, "href"))
+					if href != "" {
+						rel := attr(n, "rel")
+
+						// next トークンを持たない link は無視する。
+						hasNext := false
+						for _, value := range strings.Fields(strings.ToLower(rel)) {
+							if value == "next" {
+								hasNext = true
+								break
+							}
+						}
+
+						if hasNext {
+							resolved, e := baseURL.Parse(href)
+							if e == nil {
+								resolved.Fragment = ""
+
+								if normalized, e := validateUploaderURL(
+									resolved.String(),
+								); e == nil {
+									if isUploaderPaginationLink(
+										normalized,
+										rel,
+										"",
+										baseURL,
+									) &&
+										len(queue)+pagesScanned < pageLimit &&
+										!seenPages[normalized] {
+										queue = append(queue, normalized)
+									}
+								}
 							}
 						}
 					}
 				}
 			}
-			for child := n.FirstChild; child != nil && len(items) < candidateLimit; child = child.NextSibling {
+
+			for child := n.FirstChild; child != nil &&
+				len(items) < candidateLimit; child = child.NextSibling {
 				walk(child)
 			}
 		}
@@ -667,20 +727,41 @@ func isUploaderDownloadPage(raw string) bool {
 
 func isUploaderPaginationLink(raw, rel, label string, base *url.URL) bool {
 	u, err := url.Parse(raw)
-	if err != nil || base == nil || u.Hostname() != base.Hostname() || u.String() == base.String() || isUploaderDownloadPage(raw) {
+	if err != nil || base == nil ||
+		!strings.EqualFold(u.Hostname(), base.Hostname()) ||
+		u.String() == base.String() ||
+		isUploaderDownloadPage(raw) {
 		return false
 	}
-	rel = strings.ToLower(rel)
-	label = strings.ToLower(strings.TrimSpace(label))
-	if strings.Contains(rel, "next") || strings.Contains(label, "次へ") || strings.Contains(label, "次のページ") || strings.Contains(label, "next") || strings.Contains(label, "older") || label == ">" || label == "次" || label == "›" || label == "»" {
-		return true
-	}
-	q := u.Query()
-	for key := range q {
-		key = strings.ToLower(key)
-		if (key == "page" || key == "p" || key == "offset" || key == "start") && q.Get(key) != "" {
+
+	// rel 属性は空白区切りのトークンとして判定する。
+	for _, value := range strings.Fields(strings.ToLower(rel)) {
+		if value == "next" {
 			return true
 		}
 	}
+
+	label = strings.ToLower(strings.TrimSpace(label))
+	if strings.Contains(label, "次へ") ||
+		strings.Contains(label, "次のページ") ||
+		strings.Contains(label, "next") ||
+		strings.Contains(label, "older") ||
+		label == ">" ||
+		label == "次" ||
+		label == "›" ||
+		label == "»" {
+		return true
+	}
+
+	q := u.Query()
+	for key := range q {
+		key = strings.ToLower(key)
+		if (key == "page" || key == "p" ||
+			key == "offset" || key == "start") &&
+			q.Get(key) != "" {
+			return true
+		}
+	}
+
 	return strings.Contains(strings.ToLower(u.Path), "/page/")
 }
