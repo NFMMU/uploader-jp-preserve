@@ -193,11 +193,6 @@ function App() {
 		);
 	return (
 		<div className="app-shell">
-			<PageMeta
-				title="uploader.jp 保全プロジェクト - 創作関連アセットの保全を目的としたプロジェクト"
-				description="uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。"
-				overwriteTitle={true}
-			/>
 			<aside className={"sidebar " + (mobile ? "open" : "")}>
 				<div className="brand">
 					<div className="brand-icon">

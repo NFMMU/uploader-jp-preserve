@@ -1,5 +1,6 @@
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import CopyEmail from "../../CopyEmail";
+import { PageMeta } from "../../components/common/PageMeta";
 import { PublicHeader } from "../../components/layout/PublicHeader";
 import { DisclaimerPage, PrivacyPage, TermsPage } from "./legal/LegalPages";
 import { NodeParticipationRequest } from "./pages/NodeParticipationRequest";
@@ -13,6 +14,11 @@ import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";
 function PublicSite() {
 	return (
 		<div className="public-shell">
+			<PageMeta
+				title="uploader.jp 保全プロジェクト - 創作関連アセットの保全を目的としたプロジェクト"
+				description="uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。"
+				overwriteTitle={true}
+			/>
 			<PublicHeader />
 			<main className="public-main">
 				<Routes>
