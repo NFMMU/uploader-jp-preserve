@@ -564,6 +564,11 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 	for len(queue) > 0 && pagesScanned < pageLimit && len(items) < candidateLimit {
 		pageURL := queue[0]
 		queue = queue[1:]
+		fmt.Printf(
+			"[uploader-crawl] fetching: url=%s remaining_queue=%d\n",
+			pageURL,
+			len(queue),
+		)
 		parsedPage, parseErr := url.Parse(pageURL)
 		if parseErr != nil || seenPages[pageURL] || parsedPage.Hostname() != start.Hostname() {
 			continue
@@ -620,6 +625,12 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 			return nil, pagesScanned, errors.New("一覧ページに追加認証が必要です。CAPTCHA等は自動処理しません")
 		}
 		pagesScanned++
+		fmt.Printf(
+			"[uploader-crawl] scanned: url=%s pages_scanned=%d candidates=%d\n",
+			pageURL,
+			pagesScanned,
+			len(items),
+		)
 		var walk func(*xhtml.Node)
 		walk = func(n *xhtml.Node) {
 			if n.Type == xhtml.ElementNode {
@@ -648,51 +659,81 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 										Label: label,
 									})
 								}
-
-								if isUploaderPaginationLink(
-									normalized,
-									attr(n, "rel"),
-									strings.TrimSpace(htmlText(n)),
-									baseURL,
-								) &&
-									len(queue)+pagesScanned < pageLimit &&
-									!seenPages[normalized] {
-									queue = append(queue, normalized)
-								}
-							}
-						}
-					}
-
-				case "link":
-					// <head><link rel="next" href="..."></head> に対応する。
-					href := strings.TrimSpace(attr(n, "href"))
-					if href != "" {
-						rel := attr(n, "rel")
-
-						// next トークンを持たない link は無視する。
-						hasNext := slices.Contains(strings.Fields(strings.ToLower(rel)), "next")
-
-						if hasNext {
-							resolved, e := baseURL.Parse(href)
-							if e == nil {
-								resolved.Fragment = ""
-
-								if normalized, e := validateUploaderURL(
-									resolved.String(),
-								); e == nil {
+								/*
 									if isUploaderPaginationLink(
 										normalized,
-										rel,
-										"",
+										attr(n, "rel"),
+										strings.TrimSpace(htmlText(n)),
 										baseURL,
 									) &&
 										len(queue)+pagesScanned < pageLimit &&
 										!seenPages[normalized] {
 										queue = append(queue, normalized)
 									}
-								}
+								*/
 							}
 						}
+					}
+
+				case "link":
+					href := strings.TrimSpace(attr(n, "href"))
+					rel := attr(n, "rel")
+
+					// rel="next" 以外は無視する
+					hasNext := slices.Contains(
+						strings.Fields(strings.ToLower(rel)),
+						"next",
+					)
+					if !hasNext || href == "" {
+						break
+					}
+
+					resolved, e := baseURL.Parse(href)
+					if e != nil {
+						fmt.Printf(
+							"[uploader-crawl] invalid next link: base=%s href=%q err=%v\n",
+							baseURL, href, e,
+						)
+						break
+					}
+					resolved.Fragment = ""
+
+					normalized, e := validateUploaderURL(resolved.String())
+					if e != nil {
+						fmt.Printf(
+							"[uploader-crawl] rejected next link: href=%s err=%v\n",
+							resolved, e,
+						)
+						break
+					}
+
+					_, alreadySeen := seenPages[normalized]
+					fmt.Printf(
+						"[uploader-crawl] next link: current=%s next=%s seen=%v queue=%d scanned=%d\n",
+						baseURL.String(),
+						normalized,
+						alreadySeen,
+						len(queue),
+						pagesScanned,
+					)
+
+					if !alreadySeen && len(queue)+pagesScanned < pageLimit {
+						queue = append(queue, normalized)
+						fmt.Printf(
+							"[uploader-crawl] queued next: %s queue=%d\n",
+							normalized,
+							len(queue),
+						)
+					} else if alreadySeen {
+						fmt.Printf(
+							"[uploader-crawl] skipped duplicate next: %s\n",
+							normalized,
+						)
+					} else {
+						fmt.Printf(
+							"[uploader-crawl] page limit reached: limit=%d\n",
+							pageLimit,
+						)
 					}
 				}
 			}
