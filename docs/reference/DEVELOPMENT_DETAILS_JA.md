@@ -45,10 +45,17 @@ Go 製 API、PostgreSQL の目録データベース、Go 製ノードエージ�
 
 ## スキーマとコード生成の手順
 
-1. スキーマの正本である `atlas/schema.hcl` を編集します。
-2. `atlas migrate diff <name> --env local` でバージョン付きマイグレーションを生成します。
+1. スキーマの正本である `atlas/schema/**.pg.hcl` を編集します。
+2. `make migrate-diff` でバージョン付きマイグレーションを生成します。
 3. 生成された SQL マイグレーションと `atlas.sum` を確認してコミットします。
-4. `atlas migrate apply --env local` でマイグレーションを適用します。
+4. PostgreSQL が起動していることを確認し、リポジトリルートでホストから接続できる DSN を `DATABASE_URL` に export して、同じシェルで `make migrate-apply` を実行します。以下は Compose の公開ポート `127.0.0.1:5432` を使う例です。パスワード部分は `.env` の `POSTGRES_PASSWORD` と同じ値に置き換え、URL の予約文字を含む場合はパーセントエンコードしてください。
+
+   ```sh
+   export DATABASE_URL='postgres://archive:replace-with-a-local-db-password@127.0.0.1:5432/archive?sslmode=disable'
+   make migrate-apply
+   ```
+
+   `make migrate-apply` は export された `DATABASE_URL` を Atlas に引き継ぎます。`postgres` というホスト名は Compose 内部用のため、ホストで実行する際は `127.0.0.1` など、ホストから到達できる接続先を指定してください。
 5. `make generate` で Go モデルと型付きクエリコードを再生成します。
 
 GORM の `AutoMigrate` は使用しないでください。また、生成済みのモデル／クエリファイルを手作業で編集しないでください。MVP-2 では、既存の生成済み構造体にまだ存在しないリース／認証情報の 2 カラムに SQL を使用しています。
