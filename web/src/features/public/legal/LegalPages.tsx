@@ -1,6 +1,7 @@
 import type React from "react";
 import { Link } from "react-router-dom";
 import CopyEmail from "../../../CopyEmail";
+import { PageMeta } from "../../../components/common/PageMeta";
 
 export function LegalLayout({
 	title,
@@ -28,6 +29,10 @@ export function LegalLayout({
 export function TermsPage() {
 	return (
 		<LegalLayout title="利用規約">
+			<PageMeta
+				title="利用規約"
+				description="uploader.jp保全プロジェクトの利用規約です。"
+			/>
 			<p>
 				この利用規約（以下「本規約」）は、全国もちもちうどん連盟（以下「運営者」）が運営する「uploader.jp保全プロジェクト」（以下「本サービス」）の利用条件を定めるものです。本サービスを利用する方は、本規約を確認のうえ利用してください。
 			</p>
@@ -95,6 +100,10 @@ export function TermsPage() {
 export function PrivacyPage() {
 	return (
 		<LegalLayout title="プライバシー・ポリシー">
+			<PageMeta
+				title="プライバシー・ポリシー"
+				description="uploader.jp保全プロジェクトのプライバシー・ポリシーです。"
+			/>
 			<p>
 				全国もちもちうどん連盟（以下「運営者」）は、uploader.jp保全プロジェクト（以下「本サービス」）において取り扱う情報について、以下のとおり定めます。
 			</p>
@@ -173,6 +182,10 @@ export function PrivacyPage() {
 export function DisclaimerPage() {
 	return (
 		<LegalLayout title="免責事項">
+			<PageMeta
+				title="免責事項"
+				description="uploader.jp保全プロジェクトの免責事項です。"
+			/>
 			<h2>1. 試験運用サービス</h2>
 			<p>
 				本サービスは試験運用版です。障害、保守、ノード停止、ネットワーク切断、容量不足、ソフトウェアの不具合その他の理由により、サービスの全部または一部を利用できない場合があります。

@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
+import { PageMeta } from "../../../components/common/PageMeta";
 import { TurnstileField } from "../../../components/TurnstileField";
 
 export function PublicRequest() {
@@ -47,6 +48,10 @@ export function PublicRequest() {
 	}
 	return (
 		<>
+			<PageMeta
+				title="各種申請"
+				description="公開停止・削除などの申請を行えます。"
+			/>
 			<h1>申請</h1>
 			<p className="public-intro">
 				公開停止や削除の申請はこちら。移設先URLの情報提供は専用ページから送信できます。

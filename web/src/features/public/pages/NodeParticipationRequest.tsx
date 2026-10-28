@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
+import { PageMeta } from "../../../components/common/PageMeta";
 import { TurnstileField } from "../../../components/TurnstileField";
 
 export function NodeParticipationRequest() {
@@ -44,13 +45,25 @@ export function NodeParticipationRequest() {
 	}
 	return (
 		<>
+			<PageMeta
+				title="ストレージノード参加申請"
+				description="ストレージノードプログラムへの参加を申請できます。ご参加お待ちしております！"
+			/>
 			<h1>ストレージノード参加申請</h1>
 			<p className="public-intro">
 				ご自身のサーバーや PC
 				のストレージを、ファイル保全ネットワークに提供するための申請です。申請は運営が確認し、承認された場合に限り登録用の一回限りトークンを発行します。
 			</p>
 			<p>
-				詳細はこちらもご覧ください。<a href="https://github.com/NFMMU/uploader-jp-preserve/blob/main/docs/PARTICIPATING_NODE_JA.md" target="_blank" className="bold" >GitHub</a>
+				詳細はこちらもご覧ください。
+				<a
+					href="https://github.com/NFMMU/uploader-jp-preserve/blob/main/docs/PARTICIPATING_NODE_JA.md"
+					target="_blank"
+					className="bold"
+					rel="noopener"
+				>
+					GitHub
+				</a>
 			</p>
 			{success ? (
 				<div className="public-success">

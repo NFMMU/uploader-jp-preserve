@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
+import { PageMeta } from "../../../components/common/PageMeta";
 import { TurnstileField } from "../../../components/TurnstileField";
 
 export function RelocationInfoRequest() {
@@ -47,6 +48,10 @@ export function RelocationInfoRequest() {
 	}
 	return (
 		<>
+			<PageMeta
+				title="移転先情報の提供"
+				description="移設先情報の提供フォームです。当サイトに掲載されているデータについて、権利者・作者様のご用意された移転先の情報をご提供ください。"
+			/>
 			<h1>移設先情報の提供</h1>
 			<p className="public-intro">
 				保全対象のファイルが別の場所に移設・再公開されている場合、そのURLをお知らせください。情報は確認担当者が確認します。
