@@ -45,10 +45,10 @@ Go 製 API、PostgreSQL の目録データベース、Go 製ノードエージ�
 
 ## スキーマとコード生成の手順
 
-1. スキーマの正本である `atlas/schema.hcl` を編集します。
-2. `atlas migrate diff <name> --env local` でバージョン付きマイグレーションを生成します。
+1. スキーマの正本である `atlas/schema/**.pg.hcl` を編集します。
+2. `make migrate-diff` でバージョン付きマイグレーションを生成します。
 3. 生成された SQL マイグレーションと `atlas.sum` を確認してコミットします。
-4. `atlas migrate apply --env local` でマイグレーションを適用します。
+4. `make migrate-apply` でマイグレーションを適用します。
 5. `make generate` で Go モデルと型付きクエリコードを再生成します。
 
 GORM の `AutoMigrate` は使用しないでください。また、生成済みのモデル／クエリファイルを手作業で編集しないでください。MVP-2 では、既存の生成済み構造体にまだ存在しないリース／認証情報の 2 カラムに SQL を使用しています。
