@@ -571,7 +571,10 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 			len(queue),
 		)
 		parsedPage, parseErr := url.Parse(pageURL)
-		if parseErr != nil || seenPages[pageURL] || parsedPage.Hostname() != start.Hostname() {
+		if parseErr != nil ||
+			parsedPage == nil ||
+			seenPages[pageURL] ||
+			!isAllowedUploaderHost(parsedPage.Hostname()) {
 			continue
 		}
 		seenPages[pageURL] = true
@@ -660,18 +663,6 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 										Label: label,
 									})
 								}
-								/*
-									if isUploaderPaginationLink(
-										normalized,
-										attr(n, "rel"),
-										strings.TrimSpace(htmlText(n)),
-										baseURL,
-									) &&
-										len(queue)+pagesScanned < pageLimit &&
-										!seenPages[normalized] {
-										queue = append(queue, normalized)
-									}
-								*/
 							}
 						}
 					}
@@ -735,11 +726,10 @@ func discoverUploaderListingWithLimits(ctx context.Context, listingURL string, p
 
 					parsedNext, err := url.Parse(normalized)
 					if err != nil || parsedNext == nil ||
-						!strings.EqualFold(parsedNext.Hostname(), start.Hostname()) {
+						!isAllowedUploaderHost(parsedNext.Hostname()) {
 						fmt.Printf(
-							"[uploader-crawl] next link host mismatch: url=%s start_host=%s\n",
+							"[uploader-crawl] next link host rejected: url=%s\n",
 							normalized,
-							start.Hostname(),
 						)
 						break
 					}
@@ -797,43 +787,11 @@ func isUploaderDownloadPage(raw string) bool {
 	return strings.HasPrefix(host, "dl") && strings.Contains(host, "getuploader.com") && strings.Contains(p, "/g/")
 }
 
-func isUploaderPaginationLink(raw, rel, label string, base *url.URL) bool {
-	u, err := url.Parse(raw)
-	if err != nil || base == nil ||
-		!strings.EqualFold(u.Hostname(), base.Hostname()) ||
-		u.String() == base.String() ||
-		isUploaderDownloadPage(raw) {
-		return false
-	}
+func isAllowedUploaderHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
 
-	// rel 属性は空白区切りのトークンとして判定する。
-	for _, value := range strings.Fields(strings.ToLower(rel)) {
-		if value == "next" {
-			return true
-		}
-	}
-
-	label = strings.ToLower(strings.TrimSpace(label))
-	if strings.Contains(label, "次へ") ||
-		strings.Contains(label, "次のページ") ||
-		strings.Contains(label, "next") ||
-		strings.Contains(label, "older") ||
-		label == ">" ||
-		label == "次" ||
-		label == "›" ||
-		label == "»" {
-		return true
-	}
-
-	q := u.Query()
-	for key := range q {
-		key = strings.ToLower(key)
-		if (key == "page" || key == "p" ||
-			key == "offset" || key == "start") &&
-			q.Get(key) != "" {
-			return true
-		}
-	}
-
-	return strings.Contains(strings.ToLower(u.Path), "/page/")
+	return host == "uploader.jp" ||
+		strings.HasSuffix(host, ".uploader.jp") ||
+		host == "getuploader.com" ||
+		strings.HasSuffix(host, ".getuploader.com")
 }

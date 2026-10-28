@@ -434,15 +434,18 @@ func pagination(c *gin.Context) (int, int) {
 
 func validateUploaderURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Hostname() == "" || (u.Port() != "" && u.Port() != "443") {
+	if err != nil ||
+		u.Scheme != "https" ||
+		u.User != nil ||
+		u.Hostname() == "" ||
+		(u.Port() != "" && u.Port() != "443") {
 		return "", errInvalidURL
 	}
-	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
-	allowed := host == "uploader.jp" || strings.HasSuffix(host, ".uploader.jp") ||
-		host == "getuploader.com" || strings.HasSuffix(host, ".getuploader.com")
-	if !allowed {
+
+	if !isAllowedUploaderHost(u.Hostname()) {
 		return "", errInvalidURL
 	}
+
 	return u.String(), nil
 }
 

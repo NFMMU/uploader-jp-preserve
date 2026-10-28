@@ -131,22 +131,6 @@ func TestIsUploaderDownloadPage(t *testing.T) {
 	}
 }
 
-func TestIsUploaderPaginationLink(t *testing.T) {
-	base, _ := url.Parse("https://uu.getuploader.com/example/")
-	if !isUploaderPaginationLink("https://uu.getuploader.com/example/?page=2", "", "2", base) {
-		t.Fatal("expected query pagination link to be accepted")
-	}
-	if !isUploaderPaginationLink("https://uu.getuploader.com/example/page/2", "", "2", base) {
-		t.Fatal("expected path pagination link to be accepted")
-	}
-	if isUploaderPaginationLink("https://uu.getuploader.com/example/download/123", "", "Download", base) {
-		t.Fatal("download page must not be treated as pagination")
-	}
-	if isUploaderPaginationLink("https://other.example/page/2", "next", "Next", base) {
-		t.Fatal("external host must not be treated as pagination")
-	}
-}
-
 func TestIsUnconfirmedRedistributionPolicy(t *testing.T) {
 	cases := []struct {
 		policy string
