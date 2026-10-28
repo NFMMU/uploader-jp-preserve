@@ -1,0 +1,6 @@
+-- Modify "node_enrollment_requests" table
+ALTER TABLE "public"."node_enrollment_requests" DROP CONSTRAINT "node_enrollment_requests_check", DROP CONSTRAINT "node_enrollment_requests_node_type_check", DROP CONSTRAINT "node_enrollment_requests_requested_capacity_bytes_check", ADD CONSTRAINT "node_enrollment_requests_capacity_check" CHECK (requested_capacity_bytes >= 0), ADD CONSTRAINT "node_enrollment_requests_token_state_check" CHECK ((((status)::text = 'approved'::text) AND (enrollment_token_hash IS NOT NULL) AND (token_expires_at IS NOT NULL)) OR (((status)::text <> 'approved'::text) AND (enrollment_token_hash IS NULL) AND (token_expires_at IS NULL))), ADD CONSTRAINT "node_enrollment_requests_type_check" CHECK ((node_type)::text = ANY ((ARRAY['A'::character varying, 'B'::character varying])::text[]));
+-- Modify "request_conversation_links" table
+ALTER TABLE "public"."request_conversation_links" DROP CONSTRAINT "request_conversation_links_target_url_key";
+-- Create index "request_conversation_links_target_url_key" to table: "request_conversation_links"
+CREATE UNIQUE INDEX "request_conversation_links_target_url_key" ON "public"."request_conversation_links" ("target_type", "target_id", "url");
