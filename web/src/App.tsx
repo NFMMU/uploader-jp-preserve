@@ -24,10 +24,12 @@ import {
 	useNavigate,
 } from "react-router-dom";
 import CopyEmail from "./CopyEmail";
+import { PageMeta } from "./components/common/PageMeta";
 import { Audit } from "./features/audit/Audit";
 import { Dashboard } from "./features/dashboard/Dashboard";
 import { Nodes } from "./features/nodes/Nodes";
 import PublicSite from "./features/public/PublicSite";
+import { PublicRequest } from "./features/public/pages/PublicRequest";
 import { RequestDetailPage } from "./features/review/RequestDetailPage";
 import { ReviewWorkspace } from "./features/review/ReviewWorkspace";
 import { Tasks } from "./features/tasks/Tasks";
@@ -191,6 +193,11 @@ function App() {
 		);
 	return (
 		<div className="app-shell">
+			<PageMeta
+				title="uploader.jp 保全プロジェクト - 創作関連アセットの保全を目的としたプロジェクト"
+				description="uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。"
+				overwriteTitle={true}
+			/>
 			<aside className={"sidebar " + (mobile ? "open" : "")}>
 				<div className="brand">
 					<div className="brand-icon">

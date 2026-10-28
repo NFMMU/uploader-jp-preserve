@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { publicAPI } from "../../../api/public";
+import { PageMeta } from "../../../components/common/PageMeta";
 import { TurnstileField } from "../../../components/TurnstileField";
 
 export function PreservationRequest() {
@@ -58,6 +59,10 @@ export function PreservationRequest() {
 	}
 	return (
 		<>
+			<PageMeta
+				title="保全リクエスト"
+				description="保全を行ってほしいアップローダー・ファイルをリクエストできます。"
+			/>
 			<h1>保全リクエスト</h1>
 			<p className="public-intro">
 				残してほしいファイル、またはアップローダーのURLを送ってください。
