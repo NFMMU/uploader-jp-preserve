@@ -32,7 +32,7 @@ func isUnconfirmedRedistributionPolicy(policy string) bool {
 }
 
 func (s *Server) listArtifacts(c *gin.Context) {
-	page, limit := pagination(c)
+	page, limit, isAll := pagination(c)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
@@ -44,7 +44,11 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		return
 	}
 	var artifacts []model.Artifact
-	if err := query.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&artifacts).Error; err != nil {
+	artifactQuery := query.Order("created_at DESC")
+	if !isAll {
+		artifactQuery = artifactQuery.Offset((page - 1) * limit).Limit(limit)
+	}
+	if err := artifactQuery.Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
 		return
 	}
@@ -165,7 +169,7 @@ type fileListItem struct {
 }
 
 func (s *Server) listFiles(c *gin.Context) {
-	page, limit := pagination(c)
+	page, limit, isAll := pagination(c)
 	db := s.db.WithContext(c.Request.Context())
 	query := db.Model(&model.FileObject{})
 	if c.Query("include_deleted") != "true" {
@@ -224,8 +228,13 @@ func (s *Server) listFiles(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
 		return
 	}
+	// ファイル取得
 	var files []model.FileObject
-	if err := query.Order("created_at DESC").Offset((page - 1) * limit).Limit(limit).Find(&files).Error; err != nil {
+	fileQuery := query.Order("created_at DESC")
+	if !isAll {
+		fileQuery = fileQuery.Offset((page - 1) * limit).Limit(limit)
+	}
+	if err := fileQuery.Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
 		return
 	}
@@ -238,9 +247,12 @@ func (s *Server) listFiles(c *gin.Context) {
 		}
 	}
 	artifacts := map[string]model.Artifact{}
-	if len(artifactIDs) > 0 {
+	// Bound the number of parameters even when all files are requested.
+	const artifactBatchSize = 1000
+	for start := 0; start < len(artifactIDs); start += artifactBatchSize {
+		end := min(start+artifactBatchSize, len(artifactIDs))
 		var records []model.Artifact
-		if err := db.Where("id IN ?", artifactIDs).Find(&records).Error; err != nil {
+		if err := db.Where("id IN ?", artifactIDs[start:end]).Find(&records).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file metadata"})
 			return
 		}
@@ -417,9 +429,13 @@ func (s *Server) exportCatalog(c *gin.Context) {
 	writer.Flush()
 }
 
-func pagination(c *gin.Context) (int, int) {
+func pagination(c *gin.Context) (int, int, bool) {
+	isAll, _ := strconv.ParseBool(c.DefaultQuery("all", "false"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if isAll {
+		return 0, 0, true
+	}
 	if page < 1 {
 		page = 1
 	}
@@ -429,7 +445,7 @@ func pagination(c *gin.Context) (int, int) {
 	if limit > 100 {
 		limit = 100
 	}
-	return page, limit
+	return page, limit, false
 }
 
 func validateUploaderURL(raw string) (string, error) {
