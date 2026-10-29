@@ -4,9 +4,9 @@
 	"version": "1.0.0",
 	"type": "module",
 	"scripts": {
-		"dev": "vite --host 0.0.0.0",
-		"build": "tsc -b && vite build",
-		"preview": "vite preview --host 0.0.0.0",
+		"dev": "vike dev --host 0.0.0.0",
+		"build": "tsc -b && vike build",
+		"preview": "vike preview --host 0.0.0.0",
 		"lint": "biome check --write",
 		"format": "biome format"
 	},
@@ -17,7 +17,9 @@
 		"react-dom": "^19.3.1",
 		"react-router-dom": "^7.18.5",
 		"typescript": "^7.0.2",
-		"vite": "^8.3.5"
+		"vite": "^8.3.5",
+		"vike": "^0.4.268",
+		"vike-react": "^0.6.32"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.3",

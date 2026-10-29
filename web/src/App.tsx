@@ -36,14 +36,30 @@ import { URLCollector } from "./features/url-collector/URLCollector";
 import { UsersPage } from "./features/users/UsersPage";
 import type { Obj } from "./types/common";
 
+function readStoredItem(key: string): string | null {
+	try {
+		return typeof window !== "undefined"
+			? window.localStorage.getItem(key)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+function readStoredUser(): Obj | null {
+	try {
+		return JSON.parse(readStoredItem("archive_user") || "null");
+	} catch {
+		return null;
+	}
+}
+
 function App() {
 	const apiBase = "/api/v1";
 	const [token, setToken] = useState(
-		localStorage.getItem("archive_token") || "",
+		() => readStoredItem("archive_token") || "",
 	);
-	const [user, setUser] = useState<Obj | null>(
-		JSON.parse(localStorage.getItem("archive_user") || "null"),
-	);
+	const [user, setUser] = useState<Obj | null>(readStoredUser);
 	const [toast, setToast] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [mobile, setMobile] = useState(false);
