@@ -247,9 +247,12 @@ func (s *Server) listFiles(c *gin.Context) {
 		}
 	}
 	artifacts := map[string]model.Artifact{}
-	if len(artifactIDs) > 0 {
+	// Bound the number of parameters even when all files are requested.
+	const artifactBatchSize = 1000
+	for start := 0; start < len(artifactIDs); start += artifactBatchSize {
+		end := min(start+artifactBatchSize, len(artifactIDs))
 		var records []model.Artifact
-		if err := db.Where("id IN ?", artifactIDs).Find(&records).Error; err != nil {
+		if err := db.Where("id IN ?", artifactIDs[start:end]).Find(&records).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file metadata"})
 			return
 		}

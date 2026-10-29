@@ -206,11 +206,33 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		return
 	}
 
-	var requests []model.PublicRequest
-	requestQuery := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC")
-	if !isAll {
-		requestQuery = requestQuery.Offset((page - 1) * limit).Limit(limit)
+	if isAll {
+		var rows []struct {
+			Item             publicRequestListItem `gorm:"embedded"`
+			LinkedArtifactID *string
+		}
+		if err := query.Select(`public_requests.*, f.original_filename AS linked_file_name,
+			a.title AS linked_artifact_title, COALESCE(public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
+			Joins("LEFT JOIN file_objects f ON f.id = public_requests.file_object_id").
+			Joins("LEFT JOIN artifacts a ON a.id = COALESCE(public_requests.artifact_id, f.artifact_id)").
+			Order("CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
+			Scan(&rows).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
+			return
+		}
+		items := make([]publicRequestListItem, 0, len(rows))
+		for _, row := range rows {
+			item := row.Item
+			item.ArtifactID = row.LinkedArtifactID
+			item.HasSourcePassword = item.SourcePasswordEncrypted != nil && *item.SourcePasswordEncrypted != ""
+			items = append(items, item)
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
+		return
 	}
+
+	var requests []model.PublicRequest
+	requestQuery := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC").Offset((page - 1) * limit).Limit(limit)
 	if err := requestQuery.Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 		return

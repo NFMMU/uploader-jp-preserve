@@ -32,8 +32,9 @@ type publicCatalogArtifact struct {
 // verified, explicitly-public file on a healthy node.
 func (s *Server) listPublicArtifacts(c *gin.Context) {
 	page, limit, isAll := pagination(c)
-	if !isAll && limit > 100 {
-		limit = 100
+	if isAll {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "公開作品一覧の全件取得はできません。"})
+		return
 	}
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{}).Where(`EXISTS (
@@ -77,10 +78,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		return
 	}
 	var artifacts []model.Artifact
-	artifactQuery := query.Order("artifacts.title ASC")
-	if !isAll {
-		artifactQuery = artifactQuery.Offset((page - 1) * limit).Limit(limit)
-	}
+	artifactQuery := query.Order("artifacts.title ASC").Offset((page - 1) * limit).Limit(limit)
 	if err := artifactQuery.Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
 		return
@@ -113,14 +111,16 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 	}
 
 	page, limit, isAll := pagination(c)
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 20
-	}
-	if !isAll && limit > 100 {
-		limit = 100
+	if !isAll {
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 {
+			limit = 20
+		}
+		if limit > 100 {
+			limit = 100
+		}
 	}
 
 	var artifact model.Artifact
