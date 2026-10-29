@@ -816,59 +816,210 @@ func (s *Server) retryTask(c *gin.Context) {
 
 	actor, _ := currentUser(c)
 	now := time.Now().UTC()
+
+	var targetNode model.Node
+	var errNoAlternativeNode = errors.New("no alternative online storage node available")
+	var errTaskNotRetryable = errors.New("task is no longer failed and cannot be retried")
+	var errActiveTaskExists = errors.New("another active task already exists for this file object")
+
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var locked model.Task
-		if err := tx.Raw(`SELECT id, task_type, file_object_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at FROM tasks WHERE id = ? FOR UPDATE`, task.ID).Scan(&locked).Error; err != nil {
+
+		if err := tx.Raw(`
+		SELECT id, task_type, file_object_id, target_node_id,
+		       status, priority, attempt_count, last_error,
+		       created_at, updated_at
+		FROM tasks
+		WHERE id = ?
+		FOR UPDATE
+	`, task.ID).Scan(&locked).Error; err != nil {
 			return err
 		}
-		if locked.ID == "" || locked.Status != "failed" {
-			return errors.New("task is no longer failed and cannot be retried")
+
+		if locked.ID == "" ||
+			locked.Status != "failed" ||
+			locked.TaskType != "store" ||
+			locked.TargetNodeID == nil {
+			return errTaskNotRetryable
 		}
+
+		// 同じファイルに対する別の実行中・待機中タスクがないことを確認する。
 		var activeCount int64
-		if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND id <> ? AND status IN ('queued', 'running')", task.FileObjectID, task.ID).Count(&activeCount).Error; err != nil {
+		if err := tx.Model(&model.Task{}).
+			Where(
+				"file_object_id = ? AND id <> ? AND status IN ('queued', 'running')",
+				locked.FileObjectID,
+				locked.ID,
+			).
+			Count(&activeCount).Error; err != nil {
 			return err
 		}
+
 		if activeCount > 0 {
-			return errors.New("another active task already exists for this file object")
+			return errActiveTaskExists
 		}
-		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
-			"status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now,
-		}).Error; err != nil {
+
+		// 元の保存先とは異なるオンラインノードを選択する。
+		// すでに検証済みのコピーが存在するノードは候補から除外する。
+		if err := tx.Raw(`
+		SELECT n.id, n.name
+		FROM nodes AS n
+		WHERE n.status = 'online'
+		  AND n.id <> ?
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM placements AS p
+		      WHERE p.node_id = n.id
+		        AND p.file_object_id = ?
+		        AND p.status = 'verified'
+		  )
+		ORDER BY random()
+		LIMIT 1
+		FOR UPDATE OF n
+	`, *locked.TargetNodeID, locked.FileObjectID).
+			Scan(&targetNode).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", task.FileObjectID).Updates(map[string]any{
-			"preservation_status": "queued", "public_download_enabled": false,
-		}).Error; err != nil {
-			return err
+
+		if targetNode.ID == "" {
+			return errNoAlternativeNode
 		}
+
+		// 新しいノードに既存の Placement があるか確認する。
 		var placement model.Placement
-		placementErr := tx.Where("file_object_id = ? AND node_id = ?", task.FileObjectID, *task.TargetNodeID).First(&placement).Error
+		placementErr := tx.
+			Where(
+				"file_object_id = ? AND node_id = ?",
+				locked.FileObjectID,
+				targetNode.ID,
+			).
+			First(&placement).Error
+
 		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			return tx.Create(&model.Placement{FileObjectID: task.FileObjectID, NodeID: *task.TargetNodeID, StorageKey: "objects/" + task.FileObjectID + "/" + task.ID, SHA256: file.SHA256, Status: "queued"}).Error
-		}
-		if placementErr != nil {
+			// 新しいノード用の配置情報を作成する。
+			placement = model.Placement{
+				FileObjectID: locked.FileObjectID,
+				NodeID:       targetNode.ID,
+				StorageKey:   "objects/" + locked.FileObjectID + "/" + locked.ID,
+				SHA256:       file.SHA256,
+				Status:       "queued",
+			}
+
+			if err := tx.Create(&placement).Error; err != nil {
+				return err
+			}
+		} else if placementErr != nil {
 			return placementErr
+		} else {
+			// 念のため、検証済みの配置を上書きしない。
+			if placement.Status == "verified" {
+				return errors.New("target node already has a verified placement")
+			}
+
+			if err := tx.Model(&model.Placement{}).
+				Where("id = ?", placement.ID).
+				Updates(map[string]any{
+					"status":      "queued",
+					"sha256":      file.SHA256,
+					"verified_at": nil,
+				}).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{
-			"status": "queued", "sha256": file.SHA256, "verified_at": nil,
-		}).Error; err != nil {
+
+		// タスクの保存先を新しいノードに変更し、再実行キューに戻す。
+		result := tx.Model(&model.Task{}).
+			Where("id = ? AND status = 'failed'", locked.ID).
+			Updates(map[string]any{
+				"target_node_id": targetNode.ID,
+				"status":         "queued",
+				"attempt_count":  0,
+				"last_error":     nil,
+				"lease_until":    nil,
+				"lease_token":    nil,
+				"updated_at":     now,
+			})
+
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errTaskNotRetryable
+		}
+
+		// ファイルの保存状態を更新し、公開ダウンロードを無効にする。
+		if err := tx.Model(&model.FileObject{}).
+			Where("id = ?", locked.FileObjectID).
+			Updates(map[string]any{
+				"preservation_status":     "queued",
+				"public_download_enabled": false,
+			}).Error; err != nil {
 			return err
 		}
+
+		// 元の配置が未検証なら、旧ノードの配置をエラー状態にする。
+		// 検証済みの配置は保持する。
+		if err := tx.Model(&model.Placement{}).
+			Where(
+				"file_object_id = ? AND node_id = ? AND status <> 'verified'",
+				locked.FileObjectID,
+				*locked.TargetNodeID,
+			).
+			Update("status", "error").Error; err != nil {
+			return err
+		}
+
+		// 再割り当て元と再割り当て先を監査ログに記録する。
+		reason := fmt.Sprintf(
+			"Administrator manually retried failed storage task; reassigned from node %s to node %s; attempt counter reset and up to five attempts allowed",
+			*locked.TargetNodeID,
+			targetNode.ID,
+		)
+
 		return tx.Create(&model.AuditLog{
-			ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "task", TargetID: &task.ID,
-			Action: "task.retry", Result: "success",
-			Reason: stringPtr("Administrator manually retried failed storage task; attempt counter reset and up to five attempts allowed"),
+			ActorID:    &actor.ID,
+			ActorLabel: actor.Email,
+			TargetType: "task",
+			TargetID:   &locked.ID,
+			Action:     "task.retry",
+			Result:     "success",
+			Reason:     &reason,
 		}).Error
 	})
+
 	if err != nil {
-		if strings.Contains(err.Error(), "no longer failed") || strings.Contains(err.Error(), "another active task") {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-			return
+		switch {
+		case errors.Is(err, errNoAlternativeNode):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "no alternative online storage node is available",
+			})
+		case errors.Is(err, errTaskNotRetryable),
+			errors.Is(err, errActiveTaskExists):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": err.Error(),
+			})
+		case strings.Contains(err.Error(), "already has a verified placement"):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "selected node already has a verified placement; retry again",
+			})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not queue task retry",
+			})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not queue task retry"})
 		return
 	}
-	c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "status": "queued", "attempt_count": 0, "max_attempts": maxTaskAttempts, "source_verified": true})
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"task_id":         task.ID,
+		"task_type":       task.TaskType,
+		"status":          "queued",
+		"attempt_count":   0,
+		"max_attempts":    maxTaskAttempts,
+		"source_verified": true,
+		"node_id":         targetNode.ID,
+		"node_name":       targetNode.Name,
+	})
 }
 
 func hashStagedFile(path string) (string, int64, error) {
