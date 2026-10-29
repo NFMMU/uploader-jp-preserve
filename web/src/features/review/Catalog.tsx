@@ -18,7 +18,7 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 	const params = new URLSearchParams(loc.search);
 	const linkedFileID = params.get("file_id") || "";
 	const linkedArtifactID = params.get("artifact_id") || "";
-	const [query, setQuery] = useState("");
+	const [query, setQuery] = useState(params.get("q") || "");
 	const [preservationFilter, setPreservationFilter] = useState("");
 	const [policyFilter, setPolicyFilter] = useState("");
 	const [publicationFilter, setPublicationFilter] = useState("");

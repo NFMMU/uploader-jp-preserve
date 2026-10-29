@@ -177,9 +177,17 @@ func (s *Server) listFiles(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
-		query = query.Where(`(original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ? OR artifact_id IN (
-			SELECT id FROM artifacts WHERE title ILIKE ? OR COALESCE(creator_name, '') ILIKE ?
-		))`, pattern, pattern, pattern, pattern)
+		query = query.Where(`(
+    	CAST(id AS TEXT) ILIKE ?
+    	OR original_filename ILIKE ?
+    	OR COALESCE(sha256, '') ILIKE ?
+    	OR artifact_id IN (
+    	    SELECT id FROM artifacts
+    	    WHERE CAST(id AS TEXT) ILIKE ?
+    	       OR title ILIKE ?
+    	       OR COALESCE(creator_name, '') ILIKE ?
+    	)
+		)`, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
