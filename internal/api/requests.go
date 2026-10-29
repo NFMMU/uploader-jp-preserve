@@ -191,7 +191,7 @@ type publicRequestListItem struct {
 }
 
 func (s *Server) listPublicRequests(c *gin.Context) {
-	page, limit := pagination(c)
+	page, limit, isAll := pagination(c)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.PublicRequest{})
 	if status := c.Query("status"); status != "" {
 		if !requestStatuses[status] {
@@ -205,11 +205,39 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count requests"})
 		return
 	}
+
+	if isAll {
+		var rows []struct {
+			Item             publicRequestListItem `gorm:"embedded"`
+			LinkedArtifactID *string
+		}
+		if err := query.Select(`public_requests.*, f.original_filename AS linked_file_name,
+			a.title AS linked_artifact_title, COALESCE(public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
+			Joins("LEFT JOIN file_objects f ON f.id = public_requests.file_object_id").
+			Joins("LEFT JOIN artifacts a ON a.id = COALESCE(public_requests.artifact_id, f.artifact_id)").
+			Order("CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
+			Scan(&rows).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
+			return
+		}
+		items := make([]publicRequestListItem, 0, len(rows))
+		for _, row := range rows {
+			item := row.Item
+			item.ArtifactID = row.LinkedArtifactID
+			item.HasSourcePassword = item.SourcePasswordEncrypted != nil && *item.SourcePasswordEncrypted != ""
+			items = append(items, item)
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
+		return
+	}
+
 	var requests []model.PublicRequest
-	if err := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC").Offset((page - 1) * limit).Limit(limit).Find(&requests).Error; err != nil {
+	requestQuery := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC").Offset((page - 1) * limit).Limit(limit)
+	if err := requestQuery.Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 		return
 	}
+
 	items := make([]publicRequestListItem, 0, len(requests))
 	for _, request := range requests {
 		item := publicRequestListItem{PublicRequest: request, HasSourcePassword: request.SourcePasswordEncrypted != nil && *request.SourcePasswordEncrypted != ""}
@@ -860,7 +888,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 }
 
 func (s *Server) listAuditLogs(c *gin.Context) {
-	page, limit := pagination(c)
+	page, limit, isAll := pagination(c)
 	var total int64
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.AuditLog{}).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count audit logs"})
@@ -871,14 +899,16 @@ func (s *Server) listAuditLogs(c *gin.Context) {
 		ActorDisplayName *string `json:"actor_display_name,omitempty"`
 	}
 	var logs []auditLogView
-	if err := s.db.WithContext(c.Request.Context()).
+	query := s.db.WithContext(c.Request.Context()).
 		Model(&model.AuditLog{}).
 		Select("audit_logs.*, users.display_name AS actor_display_name").
 		Joins("LEFT JOIN users ON users.id = audit_logs.actor_id").
-		Order("audit_logs.created_at DESC").
-		Offset((page - 1) * limit).
-		Limit(limit).
-		Scan(&logs).Error; err != nil {
+		Order("audit_logs.created_at DESC")
+
+	if !isAll {
+		query = query.Offset((page - 1) * limit).Limit(limit)
+	}
+	if err := query.Scan(&logs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list audit logs"})
 		return
 	}
