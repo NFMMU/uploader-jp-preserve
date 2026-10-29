@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
 import { Pagination } from "../../../components/common/Pagination";
+import { PageMeta } from "../../../components/common/PageMeta";
 import type { PublicArtifact } from "../../../types/public";
 
 type PublicArtifactsResponse = {
@@ -56,6 +57,11 @@ export function PublicCatalog() {
 
 	return (
 		<>
+			<PageMeta
+				title="uploader.jp保全プロジェクト - 創作関連アセットの保全を目的としたプロジェクト"
+				description="uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。"
+				overwriteTitle={true}
+			/>
 			<h1>作品一覧</h1>
 
 			<section
