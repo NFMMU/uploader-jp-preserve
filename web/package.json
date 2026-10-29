@@ -7,20 +7,24 @@
 		"dev": "vike dev --host 0.0.0.0",
 		"build": "tsc -b && vike build",
 		"start": "node dist/server/index.mjs",
+		"start:ogp": "node other_scripts/og-server.mjs",
 		"preview": "vike preview --host 0.0.0.0",
 		"lint": "biome check --write",
 		"format": "biome format"
 	},
 	"dependencies": {
+		"@fontsource/noto-sans-jp": "^5.3.1",
 		"@vitejs/plugin-react": "^6.1.2",
 		"lucide-react": "^1.63.0",
 		"react": "^19.3.1",
 		"react-dom": "^19.3.1",
 		"react-router-dom": "^7.18.5",
+		"satori": "^0.63.2",
+		"sharp": "^0.35.5",
 		"typescript": "^7.0.2",
-		"vite": "^8.3.5",
 		"vike": "^0.4.268",
-		"vike-react": "^0.6.32"
+		"vike-react": "^0.6.32",
+		"vite": "^8.3.5"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.3",

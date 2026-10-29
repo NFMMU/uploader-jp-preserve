@@ -14,6 +14,7 @@ COPY --from=build /app/package-lock.json ./package-lock.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/vite.config.ts ./vite.config.ts
+COPY --from=build /app/other_scripts/og-server.mjs ./other_scripts/og-server.mjs
 COPY nginx/default.conf /etc/nginx/http.d/default.conf
 COPY supervisord.conf /etc/supervisord.conf
 ENV NODE_ENV=production

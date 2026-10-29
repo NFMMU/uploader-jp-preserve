@@ -112,5 +112,9 @@ export async function data(pageContext: PageContextServer) {
 		}
 	}
 
+	metadata.image =
+  `${SITE_URL}/og.png?title=${encodeURIComponent(metadata.title)}` +
+  `&description=${encodeURIComponent(metadata.description)}`;
+
 	return { metadata };
 }
