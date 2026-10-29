@@ -340,27 +340,47 @@ func (s *Server) deleteNodes(c *gin.Context) {
 }
 
 func (s *Server) listTasks(c *gin.Context) {
-	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).
-		// Hide failed source-fetch/store tasks that are obsolete because their
-		// file object has since been verified. These historical failures cannot
-		// be retried and should not clutter the operational task list.
+	page, limit := pagination(c)
+	offset := (page - 1) * limit
+
+	query := s.db.WithContext(c.Request.Context()).
+		Model(&model.Task{}).
 		Where(`NOT (
-			tasks.status = 'failed'
-			AND tasks.task_type IN ('source_fetch', 'store')
-			AND EXISTS (
-				SELECT 1 FROM file_objects
-				WHERE file_objects.id = tasks.file_object_id
-				AND file_objects.preservation_status = 'verified'
-			)
-		)`)
+            tasks.status = 'failed'
+            AND tasks.task_type IN ('source_fetch', 'store')
+            AND EXISTS (
+                SELECT 1 FROM file_objects
+                WHERE file_objects.id = tasks.file_object_id
+                AND file_objects.preservation_status = 'verified'
+            )
+        )`)
+
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
-		query = query.Where("status = ?", status)
+		query = query.Where("tasks.status = ?", status)
 	}
-	var tasks []model.Task
-	if err := query.Order("priority DESC, created_at ASC").Limit(500).Find(&tasks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list tasks"})
+
+	// フィルター適用後の全件数を取得
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "could not count tasks",
+		})
 		return
 	}
+
+	// 指定ページのタスクだけを取得
+	var tasks []model.Task
+	if err := query.
+		Order("priority DESC, created_at ASC").
+		Limit(limit).
+		Offset(offset).
+		Find(&tasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "could not list tasks",
+		})
+		return
+	}
+
 	type taskView struct {
 		ID           string    `json:"id"`
 		TaskType     string    `json:"task_type"`
@@ -374,11 +394,30 @@ func (s *Server) listTasks(c *gin.Context) {
 		CreatedAt    time.Time `json:"created_at"`
 		UpdatedAt    time.Time `json:"updated_at"`
 	}
+
 	items := make([]taskView, 0, len(tasks))
 	for _, t := range tasks {
-		items = append(items, taskView{ID: t.ID, TaskType: t.TaskType, FileObjectID: t.FileObjectID, SourceNodeID: t.SourceNodeID, TargetNodeID: t.TargetNodeID, Status: t.Status, Priority: t.Priority, AttemptCount: t.AttemptCount, LastError: t.LastError, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt})
+		items = append(items, taskView{
+			ID:           t.ID,
+			TaskType:     t.TaskType,
+			FileObjectID: t.FileObjectID,
+			SourceNodeID: t.SourceNodeID,
+			TargetNodeID: t.TargetNodeID,
+			Status:       t.Status,
+			Priority:     t.Priority,
+			AttemptCount: t.AttemptCount,
+			LastError:    t.LastError,
+			CreatedAt:    t.CreatedAt,
+			UpdatedAt:    t.UpdatedAt,
+		})
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": items,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (s *Server) ingestFile(c *gin.Context) {

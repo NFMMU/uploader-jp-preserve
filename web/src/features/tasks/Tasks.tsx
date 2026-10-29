@@ -1,6 +1,7 @@
 import { Clock3, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Heading } from "../../components/common/Heading";
+import { Pagination } from "../../components/common/Pagination";
 import { Status } from "../../components/common/Status";
 import { Table } from "../../components/common/Table";
 import { useData } from "../../hooks/useData";
@@ -9,15 +10,35 @@ import type { Obj } from "../../types/common";
 
 export function Tasks({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/tasks", refresh + localRefresh);
+	const [filter, setFilter] = useState("all");
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(10);
+
+	const taskParams = new URLSearchParams({
+		page: String(page),
+		limit: String(limit),
+	});
+
+	if (filter !== "all") {
+		taskParams.set("status", filter);
+	}
+
+	const d = useData(
+		api,
+		`/tasks?${taskParams.toString()}`,
+		refresh + localRefresh,
+	);
+
 	const nodes = useData(api, "/nodes", refresh + localRefresh);
+
 	const nodeNames = Object.fromEntries(
 		(nodes.data.items || []).map((node: Obj) => [node.id, node.name]),
 	);
-	const [filter, setFilter] = useState("all");
-	const items = (d.data.items || []).filter(
-		(x: Obj) => filter === "all" || x.status === filter,
-	);
+
+	const items = d.data.items || [];
+	const total = d.data.total ?? 0;
+	const totalPages = Math.ceil(total / limit);
+	const currentPage = Math.min(page, Math.max(1, totalPages));
 	async function retry(id: string) {
 		try {
 			await api(`/tasks/${id}/retry`, { method: "POST" });
@@ -54,7 +75,10 @@ export function Tasks({ api, refresh, notify, role }: any) {
 						<button
 							key={v}
 							className={filter === v ? "active" : ""}
-							onClick={() => setFilter(v)}
+							onClick={() => {
+								setFilter(v);
+								setPage(1);
+							}}
 						>
 							{l}
 						</button>
@@ -145,6 +169,17 @@ export function Tasks({ api, refresh, notify, role }: any) {
 					)}
 				</Table>
 			</section>
+			<Pagination
+				page={currentPage}
+				limit={limit}
+				total={total}
+				loading={d.loading}
+				onPageChange={setPage}
+				onLimitChange={(newLimit) => {
+					setLimit(newLimit);
+					setPage(1);
+				}}
+			/>
 			<div className="info-card">
 				<Clock3 size={18} />
 				<div>
