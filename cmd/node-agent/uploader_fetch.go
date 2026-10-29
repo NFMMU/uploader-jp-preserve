@@ -60,18 +60,6 @@ func safeSourceFilename(value string) string {
 	return value
 }
 
-func mustParseURL(raw string) *url.URL {
-	u, _ := url.Parse(raw)
-	if u == nil {
-		return &url.URL{}
-	}
-	return u
-}
-
-func fetchUploaderFile(ctx context.Context, sourceURL string, acceptTerms bool) (*fetchedUploaderFile, error) {
-	return fetchUploaderFileWithLimiter(ctx, sourceURL, acceptTerms, nil)
-}
-
 // fetchUploaderFileWithLimiter spaces every uploader request, including form
 // submissions and redirects, using the calling agent's independent limiter.
 func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptTerms bool, beforeRequest func(context.Context) error, passwords ...string) (*fetchedUploaderFile, error) {
