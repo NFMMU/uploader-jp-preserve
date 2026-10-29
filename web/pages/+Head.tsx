@@ -16,8 +16,8 @@ export default function Head() {
 			<meta property="og:image" content={metadata.image} />
 			<meta property="og:url" content={metadata.url} />
 			<meta name="twitter:card" content="summary_large_image" />
-			<meta name="twitter:site" content="@thetalemon" />
-			<meta name="twitter:creator" content="@thetalemon" />
+			<meta name="twitter:site" content="@udonya_moe" />
+			<meta name="twitter:creator" content="@udonya_moe" />
 			<meta name="twitter:title" content={metadata.title} />
 			<meta name="twitter:description" content={metadata.description} />
 			<meta name="twitter:image" content={metadata.image} />
