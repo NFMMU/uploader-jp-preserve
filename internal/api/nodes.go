@@ -843,6 +843,13 @@ func (s *Server) retryTask(c *gin.Context) {
 			return errTaskNotRetryable
 		}
 
+		// 同じファイルの再試行を直列化してから、実行中のタスクを確認する。
+		var lockedFile model.FileObject
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&lockedFile, "id = ?", locked.FileObjectID).Error; err != nil {
+			return err
+		}
+
 		// 同じファイルに対する別の実行中・待機中タスクがないことを確認する。
 		var activeCount int64
 		if err := tx.Model(&model.Task{}).
@@ -859,13 +866,12 @@ func (s *Server) retryTask(c *gin.Context) {
 			return errActiveTaskExists
 		}
 
-		// 元の保存先とは異なるオンラインノードを選択する。
+		// 別のオンラインノードを優先し、候補がなければ元の保存先を再利用する。
 		// すでに検証済みのコピーが存在するノードは候補から除外する。
 		if err := tx.Raw(`
 		SELECT n.id, n.name
 		FROM nodes AS n
 		WHERE n.status = 'online'
-		  AND n.id <> ?
 		  AND NOT EXISTS (
 		      SELECT 1
 		      FROM placements AS p
@@ -873,10 +879,10 @@ func (s *Server) retryTask(c *gin.Context) {
 		        AND p.file_object_id = ?
 		        AND p.status = 'verified'
 		  )
-		ORDER BY random()
+		ORDER BY (n.id = ?), random()
 		LIMIT 1
 		FOR UPDATE OF n
-	`, *locked.TargetNodeID, locked.FileObjectID).
+	`, locked.FileObjectID, *locked.TargetNodeID).
 			Scan(&targetNode).Error; err != nil {
 			return err
 		}
@@ -959,14 +965,16 @@ func (s *Server) retryTask(c *gin.Context) {
 
 		// 元の配置が未検証なら、旧ノードの配置をエラー状態にする。
 		// 検証済みの配置は保持する。
-		if err := tx.Model(&model.Placement{}).
-			Where(
-				"file_object_id = ? AND node_id = ? AND status <> 'verified'",
-				locked.FileObjectID,
-				*locked.TargetNodeID,
-			).
-			Update("status", "error").Error; err != nil {
-			return err
+		if targetNode.ID != *locked.TargetNodeID {
+			if err := tx.Model(&model.Placement{}).
+				Where(
+					"file_object_id = ? AND node_id = ? AND status <> 'verified'",
+					locked.FileObjectID,
+					*locked.TargetNodeID,
+				).
+				Update("status", "error").Error; err != nil {
+				return err
+			}
 		}
 
 		// 再割り当て元と再割り当て先を監査ログに記録する。
