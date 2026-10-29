@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vike dev --host 0.0.0.0",
 		"build": "tsc -b && vike build",
+		"start": "node dist/server/index.mjs",
 		"preview": "vike preview --host 0.0.0.0",
 		"lint": "biome check --write",
 		"format": "biome format"
