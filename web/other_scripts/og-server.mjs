@@ -48,7 +48,6 @@ function releaseGenerationSlot() {
 
   if (next) {
     // 待機中の処理に枠を引き継ぐ。
-    activeGenerations++;
     next();
     return;
   }
