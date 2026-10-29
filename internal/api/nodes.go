@@ -340,8 +340,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 }
 
 func (s *Server) listTasks(c *gin.Context) {
-	page, limit := pagination(c)
-	offset := (page - 1) * limit
+	page, limit, isAll := pagination(c)
 
 	query := s.db.WithContext(c.Request.Context()).
 		Model(&model.Task{}).
@@ -368,13 +367,13 @@ func (s *Server) listTasks(c *gin.Context) {
 		return
 	}
 
-	// 指定ページのタスクだけを取得
+	// タスクを取得
 	var tasks []model.Task
-	if err := query.
-		Order("priority DESC, created_at ASC, tasks.id ASC").
-		Limit(limit).
-		Offset(offset).
-		Find(&tasks).Error; err != nil {
+	taskQuery := query.Order("priority DESC, created_at ASC, tasks.id ASC")
+	if !isAll {
+		taskQuery = taskQuery.Limit(limit).Offset((page - 1) * limit)
+	}
+	if err := taskQuery.Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "could not list tasks",
 		})
