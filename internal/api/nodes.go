@@ -371,7 +371,7 @@ func (s *Server) listTasks(c *gin.Context) {
 	// 指定ページのタスクだけを取得
 	var tasks []model.Task
 	if err := query.
-		Order("priority DESC, created_at ASC").
+		Order("priority DESC, created_at ASC, tasks.id ASC").
 		Limit(limit).
 		Offset(offset).
 		Find(&tasks).Error; err != nil {
