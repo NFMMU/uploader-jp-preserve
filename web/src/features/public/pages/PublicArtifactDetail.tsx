@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
-import { Pagination } from "../../../components/common/Pagination";
 import { PageMeta } from "../../../components/common/PageMeta";
+import { Pagination } from "../../../components/common/Pagination";
 import type { PublicArtifact } from "../../../types/public";
 import { PublicFileRow } from "./PublicFileRow";
 
@@ -74,7 +74,10 @@ export function PublicArtifactDetail() {
 		<>
 			<PageMeta
 				title={item.title}
-				description={item.description || `${item.title}の作品情報と公開ファイル。uploader.jp保全プロジェクトで保全しています。`}
+				description={
+					item.description ||
+					`${item.title}の作品情報と公開ファイル。uploader.jp保全プロジェクトで保全しています。`
+				}
 				type="article"
 				url={`/artifacts/${item.id}`}
 			/>
