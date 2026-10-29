@@ -41,7 +41,7 @@ export async function data(pageContext: PageContextServer) {
 			description: "公開停止・削除などの申請を行えます。",
 		},
 		"/preservation-requests": {
-			title: "保全の相談",
+			title: "保全リクエスト",
 			description: "創作関連アセットの保全について相談できます。",
 		},
 		"/redistribution-support": {
