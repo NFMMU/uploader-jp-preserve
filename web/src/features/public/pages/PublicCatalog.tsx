@@ -1,8 +1,8 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { publicAPI } from "../../../api/public";
-import { Pagination } from "../../../components/common/Pagination";
 import { PageMeta } from "../../../components/common/PageMeta";
+import { Pagination } from "../../../components/common/Pagination";
 import type { PublicArtifact } from "../../../types/public";
 
 type PublicArtifactsResponse = {

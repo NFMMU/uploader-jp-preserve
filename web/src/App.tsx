@@ -39,10 +39,16 @@ import type { Obj } from "./types/common";
 function App() {
 	const apiBase = "/api/v1";
 	const [token, setToken] = useState(
-		(typeof window !== "undefined" ? window.localStorage.getItem("archive_token") : null) || "",
+		(typeof window !== "undefined"
+			? window.localStorage.getItem("archive_token")
+			: null) || "",
 	);
 	const [user, setUser] = useState<Obj | null>(
-		JSON.parse((typeof window !== "undefined" ? window.localStorage.getItem("archive_user") : null) || "null"),
+		JSON.parse(
+			(typeof window !== "undefined"
+				? window.localStorage.getItem("archive_user")
+				: null) || "null",
+		),
 	);
 	const [toast, setToast] = useState("");
 	const [busy, setBusy] = useState(false);
