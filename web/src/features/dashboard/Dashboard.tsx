@@ -20,9 +20,10 @@ import type { Obj } from "../../types/common";
 
 export function Dashboard({ api, refresh, notify, token }: any) {
 	const a = useData(api, "/artifacts", refresh),
-		f = useData(api, "/files", refresh),
+		f = useData(api, "/files?all=true", refresh),
 		n = useData(api, "/nodes", refresh),
 		t = useData(api, "/tasks", refresh),
+		ft = useData(api, "/tasks?status=failed", refresh),
 		r = useData(api, "/public-requests?status=pending", refresh);
 	const files = f.data.items || [],
 		nodes = n.data.items || [],
@@ -30,7 +31,7 @@ export function Dashboard({ api, refresh, notify, token }: any) {
 	const degraded = files.filter((x: Obj) =>
 		["degraded", "missing", "error"].includes(x.preservation_status),
 	).length;
-	const failed = tasks.filter((x: Obj) => x.status === "failed").length;
+	const failed = ft.data.total ?? 0;
 	const errors = [a.error, f.error, n.error, r.error].filter(Boolean);
 	const filesUnavailable = f.loading || !!f.error;
 	return (
@@ -106,7 +107,7 @@ export function Dashboard({ api, refresh, notify, token }: any) {
 				/>
 				<Stat
 					label="要対応"
-					value={t.loading || t.error ? "—" : failed}
+					value={ft.loading || ft.error ? "—" : failed}
 					sub="失敗したタスク"
 					icon={Workflow}
 					tone={failed ? "red" : "amber"}
