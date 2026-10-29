@@ -19,6 +19,76 @@ const font = await readFile(FONT_PATH);
 const cache = new Map();
 const MAX_CACHE = 100;
 
+// キャッシュ件数とは独立して、生成負荷を制限する。
+const MAX_CONCURRENT_GENERATIONS = 4;
+const MAX_QUEUED_GENERATIONS = 32;
+let activeGenerations = 0;
+const generationQueue = [];
+const inFlight = new Map();
+
+function acquireGenerationSlot() {
+  if (activeGenerations < MAX_CONCURRENT_GENERATIONS) {
+    activeGenerations++;
+    return Promise.resolve();
+  }
+
+  if (generationQueue.length >= MAX_QUEUED_GENERATIONS) {
+    const error = new Error("OGP generation queue is full");
+    error.statusCode = 503;
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve) => {
+    generationQueue.push(resolve);
+  });
+}
+
+function releaseGenerationSlot() {
+  const next = generationQueue.shift();
+
+  if (next) {
+    // 待機中の処理に枠を引き継ぐ。
+    activeGenerations++;
+    next();
+    return;
+  }
+
+  activeGenerations--;
+}
+
+async function getOrGenerate(key, title, description) {
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  let promise;
+  promise = (async () => {
+    await acquireGenerationSlot();
+
+    try {
+      const png = await generate(title, description);
+
+      if (cache.size >= MAX_CACHE) {
+        cache.delete(cache.keys().next().value);
+      }
+
+      cache.set(key, png);
+      return png;
+    } finally {
+      releaseGenerationSlot();
+    }
+  })().finally(() => {
+    if (inFlight.get(key) === promise) {
+      inFlight.delete(key);
+    }
+  });
+
+  inFlight.set(key, promise);
+  return promise;
+}
+
 function clean(value, fallback, maxLength) {
   if (!value) return fallback;
 
@@ -186,17 +256,7 @@ createServer(async (req, res) => {
 
     const key = JSON.stringify([title, description]);
 
-    let png = cache.get(key);
-
-    if (!png) {
-      png = await generate(title, description);
-
-      if (cache.size >= MAX_CACHE) {
-        cache.delete(cache.keys().next().value);
-      }
-
-      cache.set(key, png);
-    }
+    const png = await getOrGenerate(key, title, description);
 
     res.writeHead(200, {
       "Content-Type": "image/png",
@@ -209,12 +269,19 @@ createServer(async (req, res) => {
   } catch (error) {
     console.error("OGP generation failed:", error);
 
-    res.writeHead(500, {
+    const statusCode = error?.statusCode === 503 ? 503 : 500;
+
+    res.writeHead(statusCode, {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",
+      ...(statusCode === 503 ? { "Retry-After": "1" } : {}),
     });
 
-    res.end("OGP generation failed");
+    res.end(
+      statusCode === 503
+        ? "OGP generation capacity exceeded"
+        : "OGP generation failed",
+    );
   }
 }).listen(PORT, "127.0.0.1", () => {
   console.log(`OGP server listening on 127.0.0.1:${PORT}`);
