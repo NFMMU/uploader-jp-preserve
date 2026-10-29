@@ -10,4 +10,7 @@ export default defineConfig({
 			"/healthz": "http://localhost:8080",
 		},
 	},
+	 preview: {
+    allowedHosts: ["uploaderjp.udonya.moe"],
+  },
 });
