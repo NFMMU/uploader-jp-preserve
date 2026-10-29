@@ -48,40 +48,8 @@ cp deploy/participant-node/.env.example deploy/participant-node/.env
 ## 2. 起動する
 
 > [!CAUTION]
-> データの保存先がOSのインストールディスクではない場合は、`deploy/participant-node/compose.yaml` ファイルを編集して、ボリュームの設定を変更する必要があります。
-
-<details>
-<summary>異なるディスクにデータを置く場合の設定例</summary>
-
-```diff
-services:
-  node-agent:
-    image: ghcr.io/nfmmu/uploader-jp-preservation-node-agent:latest
-    pull_policy: always
-    env_file:
-      - .env
-    environment:
-      NODE_STORAGE_PATH: /data/objects
-      NODE_STATE_PATH: /data/node-credentials.json
-    volumes:
--      - participant_node_data:/data
-+      - /path/to/dir:/data
-    restart: unless-stopped
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-    stop_grace_period: 30s
-
--volumes:
--  participant_node_data:
--    name: ${NODE_DATA_VOLUME:-uploader-jp-preservation-node-data}
-```
-
-</details>
+> データの保存先がOSのインストールディスクではない場合は、`deploy/participant-node/compose.external.yml`を用いて下さい。
+> また、.envファイルの`NODE_DATA_DIR`にパスを記述して下さい。
 
 ```sh
 docker compose \

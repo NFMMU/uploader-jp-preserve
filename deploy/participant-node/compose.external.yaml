@@ -1,0 +1,52 @@
+services:
+  node-agent-init:
+    image: alpine:3.22
+    user: "0:0"
+    environment:
+      NODE_DATA_DIR: ${NODE_DATA_DIR:-./data}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /data/objects
+        chown -R 65532:65532 /data
+        chmod 700 /data
+        chmod 700 /data/objects
+    volumes:
+      - type: bind
+        source: ${NODE_DATA_DIR:-./data}
+        target: /data
+    restart: "no"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+
+  node-agent:
+    image: ghcr.io/nfmmu/uploader-jp-preservation-node-agent:latest
+    pull_policy: always
+    env_file:
+      - .env
+    environment:
+      NODE_STORAGE_PATH: /data/objects
+      NODE_STATE_PATH: /data/node-credentials.json
+    volumes:
+      - type: bind
+        source: ${NODE_DATA_DIR:-./data}
+        target: /data
+    depends_on:
+      node-agent-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    stop_grace_period: 30s
