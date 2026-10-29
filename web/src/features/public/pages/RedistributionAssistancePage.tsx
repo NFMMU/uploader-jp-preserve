@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
-import { TurnstileField } from "../../../components/TurnstileField";
 import { PageMeta } from "../../../components/common/PageMeta";
+import { TurnstileField } from "../../../components/TurnstileField";
 
 export function RedistributionAssistancePage({
 	mode,
@@ -58,13 +58,17 @@ export function RedistributionAssistancePage({
 	}
 	return (
 		<>
-		<PageMeta
-				title={isPublisher
-					? "【製作者・権利者向け】配布代行の相談"
-					: "手元にあるファイルの再配布相談"}
-				description={isPublisher
-					? "権利者・配布元の方に向けて、面倒な移設作業を代行しております。お気軽にご相談ください！"
-					: "手元にファイルをダウンロードしたものの、このファイルを他の方にも使って欲しい！配布して欲しい！という方向けの相談フォームです。"}
+			<PageMeta
+				title={
+					isPublisher
+						? "【製作者・権利者向け】配布代行の相談"
+						: "手元にあるファイルの再配布相談"
+				}
+				description={
+					isPublisher
+						? "権利者・配布元の方に向けて、面倒な移設作業を代行しております。お気軽にご相談ください！"
+						: "手元にファイルをダウンロードしたものの、このファイルを他の方にも使って欲しい！配布して欲しい！という方向けの相談フォームです。"
+				}
 			/>
 			<Link className="public-text-link" to="/">
 				← 作品一覧へ戻る
