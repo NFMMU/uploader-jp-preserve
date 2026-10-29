@@ -1084,20 +1084,24 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	noTask := false
 	leaseToken := uuid.NewString()
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`UPDATE tasks SET status = 'failed', lease_until = NULL, lease_token = NULL,
-			last_error = COALESCE(last_error, 'task lease expired after maximum attempts'), updated_at = now()
-			WHERE ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
-			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
+		if err := tx.Exec(`((task_type IN ('store', 'delete') AND target_node_id = ?)
+		  OR (task_type = 'replicate' AND source_node_id = ?)
+		  OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL)))
+			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`,
+			node.ID, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
 			(SELECT file_object_id FROM tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
-		err := tx.Raw(`SELECT id, task_type, file_object_id, source_node_id, target_node_id, status, priority, attempt_count, last_error, created_at, updated_at
-			FROM tasks WHERE ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))
-			AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
-			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
+		err := tx.Raw(`((task_type IN ('store', 'delete') AND target_node_id = ?)
+  		OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL))
+  		OR (task_type = 'replicate' AND source_node_id = ?))
+			AND attempt_count < ?
+			AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
+			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
+			node.ID, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
 			return err
 		}
@@ -1105,8 +1109,13 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			noTask = true
 			return nil
 		}
+		if claimed.Task.TaskType == "source_fetch" {
+			claimed.Task.TargetNodeID = &node.ID
+		}
 		if err := tx.Exec(`UPDATE tasks SET status = 'running', attempt_count = attempt_count + 1,
-			lease_until = ?, lease_token = ?, last_error = NULL, updated_at = now() WHERE id = ?`, time.Now().UTC().Add(nodeLeaseDuration), leaseToken, claimed.Task.ID).Error; err != nil {
+    target_node_id = CASE WHEN task_type = 'source_fetch' AND target_node_id IS NULL THEN ? ELSE target_node_id END,
+    lease_until = ?, lease_token = ?, last_error = NULL, updated_at = now() WHERE id = ?`,
+			node.ID, time.Now().UTC().Add(nodeLeaseDuration), leaseToken, claimed.Task.ID).Error; err != nil {
 			return err
 		}
 		if claimed.Task.TaskType == "store" {
