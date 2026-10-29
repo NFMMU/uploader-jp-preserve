@@ -89,7 +89,7 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 	currentURL := sourceURL
 	var referer string
 	seenURLs := make(map[string]struct{})
-	for step := 0; step < 4; step++ {
+	for range 4 {
 		loopKey := normalizedUploaderLoopKey(currentURL)
 		if _, seen := seenURLs[loopKey]; seen {
 			return nil, errors.New("ダウンロードページが同じURLを繰り返しました。ページ側の遷移方式が変わった可能性があります。自動取得を停止しました")
