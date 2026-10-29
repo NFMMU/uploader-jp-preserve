@@ -23,6 +23,7 @@ function escapeMetadata(value: unknown, fallback: string): string {
 
 export async function data(pageContext: PageContextServer) {
 	const pathname = pageContext.urlPathname;
+	let ogpTitle = SITE_NAME;
 	const metadata = {
 		siteName: SITE_NAME,
 		siteUrl: SITE_URL,
@@ -76,6 +77,7 @@ export async function data(pageContext: PageContextServer) {
 	const staticPage = staticPages[pathname];
 	if (staticPage) {
 		metadata.title = `${staticPage.title} - ${SITE_NAME}`;
+		ogpTitle = staticPage.title
 		metadata.description = staticPage.description;
 	}
 
@@ -99,6 +101,7 @@ export async function data(pageContext: PageContextServer) {
 				if (body.item) {
 					const artifactTitle = escapeMetadata(body.item.title, "作品詳細");
 					metadata.title = `${artifactTitle} - ${SITE_NAME}`;
+					ogpTitle = artifactTitle
 					metadata.description = escapeMetadata(
 						body.item.description,
 						`${artifactTitle}の作品情報と公開ファイル。uploader.jp保全プロジェクトで保全しています。`,
@@ -113,7 +116,7 @@ export async function data(pageContext: PageContextServer) {
 	}
 
 	metadata.image =
-  `${SITE_URL}/og.png?title=${encodeURIComponent(metadata.title)}` +
+  `${SITE_URL}/og.png?title=${encodeURIComponent(ogpTitle)}` +
   `&description=${encodeURIComponent(metadata.description)}`;
 
 	return { metadata };
