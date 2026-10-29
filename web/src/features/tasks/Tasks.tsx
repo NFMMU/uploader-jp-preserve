@@ -1,5 +1,5 @@
 import { Clock3, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Heading } from "../../components/common/Heading";
 import { Pagination } from "../../components/common/Pagination";
 import { Status } from "../../components/common/Status";
@@ -39,6 +39,14 @@ export function Tasks({ api, refresh, notify, role }: any) {
 	const total = d.data.total ?? 0;
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.min(page, Math.max(1, totalPages));
+
+	useEffect(() => {
+		if (d.loading || d.error || page === currentPage) {
+			return;
+		}
+		setPage(currentPage);
+	}, [d.loading, d.error, page, currentPage]);
+
 	async function retry(id: string) {
 		try {
 			await api(`/tasks/${id}/retry`, { method: "POST" });
