@@ -118,15 +118,15 @@ func (s *Server) health(c *gin.Context) {
 
 func (s *Server) login(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email" binding:"required,email,max=320"`
-		Password string `json:"password" binding:"required,min=1,max=1024"`
+		EmailOrCustomID string `json:"email_or_custom_id" binding:"required,email,max=320"`
+		Password        string `json:"password" binding:"required,min=1,max=1024"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email or custom id, and password are required"})
 		return
 	}
 	var user model.MUser
-	err := s.db.WithContext(c.Request.Context()).Where("email = ?", strings.ToLower(strings.TrimSpace(req.Email))).First(&user).Error
+	err := s.db.WithContext(c.Request.Context()).Where("email = ?", strings.ToLower(strings.TrimSpace(req.EmailOrCustomID))).Or("custom_id = ?", strings.TrimSpace(req.EmailOrCustomID)).First(&user).Error
 	if err != nil || user.DisabledAt != nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
