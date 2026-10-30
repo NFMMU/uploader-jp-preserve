@@ -16,6 +16,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	const [form, setForm] = useState({
 		email: "",
 		display_name: "",
+		custom_id: "",
 		password: "",
 		role: "reviewer",
 	});
@@ -24,7 +25,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		try {
 			await api("/admin/users", { method: "POST", body: JSON.stringify(form) });
 			notify("ユーザーを作成しました");
-			setForm({ email: "", display_name: "", password: "", role: "reviewer" });
+			setForm({ email: "", display_name: "",custom_id:"", password: "",  role: "reviewer" });
 			setLocalRefresh((x) => x + 1);
 			setModal(false);
 		} catch (e) {
@@ -85,6 +86,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 												{(x.display_name || x.email).slice(0, 1).toUpperCase()}
 											</div>
 											<b>{x.display_name}</b>
+											<small>{`@${x.custom_id}`}</small>
 										</div>
 									</td>
 									<td>{x.email}</td>
@@ -115,6 +117,11 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<label>
+							ユーザーID
+							<input type="text" name="custom_id" id="custom_id"
+							onChange={(e) => setForm({ ...form, custom_id: e.target.value })}/>
+						</label>
+						<label>
 							メールアドレス
 							<input
 								required
@@ -139,8 +146,9 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								value={form.role}
 								onChange={(e) => setForm({ ...form, role: e.target.value })}
 							>
-								<option value="reviewer">確認担当者</option>
 								<option value="viewer">閲覧者</option>
+								<option value="author">権利者</option>
+								<option value="reviewer">確認担当者</option>
 								<option value="admin">管理者</option>
 							</select>
 						</label>
