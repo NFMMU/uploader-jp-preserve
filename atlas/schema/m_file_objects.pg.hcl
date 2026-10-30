@@ -1,4 +1,4 @@
-table "file_objects" {
+table "m_file_objects" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -71,13 +71,13 @@ table "file_objects" {
   }
   foreign_key "file_objects_artifact_id_fkey" {
     columns = [column.artifact_id]
-    ref_columns = [table.artifacts.column.id]
+    ref_columns = [table.m_artifacts.column.id]
     on_update = NO_ACTION
     on_delete = CASCADE
   }
   foreign_key "file_objects_representative_fkey" {
     columns = [column.representative]
-    ref_columns = [table.users.column.id]
+    ref_columns = [table.m_users.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

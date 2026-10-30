@@ -1,4 +1,4 @@
-table "tasks" {
+table "t_tasks" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -63,19 +63,19 @@ table "tasks" {
   }
   foreign_key "tasks_file_object_id_fkey" {
     columns = [column.file_object_id]
-    ref_columns = [table.file_objects.column.id]
+    ref_columns = [table.m_file_objects.column.id]
     on_update = NO_ACTION
     on_delete = CASCADE
   }
   foreign_key "tasks_source_node_id_fkey" {
     columns = [column.source_node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
   foreign_key "tasks_target_node_id_fkey" {
     columns = [column.target_node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

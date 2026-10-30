@@ -1,4 +1,4 @@
-table "audit_logs" {
+table "t_audit_logs" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -47,7 +47,7 @@ table "audit_logs" {
   }
   foreign_key "audit_logs_actor_id_fkey" {
     columns = [column.actor_id]
-    ref_columns = [table.users.column.id]
+    ref_columns = [table.m_users.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

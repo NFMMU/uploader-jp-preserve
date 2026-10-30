@@ -1,4 +1,4 @@
-table "download_audit_logs" {
+table "t_download_audit_logs" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -49,19 +49,19 @@ table "download_audit_logs" {
   }
   foreign_key "download_audit_logs_download_job_id_fkey" {
     columns = [column.download_job_id]
-    ref_columns = [table.download_jobs.column.id]
+    ref_columns = [table.t_download_jobs.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
   foreign_key "download_audit_logs_file_object_id_fkey" {
     columns = [column.file_object_id]
-    ref_columns = [table.file_objects.column.id]
+    ref_columns = [table.m_file_objects.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
   foreign_key "download_audit_logs_selected_node_id_fkey" {
     columns = [column.selected_node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

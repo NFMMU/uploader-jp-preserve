@@ -1,4 +1,4 @@
-table "nodes" {
+table "m_nodes" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -63,6 +63,11 @@ table "nodes" {
     type = timestamptz
     null = false
     default = sql("now()")
+  }
+  column "deleted_at" {
+    type = timestamptz
+    null = true
+    default = null
   }
   primary_key {
     columns = [column.id]
