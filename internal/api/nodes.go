@@ -1107,13 +1107,24 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			(SELECT file_object_id FROM tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
-		err := tx.Raw(`((task_type IN ('store', 'delete') AND target_node_id = ?)
-  		OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL))
-  		OR (task_type = 'replicate' AND source_node_id = ?))
-			AND attempt_count < ?
-			AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
-			ORDER BY priority DESC, created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
-			node.ID, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
+		err := tx.Raw(`
+    SELECT *
+    FROM tasks
+    WHERE
+        (
+            (task_type IN ('store', 'delete') AND target_node_id = ?)
+            OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL))
+            OR (task_type = 'replicate' AND source_node_id = ?)
+        )
+        AND attempt_count < ?
+        AND (
+            status = 'queued'
+            OR (status = 'running' AND lease_until < NOW())
+        )
+    ORDER BY priority DESC, created_at ASC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+		`, node.ID, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
 			return err
 		}
