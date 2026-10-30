@@ -176,11 +176,10 @@ function App() {
 						<h2>ログイン</h2>
 						<p>アカウント情報を入力してください。</p>
 						<label>
-							メールアドレス
+							メールアドレス / ユーザーID
 							<input
-								type="email"
-								name="email"
-								placeholder="admin@example.jp"
+								name="custom_id"
+								placeholder="hoge@example.jp / hogehoge_mmd"
 								required
 								autoComplete="username"
 							/>
