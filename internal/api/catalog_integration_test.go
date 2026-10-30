@@ -59,7 +59,7 @@ func catalogTestDB(t *testing.T) (*gorm.DB, *catalogQueryCounter) {
 	schema := "catalog_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	catalogExec(t, tx, "CREATE SCHEMA "+schema)
 	catalogExec(t, tx, "SET LOCAL search_path TO "+schema)
-	if err := tx.AutoMigrate(&model.Artifact{}, &model.FileObject{}, &model.PublicRequest{}, &model.Node{}, &model.Placement{}); err != nil {
+	if err := tx.AutoMigrate(&model.MArtifact{}, &model.MFileObject{}, &model.TPublicRequest{}, &model.MNode{}, &model.TPlacement{}); err != nil {
 		t.Fatal(err)
 	}
 	return tx, counter
@@ -120,20 +120,20 @@ func TestListFilesAllIntegration(t *testing.T) {
 
 func TestListPublicRequestsAllIntegration(t *testing.T) {
 	db, counter := catalogTestDB(t)
-	artifact := model.Artifact{Title: "file artifact", SourceURL: "https://example.invalid/file"}
-	explicit := model.Artifact{Title: "explicit artifact", SourceURL: "https://example.invalid/explicit"}
+	artifact := model.MArtifact{Title: "file artifact", SourceURL: "https://example.invalid/file"}
+	explicit := model.MArtifact{Title: "explicit artifact", SourceURL: "https://example.invalid/explicit"}
 	for _, record := range []any{&artifact, &explicit} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	file := model.FileObject{ArtifactID: artifact.ID, OriginalFilename: "linked.bin", PreservationStatus: "verified", RedistributionPolicy: "unknown"}
+	file := model.MFileObject{ArtifactID: artifact.ID, OriginalFilename: "linked.bin", PreservationStatus: "verified", RedistributionPolicy: "unknown"}
 	if err := db.Create(&file).Error; err != nil {
 		t.Fatal(err)
 	}
 	secret := "synthetic-encrypted-password"
 	missingID := uuid.NewString()
-	requests := []model.PublicRequest{
+	requests := []model.TPublicRequest{
 		{RequestType: "preservation", Status: "pending", FileObjectID: &file.ID, SourcePasswordEncrypted: &secret},
 		{RequestType: "preservation", Status: "pending", FileObjectID: &file.ID, ArtifactID: &explicit.ID},
 		{RequestType: "preservation", Status: "pending", ArtifactID: &explicit.ID},

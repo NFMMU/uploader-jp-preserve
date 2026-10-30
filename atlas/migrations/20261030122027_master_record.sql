@@ -1,5 +1,3 @@
-BEGIN;
-
 ALTER TABLE public.artifacts
 RENAME TO m_artifacts;
 
@@ -41,5 +39,3 @@ RENAME TO t_source_url_registry;
 
 ALTER TABLE public.tasks
 RENAME TO t_tasks;
-
-COMMIT;

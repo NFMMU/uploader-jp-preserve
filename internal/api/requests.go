@@ -86,25 +86,25 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 	}
 	if req.ArtifactID != nil {
 		var count int64
-		if err := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{}).Where("id = ?", *req.ArtifactID).Count(&count).Error; err != nil || count == 0 {
+		if err := s.db.WithContext(c.Request.Context()).Model(&model.MArtifact{}).Where("id = ?", *req.ArtifactID).Count(&count).Error; err != nil || count == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "指定された成果物が存在しません。"})
 			return
 		}
 	}
 	if req.FileObjectID != nil {
 		var count int64
-		if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", *req.FileObjectID).Count(&count).Error; err != nil || count == 0 {
+		if err := s.db.WithContext(c.Request.Context()).Model(&model.MFileObject{}).Where("id = ?", *req.FileObjectID).Count(&count).Error; err != nil || count == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "指定されたファイルが存在しません。"})
 			return
 		}
 	}
-	request := model.PublicRequest{
+	request := model.TPublicRequest{
 		RequestType: req.RequestType, Status: "pending", ArtifactID: req.ArtifactID, FileObjectID: req.FileObjectID,
 		Title: trimOptional(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: trimOptional(req.SourceURL),
 		SubmitterName: trimOptional(req.SubmitterName), Contact: trimOptional(req.Contact), Details: strings.TrimSpace(req.Details), ExternalURL: trimOptional(req.ExternalURL), SourcePasswordEncrypted: encryptedSourcePassword,
 	}
 	if req.RequestType == "preservation" && req.SourceURL != nil {
-		var existingFile model.FileObject
+		var existingFile model.MFileObject
 		if err := s.db.WithContext(c.Request.Context()).Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", *req.SourceURL).First(&existingFile).Error; err == nil {
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "file_object_id": existingFile.ID, "message": "このURLはすでにカタログに登録されているため、重複申請を破棄しました。"})
 			return
@@ -112,7 +112,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "アップロード元URLの確認に失敗しました。"})
 			return
 		}
-		var existingRequest model.PublicRequest
+		var existingRequest model.TPublicRequest
 		if err := s.db.WithContext(c.Request.Context()).Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", *req.SourceURL).Order("created_at ASC").First(&existingRequest).Error; err == nil {
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existingRequest.ID, "message": "同じURLの保全リクエストがすでに存在するため、重複リクエストを破棄しました。"})
 			return
@@ -184,7 +184,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 }
 
 type publicRequestListItem struct {
-	model.PublicRequest
+	model.TPublicRequest
 	HasSourcePassword   bool   `json:"has_source_password"`
 	LinkedFileName      string `json:"linked_file_name,omitempty"`
 	LinkedArtifactTitle string `json:"linked_artifact_title,omitempty"`
@@ -192,7 +192,7 @@ type publicRequestListItem struct {
 
 func (s *Server) listPublicRequests(c *gin.Context) {
 	page, limit, isAll := pagination(c)
-	query := s.db.WithContext(c.Request.Context()).Model(&model.PublicRequest{})
+	query := s.db.WithContext(c.Request.Context()).Model(&model.TPublicRequest{})
 	if status := c.Query("status"); status != "" {
 		if !requestStatuses[status] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
@@ -231,7 +231,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		return
 	}
 
-	var requests []model.PublicRequest
+	var requests []model.TPublicRequest
 	requestQuery := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC").Offset((page - 1) * limit).Limit(limit)
 	if err := requestQuery.Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
@@ -240,10 +240,10 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 
 	items := make([]publicRequestListItem, 0, len(requests))
 	for _, request := range requests {
-		item := publicRequestListItem{PublicRequest: request, HasSourcePassword: request.SourcePasswordEncrypted != nil && *request.SourcePasswordEncrypted != ""}
+		item := publicRequestListItem{TPublicRequest: request, HasSourcePassword: request.SourcePasswordEncrypted != nil && *request.SourcePasswordEncrypted != ""}
 		artifactID := request.ArtifactID
 		if request.FileObjectID != nil {
-			var file model.FileObject
+			var file model.MFileObject
 			if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", *request.FileObjectID).Error; err == nil {
 				item.LinkedFileName = file.OriginalFilename
 				if artifactID == nil {
@@ -253,7 +253,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			}
 		}
 		if artifactID != nil {
-			var artifact model.Artifact
+			var artifact model.MArtifact
 			if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", *artifactID).Error; err == nil {
 				item.LinkedArtifactTitle = artifact.Title
 			}
@@ -264,7 +264,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 }
 
 func (s *Server) getPublicRequest(c *gin.Context) {
-	var request model.PublicRequest
+	var request model.TPublicRequest
 
 	db := s.db.WithContext(c.Request.Context())
 	if err := db.First(&request, "id = ?", c.Param("id")).Error; err != nil {
@@ -273,7 +273,7 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	}
 
 	item := publicRequestListItem{
-		PublicRequest: request,
+		TPublicRequest: request,
 		HasSourcePassword: request.SourcePasswordEncrypted != nil &&
 			*request.SourcePasswordEncrypted != "",
 	}
@@ -281,7 +281,7 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	artifactID := request.ArtifactID
 
 	if request.FileObjectID != nil {
-		var file model.FileObject
+		var file model.MFileObject
 		if err := db.First(&file, "id = ?", *request.FileObjectID).Error; err == nil {
 			item.LinkedFileName = file.OriginalFilename
 			if artifactID == nil {
@@ -297,7 +297,7 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	}
 
 	if artifactID != nil {
-		var artifact model.Artifact
+		var artifact model.MArtifact
 		if err := db.First(&artifact, "id = ?", *artifactID).Error; err == nil {
 			item.LinkedArtifactTitle = artifact.Title
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -370,7 +370,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	db := s.db.WithContext(c.Request.Context())
 
-	var publicRequest model.PublicRequest
+	var publicRequest model.TPublicRequest
 
 	now := time.Now().UTC()
 	var intakeFilePathToRemove string
@@ -410,7 +410,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		if req.ArtifactID != nil {
 			var count int64
 
-			if err := tx.Model(&model.Artifact{}).
+			if err := tx.Model(&model.MArtifact{}).
 				Where("id = ?", *req.ArtifactID).
 				Count(&count).Error; err != nil {
 				return err
@@ -426,7 +426,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		// to a different artifact after changing artifact_id.
 		if (req.FileObjectID != nil || req.ArtifactID != nil) &&
 			targetFileID != nil {
-			query := tx.Model(&model.FileObject{}).
+			query := tx.Model(&model.MFileObject{}).
 				Where("id = ?", *targetFileID)
 
 			if targetArtifactID != nil {
@@ -498,7 +498,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				// Check for duplicates only when the URL actually changes.
 				// Otherwise, the existing request could conflict with itself.
 				if sourceURLChanged {
-					var existingFile model.FileObject
+					var existingFile model.MFileObject
 					if err := tx.
 						Where(
 							"split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL",
@@ -513,7 +513,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 						)
 					}
 
-					var existingRequest model.PublicRequest
+					var existingRequest model.TPublicRequest
 					if err := tx.
 						Where(
 							"request_type = 'preservation' AND id <> ? AND split_part(trim(source_url), '#', 1) = ?",
@@ -582,7 +582,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		// The row lock protects the read-modify-write sequence, while
 		// this predicate provides an additional optimistic concurrency
 		// check.
-		result := tx.Model(&model.PublicRequest{}).
+		result := tx.Model(&model.TPublicRequest{}).
 			Where(
 				"id = ? AND status = ?",
 				publicRequest.ID,
@@ -654,14 +654,14 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				publicRequest.RequestType == "deletion") {
 
 			if targetFileID != nil {
-				if err := tx.Model(&model.FileObject{}).
+				if err := tx.Model(&model.MFileObject{}).
 					Where("id = ?", *targetFileID).
 					Update("public_download_enabled", false).Error; err != nil {
 					return err
 				}
 			} else if publicRequest.RequestType == "takedown" &&
 				targetArtifactID != nil {
-				if err := tx.Model(&model.FileObject{}).
+				if err := tx.Model(&model.MFileObject{}).
 					Where(
 						"artifact_id = ? AND deleted_at IS NULL",
 						*targetArtifactID,
@@ -677,7 +677,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				nextRequest.ArtifactID = targetArtifactID
 				nextRequest.FileObjectID = targetFileID
 
-				var files []model.FileObject
+				var files []model.MFileObject
 
 				fileQuery := tx.Where("deleted_at IS NULL")
 
@@ -890,17 +890,17 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 func (s *Server) listAuditLogs(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 	var total int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.AuditLog{}).Count(&total).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.TAuditLog{}).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count audit logs"})
 		return
 	}
 	type auditLogView struct {
-		model.AuditLog   `gorm:"embedded"`
+		model.TAuditLog  `gorm:"embedded"`
 		ActorDisplayName *string `json:"actor_display_name,omitempty"`
 	}
 	var logs []auditLogView
 	query := s.db.WithContext(c.Request.Context()).
-		Model(&model.AuditLog{}).
+		Model(&model.TAuditLog{}).
 		Select("audit_logs.*, users.display_name AS actor_display_name").
 		Joins("LEFT JOIN users ON users.id = audit_logs.actor_id").
 		Order("audit_logs.created_at DESC")

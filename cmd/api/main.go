@@ -80,7 +80,7 @@ func main() {
 
 func bootstrapAdmin(db *gorm.DB, cfg config.Config) error {
 	var count int64
-	if err := db.Model(&model.User{}).Count(&count).Error; err != nil {
+	if err := db.Model(&model.MUser{}).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
@@ -93,11 +93,11 @@ func bootstrapAdmin(db *gorm.DB, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	user := model.User{Email: strings.ToLower(strings.TrimSpace(cfg.BootstrapAdminEmail)), PasswordHash: string(passwordHash), DisplayName: "Initial Administrator", Role: "admin"}
+	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(cfg.BootstrapAdminEmail)), PasswordHash: string(passwordHash), DisplayName: "Initial Administrator", Role: "admin"}
 	if err := db.Create(&user).Error; err != nil {
 		return err
 	}
-	return db.Create(&model.AuditLog{ActorID: &user.ID, ActorLabel: user.Email, TargetType: "user", TargetID: &user.ID, Action: "user.bootstrap_admin.create", Result: "success", Reason: ptr("Initial administrator created from environment configuration")}).Error
+	return db.Create(&model.TAuditLog{ActorID: &user.ID, ActorLabel: user.Email, TargetType: "user", TargetID: &user.ID, Action: "user.bootstrap_admin.create", Result: "success", Reason: ptr("Initial administrator created from environment configuration")}).Error
 }
 
 func ptr(value string) *string { return &value }
