@@ -77,6 +77,138 @@ func TestFindDownloadFormAcceptsGetUploaderTokenHandshake(t *testing.T) {
 	}
 }
 
+func TestFindDownloadFormIncludesPasswordSubmitValue(t *testing.T) {
+	base, _ := url.Parse("https://uu.getuploader.com/katuo_tororo/download/9")
+
+	doc, err := xhtml.Parse(strings.NewReader(`
+		<html>
+		<body>
+			<form method="POST" action="/katuo_tororo/download/9" name="agree">
+				<input type="password" name="password">
+				<input type="submit" value="認証" name="yes">
+			</form>
+		</body>
+		</html>
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	form, ok := findDownloadForm(doc, base, true, "test-password")
+	if !ok {
+		t.Fatal("expected password form to be detected")
+	}
+
+	values := uploaderFormSubmissionValues(form)
+
+	if values.Get("password") != "test-password" {
+		t.Fatalf("password was not included: %v", values)
+	}
+
+	if values.Get("yes") != "認証" {
+		t.Fatalf("authentication submit value was not included: %v", values)
+	}
+}
+
+func TestUploaderTwoStepFormHandshake(t *testing.T) {
+	base, _ := url.Parse("https://uu.getuploader.com/katuo_tororo/download/9")
+
+	passwordPage := `
+		<form method="POST" action="/katuo_tororo/download/9" name="agree">
+			<input type="password" name="password">
+			<input type="submit" value="認証" name="yes">
+		</form>
+	`
+
+	doc1, err := xhtml.Parse(strings.NewReader(passwordPage))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstForm, ok := findDownloadForm(
+		doc1,
+		base,
+		true,
+		"test-password",
+	)
+	if !ok {
+		t.Fatal("password form was not detected")
+	}
+
+	firstValues := uploaderFormSubmissionValues(firstForm)
+
+	if firstValues.Get("password") != "test-password" {
+		t.Fatalf("unexpected password: %v", firstValues)
+	}
+	if firstValues.Get("yes") != "認証" {
+		t.Fatalf("unexpected authentication submit value: %v", firstValues)
+	}
+
+	tokenPage := `
+		<form method="POST" name="agree">
+			<input type="hidden" name="token" value="test-token">
+			<input type="submit" value="ダウンロード" name="yes">
+		</form>
+	`
+
+	doc2, err := xhtml.Parse(strings.NewReader(tokenPage))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondForm, ok := findDownloadForm(
+		doc2,
+		base,
+		true,
+		"test-password",
+	)
+	if !ok {
+		t.Fatal("token form was not detected")
+	}
+
+	secondValues := uploaderFormSubmissionValues(secondForm)
+
+	if secondValues.Get("token") != "test-token" {
+		t.Fatalf("unexpected token: %v", secondValues)
+	}
+	if secondValues.Get("yes") != "ダウンロード" {
+		t.Fatalf("unexpected download submit value: %v", secondValues)
+	}
+}
+
+func TestFindDownloadFormIncludesTokenSubmitValue(t *testing.T) {
+	base, _ := url.Parse("https://uu.getuploader.com/katuo_tororo/download/9")
+
+	doc, err := xhtml.Parse(strings.NewReader(`
+		<html>
+		<body>
+			<form method="POST" name="agree">
+				<input type="hidden" name="token" value="test-token">
+				<input type="submit" value="ダウンロード" name="yes">
+			</form>
+		</body>
+		</html>
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	form, ok := findDownloadForm(doc, base, true)
+	if !ok {
+		t.Fatal("expected token form to be detected")
+	}
+
+	values := uploaderFormSubmissionValues(form)
+
+	if values.Get("token") != "test-token" {
+		t.Fatalf("token was not included: %v", values)
+	}
+
+	if values.Get("yes") != "ダウンロード" {
+		t.Fatalf("download submit value was not included: %v", values)
+	}
+}
+
 func TestFindDownloadFormIncludesProvidedPassword(t *testing.T) {
 	base, _ := url.Parse("https://uu.getuploader.com/name/download/123")
 	doc, err := xhtml.Parse(strings.NewReader(`<html><body><form method="post" action="/name/download/123"><input type="hidden" name="token" value="abc"><input type="password" name="download_pass"><button type="submit">認証</button></form></body></html>`))

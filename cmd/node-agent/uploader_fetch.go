@@ -89,6 +89,7 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 	currentURL := sourceURL
 	var referer string
 	seenURLs := make(map[string]struct{})
+fetchLoop:
 	for range 4 {
 		loopKey := normalizedUploaderLoopKey(currentURL)
 		if _, seen := seenURLs[loopKey]; seen {
@@ -174,106 +175,161 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 			}
 			return nil, fmt.Errorf("ダウンロード先を自動判定できませんでした（診断: %s）。CAPTCHAやJavaScript認証は自動処理しません", uploaderPageDiagnostic(doc, pageURL, contentType, page))
 		}
-		formURL, err := validateAgentUploaderURL(form.Action)
-		if err != nil {
-			return nil, errors.New("ダウンロードフォームの送信先が許可されたドメインではありません")
-		}
-		method := strings.ToUpper(form.Method)
-		formValues := uploaderFormSubmissionValues(form)
-		var formReq *http.Request
-		if method == http.MethodPost {
-			formReq, err = http.NewRequestWithContext(ctx, http.MethodPost, formURL, strings.NewReader(formValues.Encode()))
-			if err == nil {
-				formReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			}
-		} else {
-			parsed, _ := url.Parse(formURL)
-			query := parsed.Query()
-			for key, values := range formValues {
-				for _, value := range values {
-					query.Add(key, value)
-				}
-			}
-			parsed.RawQuery = query.Encode()
-			formReq, err = http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-		}
-		if err != nil {
-			return nil, errors.New("ダウンロード要求を作成できませんでした")
-		}
-		formReq.Header.Set("User-Agent", "uploader-jp-archive/1.0 (preservation request)")
-		formReq.Header.Set("Referer", pageURL.String())
-		formReq.Header.Set("Accept", "text/html,application/octet-stream,*/*;q=0.8")
-		if beforeRequest != nil {
-			if err := beforeRequest(ctx); err != nil {
-				return nil, err
-			}
-		}
-		resp, err = client.Do(formReq)
+		// 最初のフォーム（パスワード認証など）を送信する。
+		resp, err = submitUploaderForm(
+			ctx,
+			client,
+			form,
+			pageURL.String(),
+			beforeRequest,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("ダウンロード要求に失敗しました: %w", err)
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
-			return nil, fmt.Errorf("ダウンロード要求がHTTP %dを返しました", resp.StatusCode)
-		}
-		contentType = strings.ToLower(resp.Header.Get("Content-Type"))
-		contentDisposition = resp.Header.Get("Content-Disposition")
-		if strings.Contains(strings.ToLower(contentDisposition), "attachment") || (!strings.Contains(contentType, "text/html") && !strings.Contains(contentType, "application/xhtml+xml")) {
-			filename := filenameFromContentDisposition(contentDisposition)
-			if filename == "" {
-				filename = safeSourceFilename(path.Base(resp.Request.URL.Path))
+
+		// 認証後の確認フォームなど、最初の送信を含めて最大4回までフォームを処理する。
+		for formStep := range 4 {
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				status := resp.StatusCode
+				resp.Body.Close()
+				return nil, fmt.Errorf(
+					"ダウンロード要求がHTTP %dを返しました",
+					status,
+				)
 			}
-			return &fetchedUploaderFile{Body: resp.Body, Filename: filename, MediaType: contentType, Size: resp.ContentLength, FinalURL: resp.Request.URL.String()}, nil
-		}
-		// Some public pages redirect to another confirmation page. Parse that page
-		// in the next iteration, but never solve passwords, CAPTCHAs, or JS challenges.
-		page, readErr = io.ReadAll(io.LimitReader(resp.Body, maxAgentUploaderHTMLBytes+1))
-		resp.Body.Close()
-		if readErr != nil || len(page) > maxAgentUploaderHTMLBytes {
-			return nil, errors.New("ダウンロード確認ページを読み込めませんでした")
-		}
-		currentURL = resp.Request.URL.String()
-		referer = pageURL.String()
-		// Re-enter the normal page parser without an extra request by following a
-		// same-site refresh/anchor when present. If no such link exists, fail closed.
-		nextDoc, _ := xhtml.Parse(bytes.NewReader(page))
-		if nextDoc == nil {
-			return nil, errors.New("ダウンロード確認ページを解析できませんでした")
-		}
-		if hasPasswordInput(nextDoc) {
-			return nil, errors.New("パスワード認証後も入力画面が表示されました。パスワードが誤っているか、追加操作が必要です")
-		}
-		if hasCaptcha(nextDoc, strings.ToLower(htmlText(nextDoc))) {
-			return nil, errors.New("CAPTCHA等の追加認証は自動処理しません")
-		}
-		postResponseURL := resp.Request.URL
 
-		if nextURL := findMetaRefreshURL(nextDoc, postResponseURL); nextURL != "" {
-			referer = postResponseURL.String()
-			currentURL = nextURL
-			continue
-		}
+			contentType = strings.ToLower(resp.Header.Get("Content-Type"))
+			contentDisposition = resp.Header.Get("Content-Disposition")
 
-		if nextURL := findDirectDownloadLink(nextDoc, postResponseURL); nextURL != "" {
-			referer = postResponseURL.String()
-			currentURL = nextURL
-			continue
-		}
+			// ファイル本体が返された場合。
+			if strings.Contains(
+				strings.ToLower(contentDisposition),
+				"attachment",
+			) || (!strings.Contains(contentType, "text/html") &&
+				!strings.Contains(contentType, "application/xhtml+xml")) {
 
-		if nextURL := findScriptDownloadURL(page, postResponseURL); nextURL != "" {
-			referer = postResponseURL.String()
-			currentURL = nextURL
-			continue
-		}
-		return nil, fmt.Errorf(
-			"追加の確認操作が必要です。管理者がブラウザーで取得してください（診断: %s）",
-			uploaderPageDiagnostic(
+				filename := filenameFromContentDisposition(contentDisposition)
+				if filename == "" {
+					filename = safeSourceFilename(
+						path.Base(resp.Request.URL.Path),
+					)
+				}
+
+				return &fetchedUploaderFile{
+					Body:      resp.Body,
+					Filename:  filename,
+					MediaType: contentType,
+					Size:      resp.ContentLength,
+					FinalURL:  resp.Request.URL.String(),
+				}, nil
+			}
+
+			// HTMLレスポンスを読み込む。
+			postResponseURL := resp.Request.URL
+
+			page, readErr = io.ReadAll(
+				io.LimitReader(resp.Body, maxAgentUploaderHTMLBytes+1),
+			)
+			resp.Body.Close()
+
+			if readErr != nil || len(page) > maxAgentUploaderHTMLBytes {
+				return nil, errors.New(
+					"ダウンロード確認ページを読み込めませんでした",
+				)
+			}
+
+			nextDoc, parseErr := xhtml.Parse(bytes.NewReader(page))
+			if parseErr != nil {
+				return nil, errors.New(
+					"ダウンロード確認ページを解析できませんでした",
+				)
+			}
+
+			nextPageText := strings.ToLower(htmlText(nextDoc))
+
+			// パスワード認証が完了していない場合。
+			if hasPasswordInput(nextDoc) {
+				return nil, errors.New(
+					"パスワード認証後も入力画面が表示されました。パスワードが誤っているか、追加操作が必要です",
+				)
+			}
+
+			// CAPTCHA等は自動処理しない。
+			if hasCaptcha(nextDoc, nextPageText) {
+				return nil, errors.New(
+					"CAPTCHA等の追加認証は自動処理しません",
+				)
+			}
+
+			// 利用規約への同意が必要な場合。
+			if !acceptTerms &&
+				(strings.Contains(nextPageText, "利用規約に同意した上で") ||
+					strings.Contains(nextPageText, "同意の上で")) {
+				return nil, errors.New(
+					"ダウンロード前に利用規約への同意が必要です",
+				)
+			}
+
+			// HTML内の遷移先を確認する。
+			nextURL := findMetaRefreshURL(nextDoc, postResponseURL)
+
+			if nextURL == "" {
+				nextURL = findDirectDownloadLink(nextDoc, postResponseURL)
+			}
+
+			if nextURL == "" {
+				nextURL = findScriptDownloadURL(page, postResponseURL)
+			}
+
+			if nextURL != "" {
+				referer = postResponseURL.String()
+				currentURL = nextURL
+
+				// 通常のGET処理に戻る。
+				continue fetchLoop
+			}
+
+			// 追加フォームがあれば送信する。
+			nextForm, ok := findDownloadForm(
 				nextDoc,
-				resp.Request.URL,
-				contentType,
-				page,
-			),
-		)
+				postResponseURL,
+				acceptTerms,
+				password,
+			)
+
+			if !ok {
+				return nil, fmt.Errorf(
+					"追加の確認操作が必要です。管理者がブラウザーで取得してください（診断: %s）",
+					uploaderPageDiagnostic(
+						nextDoc,
+						postResponseURL,
+						contentType,
+						page,
+					),
+				)
+			}
+
+			if formStep == 3 {
+				return nil, errors.New(
+					"追加フォームの送信回数が上限を超えました",
+				)
+			}
+
+			// 次のフォームを送信する。
+			resp, err = submitUploaderForm(
+				ctx,
+				client,
+				nextForm,
+				postResponseURL.String(),
+				beforeRequest,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"追加のダウンロード要求に失敗しました: %w",
+					err,
+				)
+			}
+		}
 	}
 	return nil, errors.New("ダウンロードページの遷移回数が上限を超えました")
 }
@@ -570,18 +626,25 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 						// Submit inputs often have no name. Their label still identifies the
 						// normal download action, so inspect it before checking the name.
 						if typ == "submit" || typ == "button" || typ == "image" {
-							if typ == "submit" && name != "" {
-								form.Values.Add(name, value)
-							}
+							label := strings.ToLower(
+								value + " " +
+									name + " " +
+									attr(node, "id") + " " +
+									attr(node, "alt") + " " +
+									attr(node, "title") + " " +
+									attr(node, "aria-label"),
+							)
 
-							label := strings.ToLower(value + " " + name + " " +
-								attr(node, "id") + " " + attr(node, "alt") + " " +
-								attr(node, "title") + " " + attr(node, "aria-label"))
-
-							if strings.Contains(label, "ダウンロード") ||
+							isAction := strings.Contains(label, "ダウンロード") ||
 								strings.Contains(label, "download") ||
-								strings.Contains(label, "認証") {
+								strings.Contains(label, "認証")
+
+							if isAction {
 								buttonFound = true
+
+								if typ == "submit" && name != "" {
+									form.Values.Add(name, value)
+								}
 							}
 						}
 						if name != "" {
@@ -595,9 +658,13 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 							switch typ {
 							case "password":
 								passwordFieldFound = true
+
 								if password != "" {
 									form.Values.Set(name, password)
-									form.PasswordFieldNames = append(form.PasswordFieldNames, name)
+									form.PasswordFieldNames = append(
+										form.PasswordFieldNames,
+										name,
+									)
 								}
 							case "submit", "button", "image", "file":
 								// Submit values were handled above; file inputs are never sent.
@@ -616,7 +683,9 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 						}
 					case "button":
 						label := strings.ToLower(htmlText(node) + " " + attr(node, "name") + " " + attr(node, "id") + " " + attr(node, "title") + " " + attr(node, "aria-label"))
-						if strings.Contains(label, "ダウンロード") || strings.Contains(label, "download") {
+						if strings.Contains(label, "ダウンロード") ||
+							strings.Contains(label, "download") ||
+							strings.Contains(label, "認証") {
 							name := attr(node, "name")
 							if name != "" {
 								form.Values.Add(name, attr(node, "value"))
@@ -665,4 +734,89 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 	}
 	ok := walk(root)
 	return result, ok
+}
+
+func submitUploaderForm(
+	ctx context.Context,
+	client *http.Client,
+	form uploaderForm,
+	referer string,
+	beforeRequest func(context.Context) error,
+) (*http.Response, error) {
+	formURL, err := validateAgentUploaderURL(form.Action)
+	if err != nil {
+		return nil, errors.New("フォームの送信先が許可されたドメインではありません")
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(form.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	if method != http.MethodGet && method != http.MethodPost {
+		return nil, errors.New("未対応のフォーム送信方式です")
+	}
+
+	values := uploaderFormSubmissionValues(form)
+
+	var req *http.Request
+
+	if method == http.MethodPost {
+		req, err = http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			formURL,
+			strings.NewReader(values.Encode()),
+		)
+		if err != nil {
+			return nil, errors.New("ダウンロード要求を作成できませんでした")
+		}
+
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	} else {
+		parsed, err := url.Parse(formURL)
+		if err != nil {
+			return nil, errors.New("フォームの送信先URLが不正です")
+		}
+
+		query := parsed.Query()
+		for key, fieldValues := range values {
+			for _, value := range fieldValues {
+				query.Add(key, value)
+			}
+		}
+
+		parsed.RawQuery = query.Encode()
+
+		req, err = http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			parsed.String(),
+			nil,
+		)
+		if err != nil {
+			return nil, errors.New("ダウンロード要求を作成できませんでした")
+		}
+	}
+
+	req.Header.Set(
+		"User-Agent",
+		"uploader-jp-archive/1.0 (preservation request)",
+	)
+	req.Header.Set(
+		"Accept",
+		"text/html,application/octet-stream,*/*;q=0.8",
+	)
+
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
+
+	if beforeRequest != nil {
+		if err := beforeRequest(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	return client.Do(req)
 }
