@@ -663,6 +663,19 @@ func copyLocalFile(sourcePath, targetPath string) error {
 	return nil
 }
 
+type retryRejection struct {
+	reason string
+}
+
+func (e *retryRejection) Error() string {
+	return e.reason
+}
+
+func isRetryRejection(err error) bool {
+	var rejection *retryRejection
+	return errors.As(err, &rejection)
+}
+
 func (s *Server) retryAll(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -693,21 +706,22 @@ func (s *Server) retryAll(c *gin.Context) {
 
 	for _, task := range tasks {
 		if err := s.retryFailedTask(ctx, task.ID, actor); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if isRetryRejection(err) {
 				skipped++
 				results = append(results, gin.H{
 					"task_id": task.ID,
 					"status":  "skipped",
-					"reason":  "task or related file no longer exists",
+					"reason":  err.Error(),
 				})
 				continue
 			}
 
-			skipped++
+			s.logger.Error("task_retry_failed", "task_id", task.ID, "error", err)
+			failed++
 			results = append(results, gin.H{
 				"task_id": task.ID,
-				"status":  "skipped",
-				"reason":  err.Error(),
+				"status":  "failed",
+				"reason":  "could not retry task",
 			})
 			continue
 		}
@@ -735,9 +749,9 @@ func (s *Server) retryFailedTask(
 ) error {
 	now := time.Now().UTC()
 
-	var errTaskNotRetryable = errors.New("task is no longer failed or cannot be retried")
-	var errActiveTaskExists = errors.New("another active task already exists for this file object")
-	var errNoAlternativeNode = errors.New("no online storage node available")
+	var errTaskNotRetryable = &retryRejection{reason: "task is no longer failed or cannot be retried"}
+	var errActiveTaskExists = &retryRejection{reason: "another active task already exists for this file object"}
+	var errNoAlternativeNode = &retryRejection{reason: "no online storage node available"}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task model.Task
@@ -762,11 +776,11 @@ func (s *Server) retryFailedTask(
 		}
 
 		if file.PreservationStatus == "verified" {
-			return errors.New("file object is already verified")
+			return &retryRejection{reason: "file object is already verified"}
 		}
 
 		if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-			return errors.New("redistribution policy is unconfirmed")
+			return &retryRejection{reason: "redistribution policy is unconfirmed"}
 		}
 
 		// 同じファイルに対する別の実行中・待機中タスクを確認する。
@@ -788,7 +802,7 @@ func (s *Server) retryFailedTask(
 		// source_fetch の再試行
 		if task.TaskType == "source_fetch" {
 			if file.SourceURL == nil || strings.TrimSpace(*file.SourceURL) == "" {
-				return errors.New("source-fetch task has no source URL")
+				return &retryRejection{reason: "source-fetch task has no source URL"}
 			}
 
 			// 未割り当てに戻し、claimNodeTaskで取得ノードを決定する。
@@ -840,18 +854,18 @@ func (s *Server) retryFailedTask(
 		}
 
 		if file.SHA256 == nil || len(*file.SHA256) != 64 {
-			return errors.New("file has no valid expected SHA-256")
+			return &retryRejection{reason: "file has no valid expected SHA-256"}
 		}
 
 		stagingPath := filepath.Join(s.cfg.StagingDir, task.ID)
 
 		gotSHA, gotSize, err := hashStagedFile(stagingPath)
 		if err != nil {
-			return errors.New("staged source is missing or unreadable")
+			return &retryRejection{reason: "staged source is missing or unreadable"}
 		}
 
 		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
-			return errors.New("staged source failed integrity verification")
+			return &retryRejection{reason: "staged source failed integrity verification"}
 		}
 
 		// 保存先ノードを選択する。
@@ -907,7 +921,7 @@ func (s *Server) retryFailedTask(
 			return placementErr
 		} else {
 			if placement.Status == "verified" {
-				return errors.New("target node already has a verified placement")
+				return &retryRejection{reason: "target node already has a verified placement"}
 			}
 
 			if err := tx.Model(&model.Placement{}).
@@ -993,7 +1007,15 @@ func (s *Server) retryTask(c *gin.Context) {
 	actor, _ := currentUser(c)
 
 	if err := s.retryFailedTask(c.Request.Context(), taskID, actor); err != nil {
-		// エラーに応じたHTTPレスポンス
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "task or related file not found"})
+		case isRetryRejection(err):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		default:
+			s.logger.Error("task_retry_failed", "task_id", taskID, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retry task"})
+		}
 		return
 	}
 
