@@ -1,9 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -91,7 +96,7 @@ func retryFixture(t *testing.T, db *gorm.DB) (*Server, model.FileObject, model.N
 		t.Fatal(err)
 	}
 	retryExec(t, db, "INSERT INTO placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, ?, 'error')", file.ID, node.ID, "objects/"+file.ID+"/"+task.ID)
-	s := &Server{db: db, cfg: config.Config{StagingDir: t.TempDir()}}
+	s := &Server{db: db, cfg: config.Config{StagingDir: t.TempDir()}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if err := os.WriteFile(filepath.Join(s.cfg.StagingDir, task.ID), content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -250,4 +255,127 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			t.Fatalf("active tasks = %d, want 1", active)
 		}
 	})
+}
+
+func TestRetryErrorHandlingIntegration(t *testing.T) {
+	const internalDetail = "synthetic database failure with private details"
+
+	t.Run("single retry", func(t *testing.T) {
+		for _, scenario := range []struct {
+			name   string
+			status int
+			reason string
+		}{
+			{"missing task", http.StatusNotFound, "task or related file not found"},
+			{"missing file", http.StatusNotFound, "task or related file not found"},
+			{"rejected", http.StatusConflict, "file object is already verified"},
+			{"internal error", http.StatusInternalServerError, "could not retry task"},
+		} {
+			t.Run(scenario.name, func(t *testing.T) {
+				db := retryTestDB(t)
+				s, file, _, task := retryFixture(t, db)
+				var logs bytes.Buffer
+				s.logger = slog.New(slog.NewTextHandler(&logs, nil))
+				switch scenario.name {
+				case "missing task":
+					task.ID = uuid.NewString()
+				case "missing file":
+					retryExec(t, db, "DELETE FROM file_objects WHERE id = ?", file.ID)
+				case "rejected":
+					retryExec(t, db, "UPDATE file_objects SET preservation_status = 'verified' WHERE id = ?", file.ID)
+				case "internal error":
+					prepareSourceFetchRetry(t, db, file, task)
+					injectRetryAuditError(t, db, task.ID, internalDetail)
+				}
+				response := retryRequest(s, task.ID)
+				var body struct {
+					Error string `json:"error"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if response.Code != scenario.status || body.Error != scenario.reason {
+					t.Fatalf("response = %d %q, want %d %q", response.Code, body.Error, scenario.status, scenario.reason)
+				}
+				if scenario.name == "internal error" && (!strings.Contains(logs.String(), internalDetail) || strings.Contains(response.Body.String(), internalDetail)) {
+					t.Fatalf("internal failure must be logged without leaking into response: log=%q body=%q", logs.String(), response.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("bulk retry", func(t *testing.T) {
+		db := retryTestDB(t)
+		s, file, _, queued := retryFixture(t, db)
+		prepareSourceFetchRetry(t, db, file, queued)
+		_, rejectedFile, _, rejected := retryFixture(t, db)
+		retryExec(t, db, "UPDATE file_objects SET preservation_status = 'verified' WHERE id = ?", rejectedFile.ID)
+		_, failedFile, _, failed := retryFixture(t, db)
+		prepareSourceFetchRetry(t, db, failedFile, failed)
+		injectRetryAuditError(t, db, failed.ID, internalDetail)
+		_, missingFile, _, missing := retryFixture(t, db)
+		retryExec(t, db, "DELETE FROM file_objects WHERE id = ?", missingFile.ID)
+
+		var logs bytes.Buffer
+		s.logger = slog.New(slog.NewTextHandler(&logs, nil))
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Request = httptest.NewRequest(http.MethodPost, "/tasks/retry-all", nil)
+		c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+		s.retryAll(c)
+		var body struct {
+			Total     int `json:"total"`
+			Succeeded int `json:"succeeded"`
+			Failed    int `json:"failed"`
+			Skipped   int `json:"skipped"`
+			Results   []struct {
+				TaskID string `json:"task_id"`
+				Status string `json:"status"`
+				Reason string `json:"reason"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusAccepted || body.Total != 4 || body.Succeeded != 1 || body.Skipped != 1 || body.Failed != 2 || len(body.Results) != 4 {
+			t.Fatalf("unexpected bulk response: %d %s", response.Code, response.Body.String())
+		}
+		want := map[string][2]string{
+			queued.ID:   {"queued", ""},
+			rejected.ID: {"skipped", "file object is already verified"},
+			failed.ID:   {"failed", "could not retry task"},
+			missing.ID:  {"failed", "could not retry task"},
+		}
+		for _, result := range body.Results {
+			if expected, ok := want[result.TaskID]; !ok || result.Status != expected[0] || result.Reason != expected[1] {
+				t.Errorf("unexpected bulk result: %+v", result)
+			} else {
+				delete(want, result.TaskID)
+			}
+		}
+		if len(want) != 0 || !strings.Contains(logs.String(), internalDetail) || strings.Contains(response.Body.String(), internalDetail) {
+			t.Fatalf("missing results or internal error not safely logged: missing=%v log=%q body=%q", want, logs.String(), response.Body.String())
+		}
+		var rolledBack model.Task
+		if err := db.First(&rolledBack, "id = ?", failed.ID).Error; err != nil || rolledBack.Status != "failed" {
+			t.Fatalf("failed retry must roll back: task=%+v err=%v", rolledBack, err)
+		}
+	})
+}
+
+func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.FileObject, task model.Task) {
+	t.Helper()
+	retryExec(t, db, "UPDATE file_objects SET source_url = ? WHERE id = ?", "https://example.invalid/file", file.ID)
+	retryExec(t, db, "UPDATE tasks SET task_type = 'source_fetch' WHERE id = ?", task.ID)
+}
+
+func injectRetryAuditError(t *testing.T, db *gorm.DB, taskID, detail string) {
+	t.Helper()
+	if err := db.Callback().Create().Before("gorm:create").Register("retry_test_audit_error", func(tx *gorm.DB) {
+		if audit, ok := tx.Statement.Dest.(*model.AuditLog); ok && audit.TargetID != nil && *audit.TargetID == taskID {
+			tx.AddError(errors.New(detail))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
 }

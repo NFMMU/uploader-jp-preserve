@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -662,201 +663,133 @@ func copyLocalFile(sourcePath, targetPath string) error {
 	return nil
 }
 
-func (s *Server) retryTask(c *gin.Context) {
-	taskID := c.Param("id")
-	if _, err := uuid.Parse(taskID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+type retryRejection struct {
+	reason string
+}
+
+func (e *retryRejection) Error() string {
+	return e.reason
+}
+
+func isRetryRejection(err error) bool {
+	var rejection *retryRejection
+	return errors.As(err, &rejection)
+}
+
+func (s *Server) retryAll(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	actor, ok := currentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized",
+		})
 		return
 	}
 
-	var task model.Task
-	if err := s.db.WithContext(c.Request.Context()).First(&task, "id = ?", taskID).Error; err != nil {
-		notFoundOrError(c, err, "task")
-		return
-	}
-	if task.Status != "failed" {
-		c.JSON(http.StatusConflict, gin.H{"error": "only failed tasks can be retried"})
-		return
-	}
-	if (task.TaskType != "store" && task.TaskType != "source_fetch") || task.TargetNodeID == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "only failed source-fetch or storage tasks with a target node can be retried"})
+	var tasks []model.Task
+	if err := s.db.WithContext(ctx).
+		Where("status = ?", "failed").
+		Order("created_at ASC").
+		Find(&tasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "could not load failed tasks",
+		})
 		return
 	}
 
-	var file model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
-		return
-	}
-	if file.PreservationStatus == "verified" {
-		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; this failed historical task will not be retried"})
-		return
-	}
-	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before retrying preservation"})
-		return
-	}
-	if task.TaskType == "source_fetch" {
-		if file.SourceURL == nil || strings.TrimSpace(*file.SourceURL) == "" {
-			c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task has no source URL; start preservation again from the file or request"})
-			return
-		}
-		var node model.Node
-		if err := s.db.WithContext(c.Request.Context()).Where("status = 'online' AND agent_version LIKE '0.5.%'").Order("random()").First(&node).Error; err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "no online source-fetch-capable agent is available; rebuild and restart the node agents"})
-			return
-		}
-		now := time.Now().UTC()
-		if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(&model.Task{}).Where("id = ? AND status = 'failed' AND task_type = 'source_fetch'", task.ID).Updates(map[string]any{"status": "queued", "target_node_id": node.ID, "attempt_count": 0, "last_error": nil, "lease_token": nil, "lease_until": nil, "updated_at": now}).Error; err != nil {
-				return err
+	results := make([]gin.H, 0, len(tasks))
+
+	succeeded := 0
+	failed := 0
+	skipped := 0
+
+	for _, task := range tasks {
+		if err := s.retryFailedTask(ctx, task.ID, actor); err != nil {
+			if isRetryRejection(err) {
+				skipped++
+				results = append(results, gin.H{
+					"task_id": task.ID,
+					"status":  "skipped",
+					"reason":  err.Error(),
+				})
+				continue
 			}
-			return tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error
-		}); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not requeue source-fetch task"})
-			return
+
+			s.logger.Error("task_retry_failed", "task_id", task.ID, "error", err)
+			failed++
+			results = append(results, gin.H{
+				"task_id": task.ID,
+				"status":  "failed",
+				"reason":  "could not retry task",
+			})
+			continue
 		}
-		actor, _ := currentUser(c)
-		s.audit(c, &actor, "task", task.ID, "task.source_fetch.retry", "success", stringPtr("agent="+node.Name))
-		c.JSON(http.StatusAccepted, gin.H{"task_id": task.ID, "task_type": task.TaskType, "status": "queued", "node_id": node.ID, "node_name": node.Name})
-		return
-	}
-	if file.SHA256 == nil || len(*file.SHA256) != 64 {
-		c.JSON(http.StatusConflict, gin.H{"error": "file has no valid expected SHA-256; ingest it again before retrying"})
-		return
+
+		succeeded++
+		results = append(results, gin.H{
+			"task_id": task.ID,
+			"status":  "queued",
+		})
 	}
 
-	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
-		return
-	}
-	stagingPath := filepath.Join(s.cfg.StagingDir, task.ID)
-	replacementProvided := false
-	if strings.HasPrefix(strings.ToLower(c.GetHeader("Content-Type")), "multipart/form-data") {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxIngestBytes+(1<<20))
-		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart retry upload; upload limit is 5 GiB"})
-			return
-		}
-		if c.Request.MultipartForm != nil {
-			defer c.Request.MultipartForm.RemoveAll()
-		}
-		fh, err := c.FormFile("file")
-		if err == nil {
-			replacementProvided = true
-			if fh.Size < 0 || fh.Size > maxIngestBytes {
-				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file exceeds the 5 GiB MVP upload limit"})
-				return
-			}
-			if fh.Size != file.SizeBytes {
-				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("replacement size mismatch: expected %d bytes, received %d", file.SizeBytes, fh.Size)})
-				return
-			}
-			source, err := fh.Open()
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "could not open replacement file"})
-				return
-			}
-			tmp, err := os.CreateTemp(s.cfg.StagingDir, ".retry-upload-*")
-			if err != nil {
-				_ = source.Close()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create retry staging file"})
-				return
-			}
-			tmpName := tmp.Name()
-			cleanupTmp := func() { _ = os.Remove(tmpName) }
-			hasher := sha256.New()
-			written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(source, maxIngestBytes+1))
-			_ = source.Close()
-			if copyErr != nil || written != fh.Size || written > maxIngestBytes {
-				_ = tmp.Close()
-				cleanupTmp()
-				c.JSON(http.StatusBadRequest, gin.H{"error": "replacement file could not be read completely"})
-				return
-			}
-			if err := tmp.Sync(); err != nil {
-				_ = tmp.Close()
-				cleanupTmp()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not sync retry staging file"})
-				return
-			}
-			if err := tmp.Close(); err != nil {
-				cleanupTmp()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not close retry staging file"})
-				return
-			}
-			gotSHA := hex.EncodeToString(hasher.Sum(nil))
-			if !strings.EqualFold(gotSHA, *file.SHA256) {
-				cleanupTmp()
-				c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("replacement SHA-256 mismatch: expected %s, received %s", *file.SHA256, gotSHA)})
-				return
-			}
-			if err := os.Rename(tmpName, stagingPath); err != nil {
-				cleanupTmp()
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not replace staged retry content"})
-				return
-			}
-		} else if !errors.Is(err, http.ErrMissingFile) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "multipart retry upload must use the optional 'file' field"})
-			return
-		}
-	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"total":     len(tasks),
+		"succeeded": succeeded,
+		"failed":    failed,
+		"skipped":   skipped,
+		"results":   results,
+	})
+}
 
-	if !replacementProvided {
-		gotSHA, gotSize, err := hashStagedFile(stagingPath)
-		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "staged source is missing or unreadable; retry with a replacement multipart file"})
-			return
-		}
-		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
-			c.JSON(http.StatusConflict, gin.H{"error": "staged source failed integrity verification; retry with a correct replacement multipart file"})
-			return
-		}
-	}
-
-	actor, _ := currentUser(c)
+func (s *Server) retryFailedTask(
+	ctx context.Context,
+	taskID string,
+	actor model.User,
+) error {
 	now := time.Now().UTC()
 
-	var targetNode model.Node
-	var errNoAlternativeNode = errors.New("no alternative online storage node available")
-	var errTaskNotRetryable = errors.New("task is no longer failed and cannot be retried")
-	var errActiveTaskExists = errors.New("another active task already exists for this file object")
+	var errTaskNotRetryable = &retryRejection{reason: "task is no longer failed or cannot be retried"}
+	var errActiveTaskExists = &retryRejection{reason: "another active task already exists for this file object"}
+	var errNoAlternativeNode = &retryRejection{reason: "no online storage node available"}
 
-	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var locked model.Task
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task model.Task
 
-		if err := tx.Raw(`
-		SELECT id, task_type, file_object_id, target_node_id,
-		       status, priority, attempt_count, last_error,
-		       created_at, updated_at
-		FROM tasks
-		WHERE id = ?
-		FOR UPDATE
-	`, task.ID).Scan(&locked).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&task, "id = ?", taskID).Error; err != nil {
 			return err
 		}
 
-		if locked.ID == "" ||
-			locked.Status != "failed" ||
-			locked.TaskType != "store" ||
-			locked.TargetNodeID == nil {
+		if task.Status != "failed" {
 			return errTaskNotRetryable
 		}
 
-		// 同じファイルの再試行を直列化してから、実行中のタスクを確認する。
-		var lockedFile model.FileObject
+		if task.TaskType != "store" && task.TaskType != "source_fetch" {
+			return errTaskNotRetryable
+		}
+
+		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&lockedFile, "id = ?", locked.FileObjectID).Error; err != nil {
+			First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 			return err
 		}
 
-		// 同じファイルに対する別の実行中・待機中タスクがないことを確認する。
+		if file.PreservationStatus == "verified" {
+			return &retryRejection{reason: "file object is already verified"}
+		}
+
+		if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
+			return &retryRejection{reason: "redistribution policy is unconfirmed"}
+		}
+
+		// 同じファイルに対する別の実行中・待機中タスクを確認する。
 		var activeCount int64
 		if err := tx.Model(&model.Task{}).
 			Where(
 				"file_object_id = ? AND id <> ? AND status IN ('queued', 'running')",
-				locked.FileObjectID,
-				locked.ID,
+				file.ID,
+				task.ID,
 			).
 			Count(&activeCount).Error; err != nil {
 			return err
@@ -866,24 +799,94 @@ func (s *Server) retryTask(c *gin.Context) {
 			return errActiveTaskExists
 		}
 
-		// 別のオンラインノードを優先し、候補がなければ元の保存先を再利用する。
-		// すでに検証済みのコピーが存在するノードは候補から除外する。
+		// source_fetch の再試行
+		if task.TaskType == "source_fetch" {
+			if file.SourceURL == nil || strings.TrimSpace(*file.SourceURL) == "" {
+				return &retryRejection{reason: "source-fetch task has no source URL"}
+			}
+
+			// 未割り当てに戻し、claimNodeTaskで取得ノードを決定する。
+			result := tx.Model(&model.Task{}).
+				Where("id = ? AND status = 'failed'", task.ID).
+				Updates(map[string]any{
+					"status":         "queued",
+					"target_node_id": nil,
+					"attempt_count":  0,
+					"last_error":     nil,
+					"lease_token":    nil,
+					"lease_until":    nil,
+					"updated_at":     now,
+				})
+
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errTaskNotRetryable
+			}
+
+			if err := tx.Model(&model.FileObject{}).
+				Where("id = ?", file.ID).
+				Update("preservation_status", "queued").Error; err != nil {
+				return err
+			}
+
+			reason := "Administrator retried failed source-fetch task; target node cleared for automatic assignment"
+
+			if err := tx.Create(&model.AuditLog{
+				ActorID:    &actor.ID,
+				ActorLabel: actor.Email,
+				TargetType: "task",
+				TargetID:   &task.ID,
+				Action:     "task.source_fetch.retry",
+				Result:     "success",
+				Reason:     &reason,
+			}).Error; err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		// store の再試行
+		if task.TargetNodeID == nil {
+			return errTaskNotRetryable
+		}
+
+		if file.SHA256 == nil || len(*file.SHA256) != 64 {
+			return &retryRejection{reason: "file has no valid expected SHA-256"}
+		}
+
+		stagingPath := filepath.Join(s.cfg.StagingDir, task.ID)
+
+		gotSHA, gotSize, err := hashStagedFile(stagingPath)
+		if err != nil {
+			return &retryRejection{reason: "staged source is missing or unreadable"}
+		}
+
+		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
+			return &retryRejection{reason: "staged source failed integrity verification"}
+		}
+
+		// 保存先ノードを選択する。
+		// 検証済みコピーがあるノードは候補から除外する。
+		var targetNode model.Node
+
 		if err := tx.Raw(`
-		SELECT n.id, n.name
-		FROM nodes AS n
-		WHERE n.status = 'online'
-		  AND NOT EXISTS (
-		      SELECT 1
-		      FROM placements AS p
-		      WHERE p.node_id = n.id
-		        AND p.file_object_id = ?
-		        AND p.status = 'verified'
-		  )
-		ORDER BY (n.id = ?), random()
-		LIMIT 1
-		FOR UPDATE OF n
-	`, locked.FileObjectID, *locked.TargetNodeID).
-			Scan(&targetNode).Error; err != nil {
+			SELECT n.id, n.name
+			FROM nodes AS n
+			WHERE n.status = 'online'
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM placements AS p
+			      WHERE p.node_id = n.id
+			        AND p.file_object_id = ?
+			        AND p.status = 'verified'
+			  )
+			ORDER BY (n.id = ?), random()
+			LIMIT 1
+			FOR UPDATE OF n
+		`, file.ID, *task.TargetNodeID).Scan(&targetNode).Error; err != nil {
 			return err
 		}
 
@@ -891,22 +894,22 @@ func (s *Server) retryTask(c *gin.Context) {
 			return errNoAlternativeNode
 		}
 
-		// 新しいノードに既存の Placement があるか確認する。
+		// 新しいノードのPlacementを取得する。
 		var placement model.Placement
+
 		placementErr := tx.
 			Where(
 				"file_object_id = ? AND node_id = ?",
-				locked.FileObjectID,
+				file.ID,
 				targetNode.ID,
 			).
 			First(&placement).Error
 
 		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			// 新しいノード用の配置情報を作成する。
 			placement = model.Placement{
-				FileObjectID: locked.FileObjectID,
+				FileObjectID: file.ID,
 				NodeID:       targetNode.ID,
-				StorageKey:   "objects/" + locked.FileObjectID + "/" + locked.ID,
+				StorageKey:   "objects/" + file.ID + "/" + task.ID,
 				SHA256:       file.SHA256,
 				Status:       "queued",
 			}
@@ -917,9 +920,8 @@ func (s *Server) retryTask(c *gin.Context) {
 		} else if placementErr != nil {
 			return placementErr
 		} else {
-			// 念のため、検証済みの配置を上書きしない。
 			if placement.Status == "verified" {
-				return errors.New("target node already has a verified placement")
+				return &retryRejection{reason: "target node already has a verified placement"}
 			}
 
 			if err := tx.Model(&model.Placement{}).
@@ -933,9 +935,9 @@ func (s *Server) retryTask(c *gin.Context) {
 			}
 		}
 
-		// タスクの保存先を新しいノードに変更し、再実行キューに戻す。
+		// タスクを再キューイングする。
 		result := tx.Model(&model.Task{}).
-			Where("id = ? AND status = 'failed'", locked.ID).
+			Where("id = ? AND status = 'failed'", task.ID).
 			Updates(map[string]any{
 				"target_node_id": targetNode.ID,
 				"status":         "queued",
@@ -953,9 +955,9 @@ func (s *Server) retryTask(c *gin.Context) {
 			return errTaskNotRetryable
 		}
 
-		// ファイルの保存状態を更新し、公開ダウンロードを無効にする。
+		// ファイルの保存状態を更新する。
 		if err := tx.Model(&model.FileObject{}).
-			Where("id = ?", locked.FileObjectID).
+			Where("id = ?", file.ID).
 			Updates(map[string]any{
 				"preservation_status":     "queued",
 				"public_download_enabled": false,
@@ -963,24 +965,22 @@ func (s *Server) retryTask(c *gin.Context) {
 			return err
 		}
 
-		// 元の配置が未検証なら、旧ノードの配置をエラー状態にする。
-		// 検証済みの配置は保持する。
-		if targetNode.ID != *locked.TargetNodeID {
+		// 元のPlacementが未検証ならエラー状態にする。
+		if targetNode.ID != *task.TargetNodeID {
 			if err := tx.Model(&model.Placement{}).
 				Where(
 					"file_object_id = ? AND node_id = ? AND status <> 'verified'",
-					locked.FileObjectID,
-					*locked.TargetNodeID,
+					file.ID,
+					*task.TargetNodeID,
 				).
 				Update("status", "error").Error; err != nil {
 				return err
 			}
 		}
 
-		// 再割り当て元と再割り当て先を監査ログに記録する。
 		reason := fmt.Sprintf(
-			"Administrator manually retried failed storage task; reassigned from node %s to node %s; attempt counter reset and up to five attempts allowed",
-			*locked.TargetNodeID,
+			"Administrator retried failed storage task; reassigned from node %s to node %s",
+			*task.TargetNodeID,
 			targetNode.ID,
 		)
 
@@ -988,45 +988,40 @@ func (s *Server) retryTask(c *gin.Context) {
 			ActorID:    &actor.ID,
 			ActorLabel: actor.Email,
 			TargetType: "task",
-			TargetID:   &locked.ID,
+			TargetID:   &task.ID,
 			Action:     "task.retry",
 			Result:     "success",
 			Reason:     &reason,
 		}).Error
 	})
+}
 
-	if err != nil {
+func (s *Server) retryTask(c *gin.Context) {
+	taskID := c.Param("id")
+
+	if _, err := uuid.Parse(taskID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
+		return
+	}
+
+	actor, _ := currentUser(c)
+
+	if err := s.retryFailedTask(c.Request.Context(), taskID, actor); err != nil {
 		switch {
-		case errors.Is(err, errNoAlternativeNode):
-			c.JSON(http.StatusConflict, gin.H{
-				"error": "no alternative online storage node is available",
-			})
-		case errors.Is(err, errTaskNotRetryable),
-			errors.Is(err, errActiveTaskExists):
-			c.JSON(http.StatusConflict, gin.H{
-				"error": err.Error(),
-			})
-		case strings.Contains(err.Error(), "already has a verified placement"):
-			c.JSON(http.StatusConflict, gin.H{
-				"error": "selected node already has a verified placement; retry again",
-			})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "task or related file not found"})
+		case isRetryRejection(err):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "could not queue task retry",
-			})
+			s.logger.Error("task_retry_failed", "task_id", taskID, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not retry task"})
 		}
 		return
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"task_id":         task.ID,
-		"task_type":       task.TaskType,
-		"status":          "queued",
-		"attempt_count":   0,
-		"max_attempts":    maxTaskAttempts,
-		"source_verified": true,
-		"node_id":         targetNode.ID,
-		"node_name":       targetNode.Name,
+		"task_id": taskID,
+		"status":  "queued",
 	})
 }
 

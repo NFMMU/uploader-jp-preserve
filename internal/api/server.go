@@ -86,6 +86,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.PATCH("/admin/node-enrollment-requests/:id", s.requireRoles("admin"), s.reviewNodeEnrollmentRequest)
 	auth.GET("/tasks", s.requireRoles("admin", "reviewer"), s.listTasks)
 	auth.POST("/admin/placements/reconcile", s.requireRoles("admin"), s.reconcileNow)
+	auth.POST("/tasks/retry-all", s.requireRoles("admin"), s.retryAll)
 	auth.POST("/tasks/:id/retry", s.requireRoles("admin"), s.retryTask)
 	auth.PATCH("/files/:id/policy", s.requireRoles("admin", "reviewer"), s.updateFilePolicy)
 	auth.PATCH("/files/:id/publication", s.requireRoles("admin"), s.updatePublicationFlag)

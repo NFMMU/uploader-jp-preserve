@@ -19,4 +19,4 @@ for migration in atlas/migrations/*.sql; do
   test_compose exec -T postgres-test psql -U archive_test -d archive_test -v ON_ERROR_STOP=1 < "$migration"
 done
 
-RUN_SURPLUS_DB_INTEGRATION=1 TEST_DATABASE_URL='postgres://archive_test:archive_test_password@127.0.0.1:55432/archive_test?sslmode=disable' go test ./internal/api -run '^(TestScheduleSurplusPlacementDeletionIntegration|TestReconcileRepairsOfflineReplicaIntegration|TestRetryStoreTaskIntegration)$' -count=1 -v
+RUN_SURPLUS_DB_INTEGRATION=1 TEST_DATABASE_URL='postgres://archive_test:archive_test_password@127.0.0.1:55432/archive_test?sslmode=disable' go test ./internal/api -run '^(TestScheduleSurplusPlacementDeletionIntegration|TestReconcileRepairsOfflineReplicaIntegration|TestRetryStoreTaskIntegration|TestRetryErrorHandlingIntegration)$' -count=1 -v
