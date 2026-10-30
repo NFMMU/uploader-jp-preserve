@@ -8,16 +8,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
-		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer"`
+		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer author"`
+		Email       *string `json:"email" binding:"omitempty,email,max=320"`
 		Disabled    *bool   `json:"disabled"`
 		DisplayName *string `json:"display_name" binding:"omitempty,min=1,max=120"`
-		Reason      string  `json:"reason" binding:"required,min=3,max=2000"`
+		CustomID    *string `json:"custom_id" binding:"omitempty,min=3,max=16"`
+		Reason      *string `json:"reason" binding:"required,min=3,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.Role == nil && req.Disabled == nil && req.DisplayName == nil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one valid change and a reason are required"})
@@ -55,22 +58,27 @@ func (s *Server) updateUser(c *gin.Context) {
 				return errLastActiveAdmin
 			}
 		}
-		updates := map[string]any{"updated_at": time.Now().UTC()}
+		updates := model.MUser{
+			UpdatedAt: time.Now(),
+		}
 		if req.Role != nil {
-			updates["role"] = *req.Role
+			updates.Role = *req.Role
 		}
 		if req.DisplayName != nil {
-			updates["display_name"] = strings.TrimSpace(*req.DisplayName)
+			updates.DisplayName = strings.TrimSpace(*req.DisplayName)
+		}
+		if req.Email != nil {
+			updates.Email = strings.TrimSpace(*req.Email)
 		}
 		if req.Disabled != nil {
 			if *req.Disabled {
 				now := time.Now().UTC()
-				updates["disabled_at"] = &now
+				updates.DisabledAt = &now
 			} else {
-				updates["disabled_at"] = nil
+				updates.DisabledAt = nil
 			}
 		}
-		return tx.Model(&model.MUser{}).Where("id = ?", target.ID).Updates(updates).Error
+		return tx.Where("id = ?", target.ID).Updates(updates).Error
 	})
 	if err != nil {
 		if err == errLastActiveAdmin {
@@ -94,8 +102,67 @@ func (s *Server) updateUser(c *gin.Context) {
 			target.DisabledAt = nil
 		}
 	}
-	s.audit(c, &actor, "user", target.ID, "user.update", "success", &req.Reason)
+	s.audit(c, &actor, "user", target.ID, "user.update", "success", req.Reason)
 	c.JSON(http.StatusOK, gin.H{"id": target.ID, "email": target.Email, "display_name": target.DisplayName, "role": target.Role, "disabled": target.DisabledAt != nil})
 }
 
 var errLastActiveAdmin = errors.New("last active administrator cannot be demoted or disabled")
+
+func (s *Server) createUser(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email" binding:"required,email,max=320"`
+		Password    string `json:"password" binding:"required,min=12,max=1024"`
+		DisplayName string `json:"display_name" binding:"required,min=1,max=120"`
+		CustomID    string `json:"custom_id" binding:"required,min=3,max=16"`
+		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer author"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+		return
+	}
+	actor, _ := currentUser(c)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+		return
+	}
+	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: strings.TrimSpace(req.CustomID), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
+	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
+		return
+	}
+	s.audit(c, &actor, "user", user.ID, "user.create", "success", nil)
+	c.JSON(http.StatusCreated, gin.H{"id": user.ID, "email": user.Email, "display_name": user.DisplayName, "role": user.Role, "created_at": user.CreatedAt})
+}
+
+func (s *Server) listUsers(c *gin.Context) {
+	var users []model.MUser
+	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
+		return
+	}
+	type userView struct {
+		ID          string     `json:"id"`
+		Email       string     `json:"email"`
+		DisplayName string     `json:"display_name"`
+		CustomID    string     `json:"custom_id"`
+		Role        string     `json:"role"`
+		DisabledAt  *time.Time `json:"disabled_at,omitempty"`
+		CreatedAt   time.Time  `json:"created_at"`
+		UpdatedAt   time.Time  `json:"updated_at"`
+	}
+	items := make([]userView, 0, len(users))
+	for _, user := range users {
+		items = append(items, userView{
+			ID:          user.ID,
+			Email:       user.Email,
+			DisplayName: user.DisplayName,
+			CustomID:    user.CustomID,
+			Role:        user.Role,
+			DisabledAt:  user.DisabledAt,
+			CreatedAt:   user.CreatedAt,
+			UpdatedAt:   user.UpdatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
