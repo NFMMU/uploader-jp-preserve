@@ -28,7 +28,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	var target model.User
+	var target model.MUser
 	if err := s.db.WithContext(c.Request.Context()).First(&target, "id = ?", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "user")
 		return
@@ -47,7 +47,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if target.Role == "admin" && (newRole != "admin" || disable) {
-			var activeAdmins []model.User
+			var activeAdmins []model.MUser
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("role = ? AND disabled_at IS NULL", "admin").Order("id").Find(&activeAdmins).Error; err != nil {
 				return err
 			}
@@ -70,7 +70,7 @@ func (s *Server) updateUser(c *gin.Context) {
 				updates["disabled_at"] = nil
 			}
 		}
-		return tx.Model(&model.User{}).Where("id = ?", target.ID).Updates(updates).Error
+		return tx.Model(&model.MUser{}).Where("id = ?", target.ID).Updates(updates).Error
 	})
 	if err != nil {
 		if err == errLastActiveAdmin {

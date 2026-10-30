@@ -177,11 +177,11 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 		return
 	}
 
-	request := model.PublicRequest{
+	request := model.TPublicRequest{
 		RequestType: requestType, Status: "pending", Title: stringPtr(title), CreatorName: trimOptional(&creator), SourceURL: sourceURLPtr,
 		SubmitterName: trimOptional(&name), Contact: trimOptional(&contact), Details: details,
 		RightsHolderContact: trimOptional(&rightsContact), IntakeFilePath: relativePath, IntakeFileName: fileNamePtr,
-		IntakeFileSize: sizePtr, IntakeFileSHA256: shaPtr, IntakeFileUploadedAt: uploadedAt,
+		IntakeFileSize: sizePtr, IntakeFileSha256: shaPtr, IntakeFileUploadedAt: uploadedAt,
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&request).Error; err != nil {
 		if relativePath != "" {
@@ -223,7 +223,7 @@ func valueOrZero(value *int64) int64 {
 }
 
 func (s *Server) downloadPublicRequestIntakeFile(c *gin.Context) {
-	var request model.PublicRequest
+	var request model.TPublicRequest
 	if err := s.db.WithContext(c.Request.Context()).First(&request, "id = ?", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "public request")
 		return
@@ -251,7 +251,7 @@ func (s *Server) downloadPublicRequestIntakeFile(c *gin.Context) {
 // preservation network. It deliberately does not enable public downloads or
 // grant redistribution permission.
 func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
-	var request model.PublicRequest
+	var request model.TPublicRequest
 	if err := s.db.WithContext(c.Request.Context()).First(&request, "id = ?", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "public request")
 		return
@@ -309,7 +309,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		return
 	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
-	if request.IntakeFileSHA256 != nil && !strings.EqualFold(sha, *request.IntakeFileSHA256) {
+	if request.IntakeFileSha256 != nil && !strings.EqualFold(sha, *request.IntakeFileSha256) {
 		_ = tmp.Close()
 		cleanup()
 		c.JSON(http.StatusConflict, gin.H{"error": "添付ファイルのハッシュが申請時の記録と一致しません。"})
@@ -344,8 +344,8 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 			description += "\n正確な元URLは未提供です。"
 		}
 	}
-	artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
-	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, SHA256: &sha, MediaType: stringPtr("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
+	artifact := model.MArtifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
+	file := model.MFileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: stringPtr("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
 	db := s.db.WithContext(c.Request.Context())
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&artifact).Error; err != nil {
@@ -355,7 +355,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		if err := tx.Create(&file).Error; err != nil {
 			return err
 		}
-		result := tx.Model(&model.PublicRequest{}).Where("id = ? AND status = 'accepted' AND artifact_id IS NULL AND file_object_id IS NULL", request.ID).Updates(map[string]any{"artifact_id": artifact.ID, "file_object_id": file.ID, "updated_at": time.Now().UTC()})
+		result := tx.Model(&model.TPublicRequest{}).Where("id = ? AND status = 'accepted' AND artifact_id IS NULL AND file_object_id IS NULL", request.ID).Updates(map[string]any{"artifact_id": artifact.ID, "file_object_id": file.ID, "updated_at": time.Now().UTC()})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -371,8 +371,8 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 	}
 
 	if !s.queueStagedIngest(c, file, tmpName, written, sha, "application/octet-stream", *request.IntakeFileName, 3, fileSourceURL, "", "", "") {
-		_ = db.Model(&model.PublicRequest{}).Where("id = ?", request.ID).Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()}).Error
-		if err := db.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
+		_ = db.Model(&model.TPublicRequest{}).Where("id = ?", request.ID).Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()}).Error
+		if err := db.Delete(&model.MArtifact{}, "id = ?", artifact.ID).Error; err != nil {
 			s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "error", err)
 		}
 		return

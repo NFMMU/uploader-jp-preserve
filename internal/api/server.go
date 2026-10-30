@@ -126,7 +126,7 @@ func (s *Server) login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
 		return
 	}
-	var user model.User
+	var user model.MUser
 	err := s.db.WithContext(c.Request.Context()).Where("email = ?", strings.ToLower(strings.TrimSpace(req.Email))).First(&user).Error
 	if err != nil || user.DisabledAt != nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
@@ -153,7 +153,7 @@ func (s *Server) authenticate() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
-		var user model.User
+		var user model.MUser
 		err = s.db.WithContext(c.Request.Context()).Where("id = ?", claims.UserID).First(&user).Error
 		if err != nil || user.DisabledAt != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account unavailable"})
@@ -205,7 +205,7 @@ func (s *Server) createUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
 		return
 	}
-	user := model.User{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
+	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
 	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
 		return
@@ -215,7 +215,7 @@ func (s *Server) createUser(c *gin.Context) {
 }
 
 func (s *Server) listUsers(c *gin.Context) {
-	var users []model.User
+	var users []model.MUser
 	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
 		return

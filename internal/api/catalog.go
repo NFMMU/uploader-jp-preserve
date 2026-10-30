@@ -33,7 +33,7 @@ func isUnconfirmedRedistributionPolicy(policy string) bool {
 
 func (s *Server) listArtifacts(c *gin.Context) {
 	page, limit, isAll := pagination(c)
-	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
+	query := s.db.WithContext(c.Request.Context()).Model(&model.MArtifact{})
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where("title ILIKE ? OR creator_name ILIKE ? OR source_url ILIKE ?", pattern, pattern, pattern)
@@ -43,7 +43,7 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
 		return
 	}
-	var artifacts []model.Artifact
+	var artifacts []model.MArtifact
 	artifactQuery := query.Order("created_at DESC")
 	if !isAll {
 		artifactQuery = artifactQuery.Offset((page - 1) * limit).Limit(limit)
@@ -71,7 +71,7 @@ func (s *Server) createArtifact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 		return
 	}
-	artifact := model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
+	artifact := model.MArtifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
 	if err := s.db.WithContext(c.Request.Context()).Create(&artifact).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
 		return
@@ -82,13 +82,13 @@ func (s *Server) createArtifact(c *gin.Context) {
 }
 
 func (s *Server) getArtifact(c *gin.Context) {
-	var artifact model.Artifact
+	var artifact model.MArtifact
 	err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error
 	if err != nil {
 		notFoundOrError(c, err, "artifact")
 		return
 	}
-	var files []model.FileObject
+	var files []model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND deleted_at IS NULL", artifact.ID).Order("created_at DESC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
 		return
@@ -100,7 +100,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 	var req struct {
 		OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
 		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
-		SHA256               *string `json:"sha256" binding:"omitempty,len=64"`
+		Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
 		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
 		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
 		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
@@ -110,7 +110,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file object payload"})
 		return
 	}
-	var artifact model.Artifact
+	var artifact model.MArtifact
 	if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "artifact")
 		return
@@ -131,24 +131,24 @@ func (s *Server) createFileObject(c *gin.Context) {
 		}
 		req.SourceURL = &validated
 	}
-	if req.SHA256 != nil {
-		value := strings.ToLower(strings.TrimSpace(*req.SHA256))
+	if req.Sha256 != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.Sha256))
 		if !isHexDigest(value) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "sha256 must be 64 hexadecimal characters"})
 			return
 		}
-		req.SHA256 = &value
+		req.Sha256 = &value
 	}
 	if req.Representative != nil {
-		var reviewer model.User
+		var reviewer model.MUser
 		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
 			return
 		}
 	}
-	file := model.FileObject{
+	file := model.MFileObject{
 		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
-		SHA256: req.SHA256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
+		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
 		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
@@ -161,7 +161,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 }
 
 type fileListItem struct {
-	model.FileObject
+	model.MFileObject
 	ArtifactTitle       string  `json:"artifact_title"`
 	ArtifactSourceURL   string  `json:"artifact_source_url"`
 	CreatorName         *string `json:"creator_name,omitempty"`
@@ -171,7 +171,7 @@ type fileListItem struct {
 func (s *Server) listFiles(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 	db := s.db.WithContext(c.Request.Context())
-	query := db.Model(&model.FileObject{})
+	query := db.Model(&model.MFileObject{})
 	if c.Query("include_deleted") != "true" {
 		query = query.Where("deleted_at IS NULL")
 	}
@@ -237,7 +237,7 @@ func (s *Server) listFiles(c *gin.Context) {
 		return
 	}
 	// ファイル取得
-	var files []model.FileObject
+	var files []model.MFileObject
 	fileQuery := query.Order("created_at DESC")
 	if !isAll {
 		fileQuery = fileQuery.Offset((page - 1) * limit).Limit(limit)
@@ -254,12 +254,12 @@ func (s *Server) listFiles(c *gin.Context) {
 			artifactIDs = append(artifactIDs, file.ArtifactID)
 		}
 	}
-	artifacts := map[string]model.Artifact{}
+	artifacts := map[string]model.MArtifact{}
 	// Bound the number of parameters even when all files are requested.
 	const artifactBatchSize = 1000
 	for start := 0; start < len(artifactIDs); start += artifactBatchSize {
 		end := min(start+artifactBatchSize, len(artifactIDs))
-		var records []model.Artifact
+		var records []model.MArtifact
 		if err := db.Where("id IN ?", artifactIDs[start:end]).Find(&records).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file metadata"})
 			return
@@ -271,18 +271,18 @@ func (s *Server) listFiles(c *gin.Context) {
 	items := make([]fileListItem, 0, len(files))
 	for _, file := range files {
 		artifact := artifacts[file.ArtifactID]
-		items = append(items, fileListItem{FileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
+		items = append(items, fileListItem{MFileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
 }
 
 func (s *Server) getFileObject(c *gin.Context) {
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
-	var policies []model.Policy
+	var policies []model.TPolicy
 	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load policy history"})
 		return
@@ -302,14 +302,14 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid redistribution_policy and reason are required"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
 	actor, _ := currentUser(c)
 	if req.Representative != nil {
-		var reviewer model.User
+		var reviewer model.MUser
 		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
 			return
@@ -341,10 +341,10 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 			// Fail closed immediately when a policy is no longer explicitly allowed.
 			updates["public_download_enabled"] = false
 		}
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
+		if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
 			return err
 		}
-		record := model.Policy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, EvidenceURL: evidenceURL, EvidenceNote: trimOptional(req.EvidenceNote), CheckedAt: checkedAtPtr, CheckedBy: checkedBy}
+		record := model.TPolicy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, EvidenceURL: evidenceURL, EvidenceNote: trimOptional(req.EvidenceNote), CheckedAt: checkedAtPtr, CheckedBy: checkedBy}
 		return tx.Create(&record).Error
 	})
 	if err != nil {
@@ -371,13 +371,13 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled and reason are required"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
 	if *req.Enabled {
-		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.SHA256 == nil || !isHexDigest(*file.SHA256) {
+		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
 			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless policy is allowed, preservation is verified, and a valid SHA-256 is recorded"})
 			return
 		}
@@ -393,7 +393,7 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		}
 	}
 	actor, _ := currentUser(c)
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update publication flag"})
 		return
 	}
@@ -404,12 +404,12 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 
 func (s *Server) exportCatalog(c *gin.Context) {
 	format := strings.ToLower(c.DefaultQuery("format", "json"))
-	var artifacts []model.Artifact
+	var artifacts []model.MArtifact
 	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
 		return
 	}
-	var files []model.FileObject
+	var files []model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).Where("deleted_at IS NULL").Order("created_at ASC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
 		return
@@ -432,7 +432,7 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		_ = writer.Write([]string{"artifact", a.ID, "", csvSafe(a.Title), csvSafe(deref(a.CreatorName)), csvSafe(a.SourceURL), "", "", "", "", "", "", a.CreatedAt.UTC().Format(time.RFC3339)})
 	}
 	for _, f := range files {
-		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.SHA256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
+		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.Sha256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
 	}
 	writer.Flush()
 }

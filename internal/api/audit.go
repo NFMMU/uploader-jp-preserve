@@ -8,12 +8,12 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
-func (s *Server) audit(c *gin.Context, actor *model.User, targetType, targetID, action, result string, reason *string) {
+func (s *Server) audit(c *gin.Context, actor *model.MUser, targetType, targetID, action, result string, reason *string) {
 	ctx := context.Background()
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
 	}
-	entry := model.AuditLog{ActorLabel: "anonymous", TargetType: targetType, TargetID: &targetID, Action: action, Result: result, Reason: trimOptional(reason)}
+	entry := model.TAuditLog{ActorLabel: "anonymous", TargetType: targetType, TargetID: &targetID, Action: action, Result: result, Reason: trimOptional(reason)}
 	if actor != nil {
 		entry.ActorID = &actor.ID
 		entry.ActorLabel = actor.Email

@@ -37,7 +37,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		return
 	}
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
-	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{}).Where(`EXISTS (
+	query := s.db.WithContext(c.Request.Context()).Model(&model.MArtifact{}).Where(`EXISTS (
 		SELECT 1 FROM file_objects f
 		WHERE f.artifact_id = artifacts.id
 		  AND f.deleted_at IS NULL
@@ -77,7 +77,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
 		return
 	}
-	var artifacts []model.Artifact
+	var artifacts []model.MArtifact
 	artifactQuery := query.Order("artifacts.title ASC").Offset((page - 1) * limit).Limit(limit)
 	if err := artifactQuery.Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
@@ -123,7 +123,7 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 		}
 	}
 
-	var artifact model.Artifact
+	var artifact model.MArtifact
 	if err := s.db.WithContext(c.Request.Context()).First(
 		&artifact, "id = ?", c.Param("id"),
 	).Error; err != nil {
@@ -176,7 +176,7 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 
 func (s *Server) publicCatalogFilesAll(c *gin.Context, artifactID string) ([]publicCatalogFile, error) {
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
-	var files []model.FileObject
+	var files []model.MFileObject
 	err := s.db.WithContext(c.Request.Context()).Raw(`
 		SELECT DISTINCT f.*
 		FROM file_objects f
@@ -211,7 +211,7 @@ func (s *Server) publicCatalogFiles(
 ) ([]publicCatalogFile, error) {
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
 
-	var files []model.FileObject
+	var files []model.MFileObject
 	err := s.db.WithContext(c.Request.Context()).Raw(`
 		SELECT DISTINCT f.*
 		FROM file_objects f

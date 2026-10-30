@@ -8,12 +8,12 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
-func currentUser(c *gin.Context) (model.User, bool) {
+func currentUser(c *gin.Context) (model.MUser, bool) {
 	value, ok := c.Get("currentUser")
 	if !ok {
-		return model.User{}, false
+		return model.MUser{}, false
 	}
-	user, ok := value.(model.User)
+	user, ok := value.(model.MUser)
 	return user, ok
 }
 

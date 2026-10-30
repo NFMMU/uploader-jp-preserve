@@ -75,23 +75,23 @@ func retryExec(t *testing.T, db *gorm.DB, query string, args ...any) {
 	}
 }
 
-func retryFixture(t *testing.T, db *gorm.DB) (*Server, model.FileObject, model.Node, model.Task) {
+func retryFixture(t *testing.T, db *gorm.DB) (*Server, model.MFileObject, model.MNode, model.TTask) {
 	t.Helper()
 	content := []byte("synthetic retry content")
 	digest := fmt.Sprintf("%x", sha256.Sum256(content))
-	artifact := model.Artifact{Title: "retry test", SourceURL: "https://example.invalid/retry"}
+	artifact := model.MArtifact{Title: "retry test", SourceURL: "https://example.invalid/retry"}
 	if err := db.Create(&artifact).Error; err != nil {
 		t.Fatal(err)
 	}
-	file := model.FileObject{ArtifactID: artifact.ID, OriginalFilename: "retry.bin", SizeBytes: int64(len(content)), SHA256: &digest, PreservationStatus: "error", RedistributionPolicy: "allowed", PublicDownloadEnabled: true}
-	node := model.Node{Name: "original", NodeType: "A", Status: "online"}
+	file := model.MFileObject{ArtifactID: artifact.ID, OriginalFilename: "retry.bin", SizeBytes: int64(len(content)), Sha256: &digest, PreservationStatus: "error", RedistributionPolicy: "allowed", PublicDownloadEnabled: true}
+	node := model.MNode{Name: "original", NodeType: "A", Status: "online"}
 	for _, record := range []any{&file, &node} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	lastError := "previous failure"
-	task := model.Task{TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "failed", AttemptCount: 5, LastError: &lastError}
+	task := model.TTask{TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "failed", AttemptCount: 5, LastError: &lastError}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func retryRequest(s *Server, taskID string) *httptest.ResponseRecorder {
 	defer cancel()
 	c.Request = httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/retry", nil).WithContext(ctx)
 	c.Params = gin.Params{{Key: "id", Value: taskID}}
-	c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+	c.Set("currentUser", model.MUser{ID: uuid.NewString(), Email: "admin@example.invalid"})
 	s.retryTask(c)
 	return response
 }
@@ -122,9 +122,9 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			s, file, original, task := retryFixture(t, db)
 			wantNode := original.ID
 			wantOriginalStatus := "queued"
-			var alternative model.Node
+			var alternative model.MNode
 			if alternativeStatus != "absent" {
-				alternative = model.Node{Name: "alternative", NodeType: "B", Status: "online"}
+				alternative = model.MNode{Name: "alternative", NodeType: "B", Status: "online"}
 				if alternativeStatus == "offline" {
 					alternative.Status = "offline"
 				}
@@ -142,14 +142,14 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			if response.Code != http.StatusAccepted {
 				t.Fatalf("retry status = %d: %s", response.Code, response.Body)
 			}
-			var retried model.Task
+			var retried model.TTask
 			if err := db.First(&retried, "id = ?", task.ID).Error; err != nil {
 				t.Fatal(err)
 			}
 			if retried.Status != "queued" || retried.TargetNodeID == nil || *retried.TargetNodeID != wantNode || retried.AttemptCount != 0 || retried.LastError != nil {
 				t.Fatalf("unexpected retried task: %+v; want target %s", retried, wantNode)
 			}
-			var placements []model.Placement
+			var placements []model.TPlacement
 			if err := db.Find(&placements).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +195,7 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(s.cfg.StagingDir, second.ID), content, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		alternative := model.Node{Name: "alternative", NodeType: "B", Status: "online"}
+		alternative := model.MNode{Name: "alternative", NodeType: "B", Status: "online"}
 		if err := db.Create(&alternative).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +248,7 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			t.Fatalf("retry response statuses = %v, want one accepted and one conflict", statuses)
 		}
 		var active int64
-		if err := db.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&active).Error; err != nil {
+		if err := db.Model(&model.TTask{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&active).Error; err != nil {
 			t.Fatal(err)
 		}
 		if active != 1 {
@@ -321,7 +321,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 		response := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(response)
 		c.Request = httptest.NewRequest(http.MethodPost, "/tasks/retry-all", nil)
-		c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+		c.Set("currentUser", model.MUser{ID: uuid.NewString(), Email: "admin@example.invalid"})
 		s.retryAll(c)
 		var body struct {
 			Total     int `json:"total"`
@@ -356,14 +356,14 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 		if len(want) != 0 || !strings.Contains(logs.String(), internalDetail) || strings.Contains(response.Body.String(), internalDetail) {
 			t.Fatalf("missing results or internal error not safely logged: missing=%v log=%q body=%q", want, logs.String(), response.Body.String())
 		}
-		var rolledBack model.Task
+		var rolledBack model.TTask
 		if err := db.First(&rolledBack, "id = ?", failed.ID).Error; err != nil || rolledBack.Status != "failed" {
 			t.Fatalf("failed retry must roll back: task=%+v err=%v", rolledBack, err)
 		}
 	})
 }
 
-func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.FileObject, task model.Task) {
+func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.MFileObject, task model.TTask) {
 	t.Helper()
 	retryExec(t, db, "UPDATE file_objects SET source_url = ? WHERE id = ?", "https://example.invalid/file", file.ID)
 	retryExec(t, db, "UPDATE tasks SET task_type = 'source_fetch' WHERE id = ?", task.ID)
@@ -372,7 +372,7 @@ func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.FileObject, t
 func injectRetryAuditError(t *testing.T, db *gorm.DB, taskID, detail string) {
 	t.Helper()
 	if err := db.Callback().Create().Before("gorm:create").Register("retry_test_audit_error", func(tx *gorm.DB) {
-		if audit, ok := tx.Statement.Dest.(*model.AuditLog); ok && audit.TargetID != nil && *audit.TargetID == taskID {
+		if audit, ok := tx.Statement.Dest.(*model.TAuditLog); ok && audit.TargetID != nil && *audit.TargetID == taskID {
 			tx.AddError(errors.New(detail))
 		}
 	}); err != nil {

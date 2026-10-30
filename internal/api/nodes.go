@@ -30,7 +30,7 @@ const (
 )
 
 type nodeContext struct {
-	Node model.Node
+	Node model.MNode
 }
 
 func hashNodeToken(token string) string {
@@ -84,7 +84,7 @@ func (s *Server) registerDevelopmentNode(c *gin.Context, req struct {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue node credential"})
 		return
 	}
-	node := model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
+	node := model.MNode{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
 	if err := s.db.WithContext(c.Request.Context()).Create(&node).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register development node"})
 		return
@@ -103,7 +103,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 	RequestedCapacityBytes int64  `json:"requested_capacity_bytes" binding:"gte=0"`
 	AgentVersion           string `json:"agent_version" binding:"required,max=64"`
 }) {
-	var responseNode model.Node
+	var responseNode model.MNode
 	var nodeToken string
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var enrollment struct {
@@ -129,7 +129,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 		if err != nil {
 			return err
 		}
-		responseNode = model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
+		responseNode = model.MNode{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
 		if err := tx.Create(&responseNode).Error; err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func (s *Server) authenticateNode() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid node credentials"})
 			return
 		}
-		var node model.Node
+		var node model.MNode
 		if err := s.db.WithContext(c.Request.Context()).First(&node, "id = ?", nodeID).Error; err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "node unavailable"})
 			return
@@ -193,10 +193,10 @@ func (s *Server) authenticateNode() gin.HandlerFunc {
 	}
 }
 
-func currentNode(c *gin.Context) (model.Node, bool) {
+func currentNode(c *gin.Context) (model.MNode, bool) {
 	v, ok := c.Get("currentNode")
 	if !ok {
-		return model.Node{}, false
+		return model.MNode{}, false
 	}
 	ctx, ok := v.(nodeContext)
 	return ctx.Node, ok
@@ -228,7 +228,7 @@ func (s *Server) nodeHeartbeat(c *gin.Context) {
 	if node.Status != "online" || node.LastSeenAt == nil || time.Since(*node.LastSeenAt) > 2*time.Minute {
 		updates["online_since"] = now
 	}
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.Node{}).Where("id = ?", node.ID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.MNode{}).Where("id = ?", node.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update node heartbeat"})
 		return
 	}
@@ -236,7 +236,7 @@ func (s *Server) nodeHeartbeat(c *gin.Context) {
 }
 
 func (s *Server) listNodes(c *gin.Context) {
-	var nodes []model.Node
+	var nodes []model.MNode
 	if err := s.db.WithContext(c.Request.Context()).Order("created_at DESC").Limit(500).Find(&nodes).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list nodes"})
 		return
@@ -323,7 +323,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		if result.Error != nil {
 			return result.Error
 		}
-		result = tx.Delete(&model.Node{ID: id})
+		result = tx.Delete(&model.MNode{ID: id})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -344,7 +344,7 @@ func (s *Server) listTasks(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 
 	query := s.db.WithContext(c.Request.Context()).
-		Model(&model.Task{}).
+		Model(&model.TTask{}).
 		Where(`NOT (
             tasks.status = 'failed'
             AND tasks.task_type IN ('source_fetch', 'store')
@@ -369,7 +369,7 @@ func (s *Server) listTasks(c *gin.Context) {
 	}
 
 	// タスクを取得
-	var tasks []model.Task
+	var tasks []model.TTask
 	taskQuery := query.Order("priority DESC, created_at ASC, tasks.id ASC")
 	if !isAll {
 		taskQuery = taskQuery.Limit(limit).Offset((page - 1) * limit)
@@ -426,7 +426,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file id"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
@@ -440,7 +440,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 		return
 	}
 	var activeTasks int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.TTask{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing tasks"})
 		return
 	}
@@ -528,7 +528,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 
 // queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
 // The temporary file is removed on every exit path.
-func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
+func (s *Server) queueStagedIngest(c *gin.Context, file model.MFileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
 	defer os.Remove(tmpName)
 	nodes, err := s.selectNodesForCapacity(c, written, 2)
 	if err != nil {
@@ -539,8 +539,8 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "staging storage is unavailable"})
 		return false
 	}
-	tasks := make([]model.Task, 0, len(nodes))
-	placements := make([]model.Placement, 0, len(nodes))
+	tasks := make([]model.TTask, 0, len(nodes))
+	placements := make([]model.TPlacement, 0, len(nodes))
 	stagePaths := make([]string, 0, len(nodes))
 	for i, node := range nodes {
 		taskID := uuid.NewString()
@@ -560,26 +560,26 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			return false
 		}
 		stagePaths = append(stagePaths, stagePath)
-		task := model.Task{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
+		task := model.TTask{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
 		storageKey := "objects/" + file.ID + "/" + taskID
-		placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, SHA256: &sha, Status: "queued"}
+		placement := model.TPlacement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, Sha256: &sha, Status: "queued"}
 		tasks = append(tasks, task)
 		placements = append(placements, placement)
 	}
 	now := time.Now().UTC()
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{
+		if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(map[string]any{
 			"original_filename": filename, "size_bytes": written, "sha256": sha, "media_type": mediaType, "preservation_status": "queued", "public_download_enabled": false,
 		}).Error; err != nil {
 			return err
 		}
 		if sourceURL != nil {
-			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_url", *sourceURL).Error; err != nil {
+			if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("source_url", *sourceURL).Error; err != nil {
 				return err
 			}
 		}
 		if sourceFetchTaskID != "" {
-			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_password_encrypted", nil).Error; err != nil {
+			if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("source_password_encrypted", nil).Error; err != nil {
 				return err
 			}
 		}
@@ -587,7 +587,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
-			var existing model.Placement
+			var existing model.TPlacement
 			placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, nodes[i].ID).First(&existing).Error
 			if errors.Is(placementErr, gorm.ErrRecordNotFound) {
 				if err := tx.Create(&placements[i]).Error; err != nil {
@@ -595,18 +595,18 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 				}
 			} else if placementErr != nil {
 				return placementErr
-			} else if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
+			} else if err := tx.Model(&model.TPlacement{}).Where("id = ?", existing.ID).Updates(map[string]any{
 				"sha256": sha, "status": "queued", "verified_at": nil,
 			}).Error; err != nil {
 				return err
 			}
 		}
 		if sourceFetchTaskID != "" {
-			var sourceTask model.Task
+			var sourceTask model.TTask
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_type = 'source_fetch' AND status = 'running' AND target_node_id = ? AND lease_token = ? AND lease_until > now()", sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease).First(&sourceTask).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&model.Task{}).Where("id = ?", sourceFetchTaskID).Updates(map[string]any{"status": "completed", "lease_until": nil, "lease_token": nil, "last_error": nil, "updated_at": now}).Error; err != nil {
+			if err := tx.Model(&model.TTask{}).Where("id = ?", sourceFetchTaskID).Updates(map[string]any{"status": "completed", "lease_until": nil, "lease_token": nil, "last_error": nil, "updated_at": now}).Error; err != nil {
 				return err
 			}
 		}
@@ -620,7 +620,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		return false
 	}
 	actor, hasActor := currentUser(c)
-	var actorPtr *model.User
+	var actorPtr *model.MUser
 	if hasActor {
 		actorPtr = &actor
 	}
@@ -687,7 +687,7 @@ func (s *Server) retryAll(c *gin.Context) {
 		return
 	}
 
-	var tasks []model.Task
+	var tasks []model.TTask
 	if err := s.db.WithContext(ctx).
 		Where("status = ?", "failed").
 		Order("created_at ASC").
@@ -745,7 +745,7 @@ func (s *Server) retryAll(c *gin.Context) {
 func (s *Server) retryFailedTask(
 	ctx context.Context,
 	taskID string,
-	actor model.User,
+	actor model.MUser,
 ) error {
 	now := time.Now().UTC()
 
@@ -754,7 +754,7 @@ func (s *Server) retryFailedTask(
 	var errNoAlternativeNode = &retryRejection{reason: "no online storage node available"}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task model.Task
+		var task model.TTask
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&task, "id = ?", taskID).Error; err != nil {
@@ -769,7 +769,7 @@ func (s *Server) retryFailedTask(
 			return errTaskNotRetryable
 		}
 
-		var file model.FileObject
+		var file model.MFileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 			return err
@@ -785,7 +785,7 @@ func (s *Server) retryFailedTask(
 
 		// 同じファイルに対する別の実行中・待機中タスクを確認する。
 		var activeCount int64
-		if err := tx.Model(&model.Task{}).
+		if err := tx.Model(&model.TTask{}).
 			Where(
 				"file_object_id = ? AND id <> ? AND status IN ('queued', 'running')",
 				file.ID,
@@ -806,7 +806,7 @@ func (s *Server) retryFailedTask(
 			}
 
 			// 未割り当てに戻し、claimNodeTaskで取得ノードを決定する。
-			result := tx.Model(&model.Task{}).
+			result := tx.Model(&model.TTask{}).
 				Where("id = ? AND status = 'failed'", task.ID).
 				Updates(map[string]any{
 					"status":         "queued",
@@ -825,7 +825,7 @@ func (s *Server) retryFailedTask(
 				return errTaskNotRetryable
 			}
 
-			if err := tx.Model(&model.FileObject{}).
+			if err := tx.Model(&model.MFileObject{}).
 				Where("id = ?", file.ID).
 				Update("preservation_status", "queued").Error; err != nil {
 				return err
@@ -833,7 +833,7 @@ func (s *Server) retryFailedTask(
 
 			reason := "Administrator retried failed source-fetch task; target node cleared for automatic assignment"
 
-			if err := tx.Create(&model.AuditLog{
+			if err := tx.Create(&model.TAuditLog{
 				ActorID:    &actor.ID,
 				ActorLabel: actor.Email,
 				TargetType: "task",
@@ -853,7 +853,7 @@ func (s *Server) retryFailedTask(
 			return errTaskNotRetryable
 		}
 
-		if file.SHA256 == nil || len(*file.SHA256) != 64 {
+		if file.Sha256 == nil || len(*file.Sha256) != 64 {
 			return &retryRejection{reason: "file has no valid expected SHA-256"}
 		}
 
@@ -864,13 +864,13 @@ func (s *Server) retryFailedTask(
 			return &retryRejection{reason: "staged source is missing or unreadable"}
 		}
 
-		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
+		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.Sha256) {
 			return &retryRejection{reason: "staged source failed integrity verification"}
 		}
 
 		// 保存先ノードを選択する。
 		// 検証済みコピーがあるノードは候補から除外する。
-		var targetNode model.Node
+		var targetNode model.MNode
 
 		if err := tx.Raw(`
 			SELECT n.id, n.name
@@ -895,7 +895,7 @@ func (s *Server) retryFailedTask(
 		}
 
 		// 新しいノードのPlacementを取得する。
-		var placement model.Placement
+		var placement model.TPlacement
 
 		placementErr := tx.
 			Where(
@@ -906,11 +906,11 @@ func (s *Server) retryFailedTask(
 			First(&placement).Error
 
 		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			placement = model.Placement{
+			placement = model.TPlacement{
 				FileObjectID: file.ID,
 				NodeID:       targetNode.ID,
 				StorageKey:   "objects/" + file.ID + "/" + task.ID,
-				SHA256:       file.SHA256,
+				Sha256:       file.Sha256,
 				Status:       "queued",
 			}
 
@@ -924,11 +924,11 @@ func (s *Server) retryFailedTask(
 				return &retryRejection{reason: "target node already has a verified placement"}
 			}
 
-			if err := tx.Model(&model.Placement{}).
+			if err := tx.Model(&model.TPlacement{}).
 				Where("id = ?", placement.ID).
 				Updates(map[string]any{
 					"status":      "queued",
-					"sha256":      file.SHA256,
+					"sha256":      file.Sha256,
 					"verified_at": nil,
 				}).Error; err != nil {
 				return err
@@ -936,7 +936,7 @@ func (s *Server) retryFailedTask(
 		}
 
 		// タスクを再キューイングする。
-		result := tx.Model(&model.Task{}).
+		result := tx.Model(&model.TTask{}).
 			Where("id = ? AND status = 'failed'", task.ID).
 			Updates(map[string]any{
 				"target_node_id": targetNode.ID,
@@ -956,7 +956,7 @@ func (s *Server) retryFailedTask(
 		}
 
 		// ファイルの保存状態を更新する。
-		if err := tx.Model(&model.FileObject{}).
+		if err := tx.Model(&model.MFileObject{}).
 			Where("id = ?", file.ID).
 			Updates(map[string]any{
 				"preservation_status":     "queued",
@@ -967,7 +967,7 @@ func (s *Server) retryFailedTask(
 
 		// 元のPlacementが未検証ならエラー状態にする。
 		if targetNode.ID != *task.TargetNodeID {
-			if err := tx.Model(&model.Placement{}).
+			if err := tx.Model(&model.TPlacement{}).
 				Where(
 					"file_object_id = ? AND node_id = ? AND status <> 'verified'",
 					file.ID,
@@ -984,7 +984,7 @@ func (s *Server) retryFailedTask(
 			targetNode.ID,
 		)
 
-		return tx.Create(&model.AuditLog{
+		return tx.Create(&model.TAuditLog{
 			ActorID:    &actor.ID,
 			ActorLabel: actor.Email,
 			TargetType: "task",
@@ -1039,13 +1039,13 @@ func hashStagedFile(path string) (string, int64, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), size, nil
 }
 
-func (s *Server) selectNodesForCapacity(c *gin.Context, incoming int64, count int) ([]model.Node, error) {
-	var candidates []model.Node
+func (s *Server) selectNodesForCapacity(c *gin.Context, incoming int64, count int) ([]model.MNode, error) {
+	var candidates []model.MNode
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
 	if err := s.db.WithContext(c.Request.Context()).Where("status = ? AND last_seen_at >= ?", "online", cutoff).Order("available_bytes DESC, last_seen_at DESC").Limit(500).Find(&candidates).Error; err != nil {
 		return nil, errors.New("could not select storage nodes")
 	}
-	selected := make([]model.Node, 0, count)
+	selected := make([]model.MNode, 0, count)
 	for _, node := range candidates {
 		var reserved int64
 		err := s.db.WithContext(c.Request.Context()).Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN file_objects AS f ON f.id = t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued', 'running')", node.ID).Scan(&reserved).Error
@@ -1073,7 +1073,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		return
 	}
 	var claimed struct {
-		Task       model.Task
+		Task       model.TTask
 		LeaseToken string
 	}
 	noTask := false
@@ -1137,7 +1137,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			return err
 		}
 		if claimed.Task.TaskType == "store" {
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", claimed.Task.FileObjectID, node.ID).Update("status", "running").Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND node_id = ?", claimed.Task.FileObjectID, node.ID).Update("status", "running").Error; err != nil {
 				return err
 			}
 		}
@@ -1154,7 +1154,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", claimed.Task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
 		return
@@ -1180,14 +1180,14 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	if claimed.Task.TaskType == "replicate" {
 		placementNodeID = valueOrEmpty(claimed.Task.SourceNodeID)
 	}
-	var placement model.Placement
+	var placement model.TPlacement
 	if err := s.db.WithContext(c.Request.Context()).First(&placement, "file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "could not load source or target placement"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken, "file_object_id": file.ID,
-		"original_filename": file.OriginalFilename, "size_bytes": file.SizeBytes, "sha256": file.SHA256,
+		"original_filename": file.OriginalFilename, "size_bytes": file.SizeBytes, "sha256": file.Sha256,
 		"storage_key": placement.StorageKey, "attempt_count": claimed.Task.AttemptCount,
 		"source_node_id": claimed.Task.SourceNodeID, "target_node_id": claimed.Task.TargetNodeID,
 	})
@@ -1210,7 +1210,7 @@ func (s *Server) nodeTaskContent(c *gin.Context) {
 		return
 	}
 	var count int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("id = ? AND task_type = 'store' AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).Count(&count).Error; err != nil || count != 1 {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.TTask{}).Where("id = ? AND task_type = 'store' AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).Count(&count).Error; err != nil || count != 1 {
 		c.JSON(http.StatusConflict, gin.H{"error": "task lease is no longer valid"})
 		return
 	}
@@ -1241,7 +1241,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	var req struct {
 		LeaseToken string `json:"lease_token" binding:"required,uuid"`
 		Status     string `json:"status" binding:"required,oneof=success failure"`
-		SHA256     string `json:"sha256" binding:"omitempty,len=64,hexadecimal"`
+		Sha256     string `json:"sha256" binding:"omitempty,len=64,hexadecimal"`
 		SizeBytes  int64  `json:"size_bytes" binding:"gte=0"`
 		Error      string `json:"error" binding:"omitempty,max=2000"`
 	}
@@ -1249,7 +1249,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task result"})
 		return
 	}
-	var task model.Task
+	var task model.TTask
 	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND ((task_type IN ('store','delete','source_fetch') AND target_node_id = ?) OR (task_type = 'replicate' AND source_node_id = ?))", taskID, node.ID, node.ID).First(&task).Error; err != nil {
 		notFoundOrError(c, err, "task")
 		return
@@ -1271,14 +1271,14 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "replicate tasks must upload source content to the replica-content endpoint"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
 		return
 	}
-	if req.Status == "success" && task.TaskType != "delete" && (file.SHA256 == nil || !strings.EqualFold(*file.SHA256, req.SHA256) || file.SizeBytes != req.SizeBytes) {
+	if req.Status == "success" && task.TaskType != "delete" && (file.Sha256 == nil || !strings.EqualFold(*file.Sha256, req.Sha256) || file.SizeBytes != req.SizeBytes) {
 		req.Status = "failure"
-		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.SHA256), req.SizeBytes, req.SHA256)
+		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.Sha256), req.SizeBytes, req.Sha256)
 	}
 	terminal := req.Status == "failure" && (task.AttemptCount >= maxTaskAttempts || (task.TaskType == "source_fetch" && sourceFetchFailureIsPermanent(req.Error)))
 	nextStatus := "queued"
@@ -1300,7 +1300,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		if req.Status == "failure" {
 			updates["last_error"] = req.Error
 		}
-		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(updates).Error; err != nil {
+		if err := tx.Model(&model.TTask{}).Where("id = ?", task.ID).Updates(updates).Error; err != nil {
 			return err
 		}
 		placementUpdates := map[string]any{"status": "queued"}
@@ -1308,38 +1308,38 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 			if task.TaskType == "delete" {
 				placementUpdates = map[string]any{"status": "deleted"}
 			} else {
-				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}
+				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.Sha256), "verified_at": now}
 			}
 		} else if terminal {
 			placementUpdates = map[string]any{"status": "error"}
 		}
 		if task.TaskType == "store" || task.TaskType == "delete" || terminal {
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Updates(placementUpdates).Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND node_id = ?", file.ID, placementNodeID).Updates(placementUpdates).Error; err != nil {
 				return err
 			}
 		}
 		if task.TaskType == "delete" && req.Status == "success" && file.DeletionRequestedAt != nil {
 			var remaining int64
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND status <> 'deleted'", file.ID).Count(&remaining).Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND status <> 'deleted'", file.ID).Count(&remaining).Error; err != nil {
 				return err
 			}
 			if remaining == 0 {
-				if err := tx.Model(&model.FileObject{}).Where("id = ? AND deleted_at IS NULL", file.ID).Update("deleted_at", now).Error; err != nil {
+				if err := tx.Model(&model.MFileObject{}).Where("id = ? AND deleted_at IS NULL", file.ID).Update("deleted_at", now).Error; err != nil {
 					return err
 				}
-				entry := model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "file_object", TargetID: &file.ID, Action: "file_object.deletion.completed", Result: "success", Reason: stringPtr("All known placements reported successful deletion")}
+				entry := model.TAuditLog{ActorLabel: "node:" + node.Name, TargetType: "file_object", TargetID: &file.ID, Action: "file_object.deletion.completed", Result: "success", Reason: stringPtr("All known placements reported successful deletion")}
 				if err := tx.Create(&entry).Error; err != nil {
 					return err
 				}
 			}
 		}
 		if task.TaskType == "replicate" && terminal && (strings.Contains(req.Error, "source placement failed verification") || strings.Contains(req.Error, "could not read source placement") || strings.Contains(req.Error, "source replica failed size or SHA-256 validation")) {
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Update("status", "error").Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Update("status", "error").Error; err != nil {
 				return err
 			}
 		}
 		if req.Status == "success" && task.TaskType == "store" {
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}).Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(map[string]any{"status": "verified", "sha256": strings.ToLower(req.Sha256), "verified_at": now}).Error; err != nil {
 				return err
 			}
 		}
@@ -1347,7 +1347,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		if req.Status == "failure" {
 			result, action = "failure", "node.task.failed"
 		}
-		if err := tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: stringPtr(req.Error)}).Error; err != nil {
+		if err := tx.Create(&model.TAuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: stringPtr(req.Error)}).Error; err != nil {
 			return err
 		}
 		return recomputeFilePreservation(tx, file.ID)
@@ -1359,7 +1359,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	if req.Status == "success" && task.TaskType == "store" {
 		_ = os.Remove(filepath.Join(s.cfg.StagingDir, task.ID))
 	}
-	var updatedFile model.FileObject
+	var updatedFile model.MFileObject
 	_ = s.db.WithContext(c.Request.Context()).Select("preservation_status").First(&updatedFile, "id = ?", file.ID).Error
 	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": updatedFile.PreservationStatus})
 }
@@ -1380,12 +1380,12 @@ func (s *Server) receiveSourceFetchContent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid lease_token is required"})
 		return
 	}
-	var task model.Task
+	var task model.TTask
 	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND task_type = 'source_fetch' AND target_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&task).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "source-fetch task lease is no longer valid"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load source file"})
 		return
@@ -1461,12 +1461,12 @@ func (s *Server) replicaContent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid lease_token is required"})
 		return
 	}
-	var task model.Task
+	var task model.TTask
 	if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&task).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "replication task lease is no longer valid"})
 		return
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load replica file"})
 		return
@@ -1503,7 +1503,7 @@ func (s *Server) replicaContent(c *gin.Context) {
 		return
 	}
 	gotSHA := hex.EncodeToString(hasher.Sum(nil))
-	if written != file.SizeBytes || file.SHA256 == nil || !strings.EqualFold(gotSHA, *file.SHA256) {
+	if written != file.SizeBytes || file.Sha256 == nil || !strings.EqualFold(gotSHA, *file.Sha256) {
 		cleanup()
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "source replica failed size or SHA-256 validation"})
 		return
@@ -1516,32 +1516,32 @@ func (s *Server) replicaContent(c *gin.Context) {
 	}
 	now := time.Now().UTC()
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var locked model.Task
+		var locked model.TTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&locked).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{"task_type": "store", "source_node_id": nil, "status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now}).Error; err != nil {
+		if err := tx.Model(&model.TTask{}).Where("id = ?", task.ID).Updates(map[string]any{"task_type": "store", "source_node_id": nil, "status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now}).Error; err != nil {
 			return err
 		}
 		storageKey := "objects/" + file.ID + "/" + task.ID
-		var placement model.Placement
+		var placement model.TPlacement
 		placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, valueOrEmpty(task.TargetNodeID)).First(&placement).Error
 		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			if err := tx.Create(&model.Placement{FileObjectID: file.ID, NodeID: valueOrEmpty(task.TargetNodeID), StorageKey: storageKey, SHA256: file.SHA256, Status: "queued"}).Error; err != nil {
+			if err := tx.Create(&model.TPlacement{FileObjectID: file.ID, NodeID: valueOrEmpty(task.TargetNodeID), StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
 				return err
 			}
 		} else if placementErr != nil {
 			return placementErr
 		} else {
 			storageKey = placement.StorageKey
-			if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.SHA256, "status": "queued", "verified_at": nil}).Error; err != nil {
+			if err := tx.Model(&model.TPlacement{}).Where("id = ?", placement.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.Sha256, "status": "queued", "verified_at": nil}).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error; err != nil {
+		if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: "node.replication.source-uploaded", Result: "success", Reason: stringPtr("Verified source-node bytes staged for target-node storage")}).Error
+		return tx.Create(&model.TAuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: "node.replication.source-uploaded", Result: "success", Reason: stringPtr("Verified source-node bytes staged for target-node storage")}).Error
 	})
 	if err != nil {
 		_ = os.Remove(stagingPath)
@@ -1572,11 +1572,11 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 		return err
 	}
 	var active int64
-	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", fileID).Count(&active).Error; err != nil {
+	if err := tx.Model(&model.TTask{}).Where("file_object_id = ? AND status IN ('queued', 'running')", fileID).Count(&active).Error; err != nil {
 		return err
 	}
 	var missing int64
-	if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND status = 'missing'", fileID).Count(&missing).Error; err != nil {
+	if err := tx.Model(&model.TPlacement{}).Where("file_object_id = ? AND status = 'missing'", fileID).Count(&missing).Error; err != nil {
 		return err
 	}
 	var offlineVerified int64
@@ -1593,7 +1593,7 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	} else if active == 0 && healthy == 0 {
 		status = "error"
 	}
-	return tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error
+	return tx.Model(&model.MFileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error
 }
 
 func valueOrEmpty(value *string) string {

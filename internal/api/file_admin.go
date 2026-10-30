@@ -48,7 +48,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		updates["description"] = trimOptional(req.Description)
 	}
 	db := s.db.WithContext(c.Request.Context())
-	result := db.Model(&model.Artifact{}).Where("id = ?", c.Param("id")).Updates(updates)
+	result := db.Model(&model.MArtifact{}).Where("id = ?", c.Param("id")).Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update artifact metadata"})
 		return
@@ -57,7 +57,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
 	}
-	var artifact model.Artifact
+	var artifact model.MArtifact
 	if err := db.First(&artifact, "id = ?", c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated artifact"})
 		return
@@ -101,13 +101,13 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 			updates["source_url"] = validated
 		}
 	}
-	var file model.FileObject
+	var file model.MFileObject
 	db := s.db.WithContext(c.Request.Context())
 	if err := db.First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
 	}
-	if err := db.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
+	if err := db.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update file metadata"})
 		return
 	}
@@ -157,9 +157,9 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 	}
 
 	db := s.db.WithContext(c.Request.Context())
-	var linkedRequest *model.PublicRequest
+	var linkedRequest *model.TPublicRequest
 	if req.RequestID != nil {
-		var request model.PublicRequest
+		var request model.TPublicRequest
 		if err := db.First(&request, "id = ?", *req.RequestID).Error; err != nil {
 			notFoundOrError(c, err, "request")
 			return
@@ -174,7 +174,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 	changed := make([]string, 0, len(req.FileIDs))
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range req.FileIDs {
-			var file model.FileObject
+			var file model.MFileObject
 			if err := tx.First(&file, "id = ? AND deleted_at IS NULL", id).Error; err != nil {
 				return fmt.Errorf("file %s is not available: %w", id, err)
 			}
@@ -200,7 +200,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 				if req.RedistributionPolicy != "allowed" {
 					updates["public_download_enabled"] = false
 				}
-				if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
+				if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
 					return err
 				}
 				var checkedAt *time.Time
@@ -209,13 +209,13 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 					now := time.Now().UTC()
 					checkedAt, checkedBy = &now, &actor.ID
 				}
-				policy := model.Policy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, CheckedAt: checkedAt, CheckedBy: checkedBy}
+				policy := model.TPolicy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, CheckedAt: checkedAt, CheckedBy: checkedBy}
 				if err := tx.Create(&policy).Error; err != nil {
 					return err
 				}
 			case "publication":
 				if *req.Enabled {
-					if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.SHA256 == nil || !isHexDigest(*file.SHA256) {
+					if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
 						return fmt.Errorf("file %s cannot be published: policy must be allowed, preservation verified, and SHA-256 valid", id)
 					}
 					cutoff := time.Now().UTC().Add(-2 * time.Minute)
@@ -227,7 +227,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 						return fmt.Errorf("file %s cannot be published without a healthy verified placement", id)
 					}
 				}
-				if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
+				if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
 					return err
 				}
 			case "delete":
@@ -260,7 +260,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"changed": changed, "count": len(changed), "action": req.Action})
 }
 
-func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.PublicRequest, actorID, reason string) error {
+func queueFileDeletionTx(tx *gorm.DB, file model.MFileObject, request model.TPublicRequest, actorID, reason string) error {
 	if request.RequestType != "deletion" || request.Status != "accepted" {
 		return errors.New("file deletion requires an accepted deletion request")
 	}
@@ -271,24 +271,24 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.Publi
 	} else if request.ArtifactID == nil || *request.ArtifactID != file.ArtifactID {
 		return errors.New("deletion request must target this file or its artifact")
 	}
-	if file.DeletedAt != nil {
+	if value, _ := file.DeletedAt.Value(); value != nil {
 		return nil
 	}
 	var running int64
-	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status = 'running' AND task_type <> 'delete'", file.ID).Count(&running).Error; err != nil {
+	if err := tx.Model(&model.TTask{}).Where("file_object_id = ? AND status = 'running' AND task_type <> 'delete'", file.ID).Count(&running).Error; err != nil {
 		return err
 	}
 	if running > 0 {
 		return fmt.Errorf("file %s has a running preservation task; retry deletion after it finishes", file.ID)
 	}
-	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status = 'queued' AND task_type <> 'delete'", file.ID).Updates(map[string]any{"status": "failed", "last_error": "cancelled by accepted deletion request", "updated_at": time.Now().UTC()}).Error; err != nil {
+	if err := tx.Model(&model.TTask{}).Where("file_object_id = ? AND status = 'queued' AND task_type <> 'delete'", file.ID).Updates(map[string]any{"status": "failed", "last_error": "cancelled by accepted deletion request", "updated_at": time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"public_download_enabled": false, "deletion_requested_at": now}).Error; err != nil {
+	if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"public_download_enabled": false, "deletion_requested_at": now}).Error; err != nil {
 		return err
 	}
-	var placements []model.Placement
+	var placements []model.TPlacement
 	if err := tx.Where("file_object_id = ?", file.ID).Find(&placements).Error; err != nil {
 		return err
 	}
@@ -298,29 +298,29 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.Publi
 			continue
 		}
 		var active int64
-		if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND target_node_id = ? AND task_type = 'delete' AND status IN ('queued','running')", file.ID, placement.NodeID).Count(&active).Error; err != nil {
+		if err := tx.Model(&model.TTask{}).Where("file_object_id = ? AND target_node_id = ? AND task_type = 'delete' AND status IN ('queued','running')", file.ID, placement.NodeID).Count(&active).Error; err != nil {
 			return err
 		}
 		if active == 0 {
 			nodeID := placement.NodeID
-			task := model.Task{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &nodeID, Status: "queued", Priority: 5}
+			task := model.TTask{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &nodeID, Status: "queued", Priority: 5}
 			if err := tx.Create(&task).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Update("status", "deleting").Error; err != nil {
+		if err := tx.Model(&model.TPlacement{}).Where("id = ?", placement.ID).Update("status", "deleting").Error; err != nil {
 			return err
 		}
 		pending++
 	}
 	if pending == 0 {
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("deleted_at", now).Error; err != nil {
+		if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Update("deleted_at", now).Error; err != nil {
 			return err
 		}
 	}
 	auditReason := strings.TrimSpace(reason) + " [request_id=" + request.ID + "]"
 	targetID := file.ID
-	entry := model.AuditLog{ActorID: &actorID, ActorLabel: "user:" + actorID, TargetType: "file_object", TargetID: &targetID, Action: "file_object.deletion.requested", Result: "success", Reason: trimOptional(&auditReason)}
+	entry := model.TAuditLog{ActorID: &actorID, ActorLabel: "user:" + actorID, TargetType: "file_object", TargetID: &targetID, Action: "file_object.deletion.requested", Result: "success", Reason: trimOptional(&auditReason)}
 	return tx.Create(&entry).Error
 }
 
@@ -352,17 +352,17 @@ func (s *Server) createAdminDeletionRequests(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	created := make([]model.PublicRequest, 0, len(req.FileIDs))
+	created := make([]model.TPublicRequest, 0, len(req.FileIDs))
 	db := s.db.WithContext(c.Request.Context())
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range req.FileIDs {
-			var file model.FileObject
+			var file model.MFileObject
 			if err := tx.First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", id).Error; err != nil {
 				return fmt.Errorf("file %s is not available for deletion request: %w", id, err)
 			}
 			artifactID, fileID := file.ArtifactID, file.ID
 			submitter := "管理者による削除申請"
-			request := model.PublicRequest{
+			request := model.TPublicRequest{
 				RequestType: "deletion", Status: "pending", ArtifactID: &artifactID,
 				FileObjectID: &fileID, SubmitterName: &submitter,
 				Details: strings.TrimSpace(req.Reason),
@@ -373,7 +373,7 @@ func (s *Server) createAdminDeletionRequests(c *gin.Context) {
 			created = append(created, request)
 			targetID := request.ID
 			reason := strings.TrimSpace(req.Reason) + " [file_id=" + file.ID + "]"
-			entry := model.AuditLog{ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "public_request", TargetID: &targetID, Action: "public_request.admin_deletion_request.create", Result: "success", Reason: trimOptional(&reason)}
+			entry := model.TAuditLog{ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "public_request", TargetID: &targetID, Action: "public_request.admin_deletion_request.create", Result: "success", Reason: trimOptional(&reason)}
 			if err := tx.Create(&entry).Error; err != nil {
 				return err
 			}

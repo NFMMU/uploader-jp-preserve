@@ -30,7 +30,7 @@ type downloadJob struct {
 	LeaseUntil      *time.Time `gorm:"column:lease_until" json:"lease_until,omitempty"`
 	AttemptCount    int        `gorm:"column:attempt_count" json:"attempt_count"`
 	SizeBytes       *int64     `gorm:"column:size_bytes" json:"size_bytes,omitempty"`
-	SHA256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
+	Sha256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
 	LastError       *string    `gorm:"column:last_error" json:"last_error,omitempty"`
 	ExpiresAt       time.Time  `gorm:"column:expires_at" json:"expires_at"`
 	CreatedAt       time.Time  `gorm:"column:created_at" json:"created_at"`
@@ -57,21 +57,21 @@ func nullableText(s string) any {
 	return s
 }
 
-func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
-	var f model.FileObject
+func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.MFileObject, model.TPlacement, error) {
+	var f model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
-	if f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+	if f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
-	var rows []model.Placement
+	var rows []model.TPlacement
 	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
 	if err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
 	if len(rows) == 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	return f, rows[0], nil
 }
@@ -126,7 +126,7 @@ func (s *Server) getDownloadJob(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.SHA256, "last_error": job.LastError})
+	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.Sha256, "last_error": job.LastError})
 }
 
 func (s *Server) downloadContent(c *gin.Context) {
@@ -209,9 +209,9 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 	}
 	var storageKey string
 	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
-	var f model.FileObject
+	var f model.MFileObject
 	_ = s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error
-	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.SHA256, "original_filename": f.OriginalFilename})
+	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
 func (s *Server) receiveDeliveryContent(c *gin.Context) {
@@ -228,7 +228,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "invalid or expired delivery lease"})
 		return
 	}
-	var f model.FileObject
+	var f model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
@@ -253,7 +253,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	n, copyErr := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(c.Request.Body, f.SizeBytes+1))
 	closeErr := tmp.Close()
 	gotHash := hex.EncodeToString(h.Sum(nil))
-	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.SHA256)) {
+	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.Sha256)) {
 		s.failDelivery(job, "size_or_sha256_mismatch")
 		s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content validation failed"})

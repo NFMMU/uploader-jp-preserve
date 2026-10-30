@@ -250,7 +250,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 				return nil
 			}
 
-			var existingFile model.FileObject
+			var existingFile model.MFileObject
 			fileErr := tx.Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", item.URL).First(&existingFile).Error
 			if fileErr == nil {
 				duplicate = true
@@ -260,7 +260,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 				return fileErr
 			}
 
-			var existingRequest model.PublicRequest
+			var existingRequest model.TPublicRequest
 			requestErr := tx.Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", item.URL).Order("created_at ASC").First(&existingRequest).Error
 			if requestErr == nil {
 				duplicate = true
@@ -270,7 +270,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 				return requestErr
 			}
 
-			preserveRequest := model.PublicRequest{
+			preserveRequest := model.TPublicRequest{
 				ID: requestID, RequestType: "preservation", Status: "pending", Title: stringPtr(title),
 				SourceURL: stringPtr(item.URL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
 			}

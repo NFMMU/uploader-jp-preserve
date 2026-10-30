@@ -56,7 +56,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		priority = *req.Priority
 	}
 
-	var file model.FileObject
+	var file model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
@@ -78,7 +78,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		}
 		passwordEncrypted = encrypted
 	} else if req.PublicRequestID != "" {
-		var publicRequest model.PublicRequest
+		var publicRequest model.TPublicRequest
 		if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).First(&publicRequest).Error; err != nil {
 			notFoundOrError(c, err, "preservation request")
 			return
@@ -92,7 +92,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		}
 	}
 	var activeTasks int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.TTask{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing tasks"})
 		return
 	}
@@ -114,15 +114,15 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "保存先として使えるオンラインノードが2台必要です: " + err.Error()})
 		return
 	}
-	var node model.Node
+	var node model.MNode
 	if err := s.db.WithContext(c.Request.Context()).Where("status = 'online' AND agent_version LIKE '0.5.%'").Order("random()").First(&node).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "取得タスクに対応したオンライン agent がありません。全ノードの agent を再ビルド・再起動してください"})
 		return
 	}
 	taskID := uuid.NewString()
-	task := model.Task{ID: taskID, TaskType: "source_fetch", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
+	task := model.TTask{ID: taskID, TaskType: "source_fetch", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"source_url": validatedURL, "source_password_encrypted": passwordEncrypted, "preservation_status": "queued"}).Error; err != nil {
+		if err := tx.Model(&model.MFileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"source_url": validatedURL, "source_password_encrypted": passwordEncrypted, "preservation_status": "queued"}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&task).Error
@@ -480,7 +480,7 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact id"})
 		return
 	}
-	var artifact model.Artifact
+	var artifact model.MArtifact
 	if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", artifactID).Error; err != nil {
 		notFoundOrError(c, err, "artifact")
 		return
@@ -502,7 +502,7 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 	}
 	password := req.Password
 	if password == "" && req.PublicRequestID != "" {
-		var publicRequest model.PublicRequest
+		var publicRequest model.TPublicRequest
 		if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).First(&publicRequest).Error; err != nil {
 			notFoundOrError(c, err, "preservation request")
 			return
