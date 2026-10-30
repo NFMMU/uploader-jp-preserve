@@ -1084,11 +1084,23 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	noTask := false
 	leaseToken := uuid.NewString()
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`((task_type IN ('store', 'delete') AND target_node_id = ?)
-		  OR (task_type = 'replicate' AND source_node_id = ?)
-		  OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL)))
-			AND status = 'running' AND lease_until < now() AND attempt_count >= ?`,
-			node.ID, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
+		if err := tx.Exec(`
+    UPDATE tasks
+    SET status = 'failed',
+        updated_at = NOW()
+    WHERE
+        (
+            (task_type IN ('store', 'delete') AND target_node_id = ?)
+            OR (task_type = 'replicate' AND source_node_id = ?)
+            OR (
+                task_type = 'source_fetch'
+                AND (target_node_id = ? OR target_node_id IS NULL)
+            )
+        )
+        AND status = 'running'
+        AND lease_until < NOW()
+        AND attempt_count >= ?
+		`, node.ID, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
