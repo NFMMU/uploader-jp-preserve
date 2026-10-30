@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const agentVersion = "0.5.1"
+const agentVersion = "0.5.2"
 
 type config struct {
 	APIURL              string

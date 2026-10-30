@@ -19,7 +19,7 @@ import (
 	xhtml "golang.org/x/net/html"
 )
 
-const uploaderFetcherVersion = "2026-10-24-password-form-1"
+const uploaderFetcherVersion = "2026-10-30-password-form-2"
 const maxAgentUploaderHTMLBytes = 8 << 20
 const maxAgentSourceBytes int64 = 5 << 30
 
@@ -246,12 +246,34 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 		if hasCaptcha(nextDoc, strings.ToLower(htmlText(nextDoc))) {
 			return nil, errors.New("CAPTCHA等の追加認証は自動処理しません")
 		}
-		if nextURL := findDirectDownloadLink(nextDoc, resp.Request.URL); nextURL != "" {
-			referer = resp.Request.URL.String()
+		postResponseURL := resp.Request.URL
+
+		if nextURL := findMetaRefreshURL(nextDoc, postResponseURL); nextURL != "" {
+			referer = postResponseURL.String()
 			currentURL = nextURL
 			continue
 		}
-		return nil, errors.New("追加の確認操作が必要です。管理者がブラウザーで取得してください")
+
+		if nextURL := findDirectDownloadLink(nextDoc, postResponseURL); nextURL != "" {
+			referer = postResponseURL.String()
+			currentURL = nextURL
+			continue
+		}
+
+		if nextURL := findScriptDownloadURL(page, postResponseURL); nextURL != "" {
+			referer = postResponseURL.String()
+			currentURL = nextURL
+			continue
+		}
+		return nil, fmt.Errorf(
+			"追加の確認操作が必要です。管理者がブラウザーで取得してください（診断: %s）",
+			uploaderPageDiagnostic(
+				nextDoc,
+				resp.Request.URL,
+				contentType,
+				page,
+			),
+		)
 	}
 	return nil, errors.New("ダウンロードページの遷移回数が上限を超えました")
 }
