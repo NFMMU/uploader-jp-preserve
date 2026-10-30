@@ -94,7 +94,11 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.LibreDeskBaseURL+"/api/v1/conversations", bytes.NewReader(body))
+	endpoint := strings.TrimRight(
+		s.cfg.LibreDeskBaseURL,
+		"/",
+	) + "/api/v1/conversations"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		s.logger.Error("libredesk conversation request could not be built", "target_type", targetType, "target_id", targetID, "error", err)
 		return ""
@@ -116,7 +120,14 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 		return ""
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		s.logger.Error("libredesk conversation creation returned an error", "target_type", targetType, "target_id", targetID, "http_status", resp.StatusCode)
+		s.logger.Error(
+			"libredesk conversation creation returned an error",
+			"target_type", targetType,
+			"target_id", targetID,
+			"http_status", resp.StatusCode,
+			"response_body", string(responseBody),
+			"content_type", resp.Header.Get("Content-Type"),
+		)
 		return ""
 	}
 	var result libreDeskConversationResponse
