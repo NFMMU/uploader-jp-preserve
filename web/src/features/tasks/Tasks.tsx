@@ -1,5 +1,6 @@
 import { Clock3, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Heading } from "../../components/common/Heading";
 import { Pagination } from "../../components/common/Pagination";
 import { Status } from "../../components/common/Status";
@@ -7,7 +8,6 @@ import { Table } from "../../components/common/Table";
 import { useData } from "../../hooks/useData";
 import { date } from "../../lib/format";
 import type { Obj } from "../../types/common";
-import { Link } from "react-router-dom";
 
 export function Tasks({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
@@ -156,7 +156,11 @@ export function Tasks({ api, refresh, notify, role }: any) {
 										x.source_node_id ||
 										"-"}
 								</td>
-								<td><Link to={`/admin/review?tab=files&q=${x.file_object_id}`}>{x.file_object_id}</Link></td>
+								<td>
+									<Link to={`/admin/review?tab=files&q=${x.file_object_id}`}>
+										{x.file_object_id}
+									</Link>
+								</td>
 								<td>{date(x.updated_at)}</td>
 								<td>
 									{role === "admin" &&
