@@ -483,18 +483,6 @@ func normalizedUploaderLoopKey(raw string) string {
 }
 
 func uploaderFormSubmissionValues(form uploaderForm) url.Values {
-	// The common getuploader handshake posts only the hidden token; md5 is page
-	// metadata and is not submitted by the standard browser flow. A few template
-	// variants use a more explicit token field name, so preserve that single field.
-	for key, values := range form.Values {
-		keyLower := strings.ToLower(key)
-		if (keyLower == "token" || keyLower == "download_token" || keyLower == "downloadtoken") && len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-			if len(form.PasswordFieldNames) > 0 {
-				return form.Values
-			}
-			return url.Values{key: []string{values[0]}}
-		}
-	}
 	return form.Values
 }
 
@@ -560,12 +548,18 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 						// Submit inputs often have no name. Their label still identifies the
 						// normal download action, so inspect it before checking the name.
 						if typ == "submit" || typ == "button" || typ == "image" {
-							label := strings.ToLower(value + " " + name + " " + attr(node, "id") + " " + attr(node, "alt") + " " + attr(node, "title") + " " + attr(node, "aria-label"))
-							if strings.Contains(label, "ダウンロード") || strings.Contains(label, "download") {
+							if typ == "submit" && name != "" {
+								form.Values.Add(name, value)
+							}
+
+							label := strings.ToLower(value + " " + name + " " +
+								attr(node, "id") + " " + attr(node, "alt") + " " +
+								attr(node, "title") + " " + attr(node, "aria-label"))
+
+							if strings.Contains(label, "ダウンロード") ||
+								strings.Contains(label, "download") ||
+								strings.Contains(label, "認証") {
 								buttonFound = true
-								if name != "" {
-									form.Values.Add(name, value)
-								}
 							}
 						}
 						if name != "" {
@@ -578,10 +572,10 @@ func findDownloadForm(root *xhtml.Node, base *url.URL, acceptTerms bool, passwor
 							}
 							switch typ {
 							case "password":
+								passwordFieldFound = true
 								if password != "" {
 									form.Values.Set(name, password)
 									form.PasswordFieldNames = append(form.PasswordFieldNames, name)
-									passwordFieldFound = true
 								}
 							case "submit", "button", "image", "file":
 								// Submit values were handled above; file inputs are never sent.
