@@ -1,4 +1,4 @@
-table "download_jobs" {
+table "t_download_jobs" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -67,13 +67,13 @@ table "download_jobs" {
   }
   foreign_key "download_jobs_file_object_id_fkey" {
     columns = [column.file_object_id]
-    ref_columns = [table.file_objects.column.id]
+    ref_columns = [table.m_file_objects.column.id]
     on_update = NO_ACTION
     on_delete = CASCADE
   }
   foreign_key "download_jobs_selected_node_id_fkey" {
     columns = [column.selected_node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

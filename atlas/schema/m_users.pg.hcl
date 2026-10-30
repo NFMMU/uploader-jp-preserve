@@ -1,4 +1,4 @@
-table "users" {
+table "m_users" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -16,6 +16,11 @@ table "users" {
   column "display_name" {
     type = varchar(120)
     null = false
+  }
+  column "custom_id" {
+    type = varchar(16)
+    null = false
+    default = sql("substr(md5(random()::text), 1, 15)")
   }
   column "role" {
     type = varchar(32)
@@ -36,6 +41,11 @@ table "users" {
     null = false
     default = sql("now()")
   }
+  column "deleted_at" {
+    type = timestamptz
+    null = true
+    default = null
+  }
   primary_key {
     columns = [column.id]
   }
@@ -43,7 +53,11 @@ table "users" {
     unique = true
     columns = [column.email]
   }
+  index "users_custom_id_key" {
+    unique = true
+    columns = [column.custom_id]
+  }
   check "users_role_check" {
-    expr = "role IN ('admin', 'reviewer', 'viewer')"
+    expr = "role IN ('admin', 'reviewer', 'viewer', 'author')"
   }
 }

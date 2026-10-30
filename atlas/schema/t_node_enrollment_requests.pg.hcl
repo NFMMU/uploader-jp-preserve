@@ -1,5 +1,5 @@
 
-table "node_enrollment_requests" {
+table "t_node_enrollment_requests" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -83,19 +83,19 @@ table "node_enrollment_requests" {
   }
   foreign_key "node_enrollment_requests_approved_by_fkey" {
     columns = [column.approved_by]
-    ref_columns = [table.users.column.id]
+    ref_columns = [table.m_users.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
   foreign_key "node_enrollment_requests_reviewed_by_fkey" {
     columns = [column.reviewed_by]
-    ref_columns = [table.users.column.id]
+    ref_columns = [table.m_users.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
   foreign_key "node_enrollment_requests_node_id_fkey" {
     columns = [column.node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }
