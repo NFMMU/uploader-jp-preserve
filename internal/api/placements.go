@@ -119,7 +119,7 @@ func (s *Server) reconcilePlacements(ctx context.Context) error {
 	if err := db.Exec("UPDATE nodes SET status = 'offline', online_since = NULL, updated_at = now() WHERE status <> 'offline' AND (last_seen_at IS NULL OR last_seen_at < ?)", cutoff).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`UPDATE tasks AS t SET status='failed', last_error=COALESCE(t.last_error, 'node went offline during placement task'), lease_until=NULL, lease_token=NULL, updated_at=now()
+	if err := db.Exec(`UPDATE t_tasks AS t SET status='failed', last_error=COALESCE(t.last_error, 'node went offline during placement task'), lease_until=NULL, lease_token=NULL, updated_at=now()
 		WHERE t.status IN ('queued','running') AND ((t.task_type IN ('store','delete') AND t.target_node_id IN (SELECT id FROM m_nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM m_nodes WHERE status='offline')))`).Error; err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 				continue
 			}
 			var reserved int64
-			if err := tx.Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN m_file_objects AS f ON f.id=t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued','running')", candidate.ID).Scan(&reserved).Error; err != nil {
+			if err := tx.Table("t_tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN m_file_objects AS f ON f.id=t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued','running')", candidate.ID).Scan(&reserved).Error; err != nil {
 				return err
 			}
 			if candidate.AvailableBytes-reserved < file.SizeBytes {
