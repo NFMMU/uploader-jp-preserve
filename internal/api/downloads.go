@@ -66,7 +66,7 @@ func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.MFile
 		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.TPlacement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN m_nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN m_nodes ON m_nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
 	if err != nil {
 		return f, model.TPlacement{}, err
 	}
@@ -182,7 +182,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN m_file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON m_nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		if leaseErr != nil {
 			return leaseErr
 		}
-		err = tx.Exec(`UPDATE download_jobs SET status='running',selected_node_id=?,lease_token=?::uuid,lease_until=now()+interval '2 minutes',attempt_count=attempt_count+1,updated_at=now() WHERE id=?`, node.ID, lease[:32], candidate.ID).Error
+		err = tx.Exec(`UPDATE t_download_jobs SET status='running',selected_node_id=?,lease_token=?::uuid,lease_until=now()+interval '2 minutes',attempt_count=attempt_count+1,updated_at=now() WHERE id=?`, node.ID, lease[:32], candidate.ID).Error
 		if err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize content"})
 		return
 	}
-	if err := s.db.WithContext(c.Request.Context()).Exec(`UPDATE download_jobs SET status='ready',size_bytes=?,sha256=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND status='running' AND lease_token=?::uuid`, n, gotHash, job.ID, lease).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Exec(`UPDATE t_download_jobs SET status='ready',size_bytes=?,sha256=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND status='running' AND lease_token=?::uuid`, n, gotHash, job.ID, lease).Error; err != nil {
 		_ = os.Remove(filepath.Join(s.cfg.DeliveryDir, job.ID))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize job"})
 		return
@@ -273,14 +273,14 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	c.Status(http.StatusCreated)
 }
 func (s *Server) failDelivery(job downloadJob, reason string) {
-	_ = s.db.Exec(`UPDATE download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
+	_ = s.db.Exec(`UPDATE t_download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
 }
 
 func (s *Server) runDownloadCleanup() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
-		_ = s.db.Exec("UPDATE download_jobs SET status='failed',last_error=COALESCE(last_error, 'attempts_exhausted'),lease_token=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempt_count >= 3").Error
+		_ = s.db.Exec("UPDATE t_download_jobs SET status='failed',last_error=COALESCE(last_error, 'attempts_exhausted'),lease_token=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempt_count >= 3").Error
 		var expired []downloadJob
 		if err := s.db.Where("expires_at <= now() AND status <> ?", "expired").Find(&expired).Error; err != nil {
 			s.logger.Error("download_cleanup_query_failed", "error", err)
@@ -290,7 +290,7 @@ func (s *Server) runDownloadCleanup() {
 			if err := os.Remove(filepath.Join(s.cfg.DeliveryDir, job.ID)); err != nil && !os.IsNotExist(err) {
 				s.logger.Warn("download_cleanup_file_failed", "job_id", job.ID, "error", err)
 			}
-			_ = s.db.Exec("UPDATE download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
+			_ = s.db.Exec("UPDATE t_download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
 			s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
 		}
 	}

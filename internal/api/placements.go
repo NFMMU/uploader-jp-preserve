@@ -278,7 +278,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 				continue
 			}
 			var reserved int64
-			if err := tx.Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN file_objects AS f ON f.id=t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued','running')", candidate.ID).Scan(&reserved).Error; err != nil {
+			if err := tx.Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN m_file_objects AS f ON f.id=t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued','running')", candidate.ID).Scan(&reserved).Error; err != nil {
 				return err
 			}
 			if candidate.AvailableBytes-reserved < file.SizeBytes {
