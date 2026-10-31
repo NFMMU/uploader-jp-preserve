@@ -633,7 +633,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			// Remove obsolete registry entries owned by this request.
 			// Keep the newly registered URL.
 			result = tx.Exec(`
-		DELETE FROM t_source_url_registry_url_registry
+		DELETE FROM t_source_url_registry
 		WHERE origin = 'public_request'
 			AND public_request_id = ?
 			AND normalized_url <> ?
