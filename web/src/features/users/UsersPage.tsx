@@ -193,6 +193,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								required
 								minLength={3}
 								maxLength={16}
+								pattern="[a-z0-9_-]{3,16}"
 								onChange={(e) =>
 									setForm({ ...form, custom_id: e.target.value })
 								}
@@ -272,6 +273,9 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								type="text"
 								name="custom_id"
 								value={editForm.custom_id}
+								pattern="[a-z0-9_-]{3,16}"
+								minLength={3}
+								maxLength={16}
 								onChange={(e) =>
 									setEditForm({
 										...editForm,
