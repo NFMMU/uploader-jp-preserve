@@ -101,7 +101,7 @@ function App() {
 			const d = await api("/auth/login", {
 				method: "POST",
 				body: JSON.stringify({
-					email: f.get("email"),
+					email_or_custom_id: f.get("email_or_custom_id"),
 					password: f.get("password"),
 				}),
 			});
@@ -178,7 +178,7 @@ function App() {
 						<label>
 							メールアドレス / ユーザーID
 							<input
-								name="custom_id"
+								name="email_or_custom_id"
 								placeholder="hoge@example.jp / hogehoge_mmd"
 								required
 								autoComplete="username"
