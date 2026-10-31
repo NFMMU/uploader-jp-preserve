@@ -182,7 +182,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN m_file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON m_nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND m_nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN m_file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON m_nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND m_nodes.status='online' AND m_nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
 		if err != nil {
 			return err
 		}
