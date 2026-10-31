@@ -172,7 +172,9 @@ func (s *Server) listFiles(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 	db := s.db.WithContext(c.Request.Context())
 	query := db.Model(&model.MFileObject{})
-	if c.Query("include_deleted") != "true" {
+	if c.Query("include_deleted") == "true" {
+		query = query.Unscoped()
+	} else {
 		query = query.Where("deleted_at IS NULL")
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
