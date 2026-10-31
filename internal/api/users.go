@@ -49,6 +49,22 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.Disabled != nil {
 		disable = *req.Disabled
 	}
+
+	if req.DisplayName != nil {
+		displayName := strings.TrimSpace(*req.DisplayName)
+		if utf8.RuneCountInString(displayName) < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+			return
+		}
+	}
+	if req.CustomID != nil {
+		customID := strings.TrimSpace(*req.CustomID)
+		if utf8.RuneCountInString(customID) < 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+			return
+		}
+	}
+
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if target.Role == "admin" && (newRole != "admin" || disable) {
 			var activeAdmins []model.MUser
