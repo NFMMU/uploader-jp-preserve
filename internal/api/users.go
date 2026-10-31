@@ -21,7 +21,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		Disabled    *bool   `json:"disabled"`
 		DisplayName *string `json:"display_name" binding:"omitempty,min=1,max=120"`
 		CustomID    *string `json:"custom_id" binding:"omitempty,min=3,max=16"`
-		Reason      *string `json:"reason" binding:"required,min=3,max=2000"`
+		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.Role == nil && req.Disabled == nil && req.DisplayName == nil && req.CustomID == nil && req.Email == nil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one valid change and a reason are required"})
