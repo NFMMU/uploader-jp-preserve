@@ -25,7 +25,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		Disabled    *bool   `json:"disabled"`
 		DisplayName *string `json:"display_name" binding:"omitempty,min=1,max=120"`
 		CustomID    *string `json:"custom_id" binding:"omitempty,min=3,max=16"`
-		Password    *string `json:"password" binding:"omitempty,min=12,max=1024"`
+		Password    *string `json:"password" binding:"omitempty,min=12"`
 		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.Role == nil && req.Disabled == nil && req.DisplayName == nil && req.CustomID == nil && req.Email == nil && req.Password == nil) {
@@ -72,11 +72,22 @@ func (s *Server) updateUser(c *gin.Context) {
 
 	var hash *string
 	if req.Password != nil {
-		hashRaw, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
+		if len([]byte(*req.Password)) > 72 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "password must not exceed 72 bytes",
+			})
+			return
+		}
+
+		hashRaw, err := bcrypt.GenerateFromPassword(
+			[]byte(*req.Password),
+			bcrypt.DefaultCost,
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
 			return
 		}
+
 		hashRawStrng := string(hashRaw)
 		hash = &hashRawStrng
 	}
@@ -150,7 +161,7 @@ var errLastActiveAdmin = errors.New("last active administrator cannot be demoted
 func (s *Server) createUser(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email,max=320"`
-		Password    string `json:"password" binding:"required,min=12,max=1024"`
+		Password    string `json:"password" binding:"required,min=12"`
 		DisplayName string `json:"display_name" binding:"required,min=1,max=120"`
 		CustomID    string `json:"custom_id" binding:"required,min=3,max=16"`
 		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer author"`
@@ -160,6 +171,12 @@ func (s *Server) createUser(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
+	if len([]byte(req.Password)) > 72 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "password must not exceed 72 bytes",
+		})
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
