@@ -2671,3 +2671,11 @@ footer > span {
 		flex: 1;
 	}
 }
+
+small {
+	display: block;
+	color: #666;
+	font-size: 11px;
+	overflow-wrap: anywhere;
+	margin-top: 3px;
+}

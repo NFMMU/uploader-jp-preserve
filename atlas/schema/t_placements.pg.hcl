@@ -1,5 +1,5 @@
 
-table "placements" {
+table "t_placements" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -41,13 +41,13 @@ table "placements" {
   }
   foreign_key "placements_file_object_id_fkey" {
     columns = [column.file_object_id]
-    ref_columns = [table.file_objects.column.id]
+    ref_columns = [table.m_file_objects.column.id]
     on_update = NO_ACTION
     on_delete = CASCADE
   }
   foreign_key "placements_node_id_fkey" {
     columns = [column.node_id]
-    ref_columns = [table.nodes.column.id]
+    ref_columns = [table.m_nodes.column.id]
     on_update = NO_ACTION
     on_delete = CASCADE
   }

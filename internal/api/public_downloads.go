@@ -15,21 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *Server) publicEligible(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
-	var f model.FileObject
+func (s *Server) publicEligible(c *gin.Context, id string) (model.MFileObject, model.TPlacement, error) {
+	var f model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
-	if !f.PublicDownloadEnabled || f.RedistributionPolicy != "allowed" || f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+	if !f.PublicDownloadEnabled || f.RedistributionPolicy != "allowed" || f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
-	var rows []model.Placement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	var rows []model.TPlacement
+	err := s.db.WithContext(c.Request.Context()).Table("t_placements").Select("t_placements.*").Joins("JOIN m_nodes ON m_nodes.id = t_placements.node_id").Where("t_placements.file_object_id = ? AND t_placements.status = ? AND m_nodes.status = ? AND m_nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("t_placements.created_at ASC").Find(&rows).Error
 	if err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
 	if len(rows) == 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	return f, rows[0], nil
 }
@@ -52,7 +52,7 @@ func (s *Server) createPublicDownloadJob(c *gin.Context) {
 		return
 	}
 	job := downloadJob{FileObjectID: f.ID, Status: "queued", AccessTokenHash: tokenHash(token), ExpiresAt: time.Now().Add(30 * time.Minute)}
-	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO t_download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ダウンロード処理を開始できませんでした。"})
 		return
 	}
@@ -85,7 +85,7 @@ func (s *Server) getPublicDownloadJob(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.SHA256, "last_error": job.LastError})
+	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.Sha256, "last_error": job.LastError})
 }
 
 func (s *Server) downloadPublicContent(c *gin.Context) {

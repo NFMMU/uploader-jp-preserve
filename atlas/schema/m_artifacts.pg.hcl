@@ -1,4 +1,4 @@
-table "artifacts" {
+table "m_artifacts" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -30,6 +30,11 @@ table "artifacts" {
     type = timestamptz
     null = false
     default = sql("now()")
+  }
+  column "deleted_at" {
+    type = timestamptz
+    null = true
+    default = null
   }
   primary_key {
     columns = [column.id]

@@ -30,7 +30,7 @@ type downloadJob struct {
 	LeaseUntil      *time.Time `gorm:"column:lease_until" json:"lease_until,omitempty"`
 	AttemptCount    int        `gorm:"column:attempt_count" json:"attempt_count"`
 	SizeBytes       *int64     `gorm:"column:size_bytes" json:"size_bytes,omitempty"`
-	SHA256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
+	Sha256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
 	LastError       *string    `gorm:"column:last_error" json:"last_error,omitempty"`
 	ExpiresAt       time.Time  `gorm:"column:expires_at" json:"expires_at"`
 	CreatedAt       time.Time  `gorm:"column:created_at" json:"created_at"`
@@ -57,21 +57,21 @@ func nullableText(s string) any {
 	return s
 }
 
-func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
-	var f model.FileObject
+func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.MFileObject, model.TPlacement, error) {
+	var f model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
-	if f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+	if f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
-	var rows []model.Placement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	var rows []model.TPlacement
+	err := s.db.WithContext(c.Request.Context()).Table("t_placements").Select("t_placements.*").Joins("JOIN m_nodes ON m_nodes.id = t_placements.node_id").Where("t_placements.file_object_id = ? AND t_placements.status = ? AND m_nodes.status = ? AND m_nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("t_placements.created_at ASC").Find(&rows).Error
 	if err != nil {
-		return f, model.Placement{}, err
+		return f, model.TPlacement{}, err
 	}
 	if len(rows) == 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	return f, rows[0], nil
 }
@@ -94,7 +94,7 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 		return
 	}
 	job := downloadJob{FileObjectID: f.ID, Status: "queued", AccessTokenHash: tokenHash(token), ExpiresAt: time.Now().Add(30 * time.Minute)}
-	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO t_download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download job"})
 		return
 	}
@@ -126,7 +126,7 @@ func (s *Server) getDownloadJob(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.SHA256, "last_error": job.LastError})
+	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.Sha256, "last_error": job.LastError})
 }
 
 func (s *Server) downloadContent(c *gin.Context) {
@@ -182,7 +182,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN m_file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON m_nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND m_nodes.status='online' AND m_nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
 		if err != nil {
 			return err
 		}
@@ -193,11 +193,11 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		if leaseErr != nil {
 			return leaseErr
 		}
-		err = tx.Exec(`UPDATE download_jobs SET status='running',selected_node_id=?,lease_token=?::uuid,lease_until=now()+interval '2 minutes',attempt_count=attempt_count+1,updated_at=now() WHERE id=?`, node.ID, lease[:32], candidate.ID).Error
+		err = tx.Exec(`UPDATE t_download_jobs SET status='running',selected_node_id=?,lease_token=?::uuid,lease_until=now()+interval '2 minutes',attempt_count=attempt_count+1,updated_at=now() WHERE id=?`, node.ID, lease[:32], candidate.ID).Error
 		if err != nil {
 			return err
 		}
-		return tx.Raw("SELECT * FROM download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
+		return tx.Raw("SELECT * FROM t_download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
 	})
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -208,10 +208,10 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		return
 	}
 	var storageKey string
-	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
-	var f model.FileObject
+	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM t_placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
+	var f model.MFileObject
 	_ = s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error
-	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.SHA256, "original_filename": f.OriginalFilename})
+	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
 func (s *Server) receiveDeliveryContent(c *gin.Context) {
@@ -228,7 +228,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "invalid or expired delivery lease"})
 		return
 	}
-	var f model.FileObject
+	var f model.MFileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
@@ -253,7 +253,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	n, copyErr := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(c.Request.Body, f.SizeBytes+1))
 	closeErr := tmp.Close()
 	gotHash := hex.EncodeToString(h.Sum(nil))
-	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.SHA256)) {
+	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.Sha256)) {
 		s.failDelivery(job, "size_or_sha256_mismatch")
 		s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content validation failed"})
@@ -264,7 +264,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize content"})
 		return
 	}
-	if err := s.db.WithContext(c.Request.Context()).Exec(`UPDATE download_jobs SET status='ready',size_bytes=?,sha256=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND status='running' AND lease_token=?::uuid`, n, gotHash, job.ID, lease).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Exec(`UPDATE t_download_jobs SET status='ready',size_bytes=?,sha256=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND status='running' AND lease_token=?::uuid`, n, gotHash, job.ID, lease).Error; err != nil {
 		_ = os.Remove(filepath.Join(s.cfg.DeliveryDir, job.ID))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize job"})
 		return
@@ -273,14 +273,14 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	c.Status(http.StatusCreated)
 }
 func (s *Server) failDelivery(job downloadJob, reason string) {
-	_ = s.db.Exec(`UPDATE download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
+	_ = s.db.Exec(`UPDATE t_download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
 }
 
 func (s *Server) runDownloadCleanup() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
-		_ = s.db.Exec("UPDATE download_jobs SET status='failed',last_error=COALESCE(last_error, 'attempts_exhausted'),lease_token=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempt_count >= 3").Error
+		_ = s.db.Exec("UPDATE t_download_jobs SET status='failed',last_error=COALESCE(last_error, 'attempts_exhausted'),lease_token=NULL,lease_until=NULL,updated_at=now() WHERE status='running' AND lease_until < now() AND attempt_count >= 3").Error
 		var expired []downloadJob
 		if err := s.db.Where("expires_at <= now() AND status <> ?", "expired").Find(&expired).Error; err != nil {
 			s.logger.Error("download_cleanup_query_failed", "error", err)
@@ -290,7 +290,7 @@ func (s *Server) runDownloadCleanup() {
 			if err := os.Remove(filepath.Join(s.cfg.DeliveryDir, job.ID)); err != nil && !os.IsNotExist(err) {
 				s.logger.Warn("download_cleanup_file_failed", "job_id", job.ID, "error", err)
 			}
-			_ = s.db.Exec("UPDATE download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
+			_ = s.db.Exec("UPDATE t_download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
 			s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
 		}
 	}

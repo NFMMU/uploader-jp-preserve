@@ -1,4 +1,4 @@
-table "request_conversation_links" {
+table "t_request_conversation_links" {
   schema = schema.public
   column "id" {
     type = uuid
@@ -36,7 +36,7 @@ table "request_conversation_links" {
   }
   foreign_key "request_conversation_links_created_by_fkey" {
     columns = [column.created_by]
-    ref_columns = [table.users.column.id]
+    ref_columns = [table.m_users.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

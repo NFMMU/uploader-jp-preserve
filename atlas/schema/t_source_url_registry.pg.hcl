@@ -1,4 +1,4 @@
-table "source_url_registry" {
+table "t_source_url_registry" {
   schema = schema.public
   column "normalized_url" {
     type = text
@@ -31,7 +31,7 @@ table "source_url_registry" {
   }
   foreign_key "source_url_registry_public_request_id_fkey" {
     columns = [column.public_request_id]
-    ref_columns = [table.public_requests.column.id]
+    ref_columns = [table.t_public_requests.column.id]
     on_update = NO_ACTION
     on_delete = SET_NULL
   }

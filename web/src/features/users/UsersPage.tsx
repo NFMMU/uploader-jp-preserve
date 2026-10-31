@@ -16,6 +16,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	const [form, setForm] = useState({
 		email: "",
 		display_name: "",
+		custom_id: "",
 		password: "",
 		role: "reviewer",
 	});
@@ -24,9 +25,68 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		try {
 			await api("/admin/users", { method: "POST", body: JSON.stringify(form) });
 			notify("ユーザーを作成しました");
-			setForm({ email: "", display_name: "", password: "", role: "reviewer" });
+			setForm({
+				email: "",
+				display_name: "",
+				custom_id: "",
+				password: "",
+				role: "reviewer",
+			});
 			setLocalRefresh((x) => x + 1);
 			setModal(false);
+		} catch (e) {
+			notify((e as Error).message);
+		}
+	}
+	const [editModal, setEditModal] = useState(false);
+	const [editingUser, setEditingUser] = useState<Obj | null>(null);
+	const [editForm, setEditForm] = useState({
+		email: "",
+		display_name: "",
+		custom_id: "",
+		password: "",
+		role: "reviewer",
+	});
+
+	function openEditModal(user: Obj) {
+		setEditingUser(user);
+		setEditForm({
+			email: String(user.email ?? ""),
+			display_name: String(user.display_name ?? ""),
+			custom_id: String(user.custom_id ?? ""),
+			password: "",
+			role: String(user.role ?? "reviewer"),
+		});
+		setEditModal(true);
+	}
+
+	async function update(e: React.FormEvent) {
+		e.preventDefault();
+
+		if (!editingUser) return;
+
+		try {
+			const body: Record<string, string> = {
+				email: editForm.email,
+				display_name: editForm.display_name,
+				custom_id: editForm.custom_id,
+				role: editForm.role,
+			};
+
+			// パスワードが入力された場合のみ更新対象にする
+			if (editForm.password !== "") {
+				body.password = editForm.password;
+			}
+
+			await api(`/admin/users/${encodeURIComponent(String(editingUser.id))}`, {
+				method: "PATCH",
+				body: JSON.stringify(body),
+			});
+
+			notify("ユーザーを更新しました");
+			setEditModal(false);
+			setEditingUser(null);
+			setLocalRefresh((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
 		}
@@ -62,11 +122,12 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							"ロール",
 							"状態",
 							"作成日時",
+							"操作",
 						]}
 					>
 						{d.loading ? (
 							<tr>
-								<td colSpan={5} className="empty">
+								<td colSpan={6} className="empty">
 									読み込み中…
 								</td>
 							</tr>
@@ -85,6 +146,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 												{(x.display_name || x.email).slice(0, 1).toUpperCase()}
 											</div>
 											<b>{x.display_name}</b>
+											<small>{`@${x.custom_id}`}</small>
 										</div>
 									</td>
 									<td>{x.email}</td>
@@ -95,6 +157,15 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 										<Status value={x.disabled_at ? "offline" : "online"} />
 									</td>
 									<td>{date(x.created_at)}</td>
+									<td>
+										<button
+											type="button"
+											className="small-btn"
+											onClick={() => openEditModal(x)}
+										>
+											編集
+										</button>
+									</td>
 								</tr>
 							))
 						)}
@@ -111,6 +182,20 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								value={form.display_name}
 								onChange={(e) =>
 									setForm({ ...form, display_name: e.target.value })
+								}
+							/>
+						</label>
+						<label>
+							ユーザーID
+							<input
+								type="text"
+								name="custom_id"
+								required
+								minLength={3}
+								maxLength={16}
+								pattern="[a-z0-9_-]{3,16}"
+								onChange={(e) =>
+									setForm({ ...form, custom_id: e.target.value })
 								}
 							/>
 						</label>
@@ -139,8 +224,9 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								value={form.role}
 								onChange={(e) => setForm({ ...form, role: e.target.value })}
 							>
-								<option value="reviewer">確認担当者</option>
 								<option value="viewer">閲覧者</option>
+								<option value="author">権利者</option>
+								<option value="reviewer">確認担当者</option>
 								<option value="admin">管理者</option>
 							</select>
 						</label>
@@ -153,6 +239,116 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								キャンセル
 							</button>
 							<button className="primary">作成</button>
+						</div>
+					</form>
+				</Modal>
+			)}
+			{editModal && editingUser && (
+				<Modal
+					title="ユーザーを編集"
+					close={() => {
+						setEditModal(false);
+						setEditingUser(null);
+					}}
+				>
+					<form className="form-stack" onSubmit={update}>
+						<label>
+							表示名
+							<input
+								required
+								value={editForm.display_name}
+								onChange={(e) =>
+									setEditForm({
+										...editForm,
+										display_name: e.target.value,
+									})
+								}
+							/>
+						</label>
+
+						<label>
+							ユーザーID
+							<input
+								required
+								type="text"
+								name="custom_id"
+								value={editForm.custom_id}
+								pattern="[a-z0-9_-]{3,16}"
+								minLength={3}
+								maxLength={16}
+								onChange={(e) =>
+									setEditForm({
+										...editForm,
+										custom_id: e.target.value,
+									})
+								}
+							/>
+						</label>
+
+						<label>
+							メールアドレス
+							<input
+								required
+								type="email"
+								value={editForm.email}
+								onChange={(e) =>
+									setEditForm({
+										...editForm,
+										email: e.target.value,
+									})
+								}
+							/>
+						</label>
+
+						<label>
+							新しいパスワード（変更する場合のみ）
+							<input
+								type="password"
+								minLength={12}
+								autoComplete="new-password"
+								value={editForm.password}
+								onChange={(e) =>
+									setEditForm({
+										...editForm,
+										password: e.target.value,
+									})
+								}
+							/>
+						</label>
+
+						<label>
+							ロール
+							<select
+								value={editForm.role}
+								onChange={(e) =>
+									setEditForm({
+										...editForm,
+										role: e.target.value,
+									})
+								}
+							>
+								<option value="viewer">閲覧者</option>
+								<option value="author">権利者</option>
+								<option value="reviewer">確認担当者</option>
+								<option value="admin">管理者</option>
+							</select>
+						</label>
+
+						<div className="modal-actions">
+							<button
+								type="button"
+								className="secondary"
+								onClick={() => {
+									setEditModal(false);
+									setEditingUser(null);
+								}}
+							>
+								キャンセル
+							</button>
+
+							<button type="submit" className="primary">
+								更新
+							</button>
 						</div>
 					</form>
 				</Modal>
