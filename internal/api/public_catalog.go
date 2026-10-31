@@ -55,8 +55,8 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-			artifacts.title ILIKE ? OR COALESCE(artifacts.creator_name, '') ILIKE ?
-			OR COALESCE(artifacts.description, '') ILIKE ? OR artifacts.source_url ILIKE ?
+			m_artifacts.title ILIKE ? OR COALESCE(m_artifacts.creator_name, '') ILIKE ?
+			OR COALESCE(m_artifacts.description, '') ILIKE ? OR m_artifacts.source_url ILIKE ?
 			OR EXISTS (
 				SELECT 1 FROM m_file_objects f
 				WHERE f.artifact_id = m_artifacts.id AND f.original_filename ILIKE ?
