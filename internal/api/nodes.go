@@ -1060,7 +1060,7 @@ func (s *Server) selectNodesForCapacity(c *gin.Context, incoming int64, count in
 	selected := make([]model.MNode, 0, count)
 	for _, node := range candidates {
 		var reserved int64
-		err := s.db.WithContext(c.Request.Context()).Table("tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN m_file_objects AS f ON f.id = t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued', 'running')", node.ID).Scan(&reserved).Error
+		err := s.db.WithContext(c.Request.Context()).Table("t_tasks AS t").Select("COALESCE(SUM(f.size_bytes), 0)").Joins("JOIN m_file_objects AS f ON f.id = t.file_object_id").Where("t.target_node_id = ? AND t.status IN ('queued', 'running')", node.ID).Scan(&reserved).Error
 		if err != nil {
 			return nil, errors.New("could not calculate reserved node capacity")
 		}
