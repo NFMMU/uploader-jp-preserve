@@ -132,7 +132,7 @@ func (s *Server) createUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
 		return
 	}
-	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: strings.TrimSpace(req.CustomID), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
+	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: customID, DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
 	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
 		return
