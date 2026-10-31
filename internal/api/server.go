@@ -118,7 +118,7 @@ func (s *Server) health(c *gin.Context) {
 
 func (s *Server) login(c *gin.Context) {
 	var req struct {
-		EmailOrCustomID string `json:"email_or_custom_id" binding:"required,email,max=320"`
+		EmailOrCustomID string `json:"email_or_custom_id" binding:"required,max=320"`
 		Password        string `json:"password" binding:"required,min=1,max=1024"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
