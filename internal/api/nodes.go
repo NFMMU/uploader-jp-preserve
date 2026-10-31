@@ -330,6 +330,18 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		if result.RowsAffected != 1 {
 			return errors.New("node has been aleady deleted")
 		}
+		result = tx.Delete(&model.TPlacement{NodeID: id})
+		if result.Error != nil {
+			return result.Error
+		}
+		result = tx.Where(&model.TTask{TargetNodeID: &id}).Or(&model.TTask{SourceNodeID: &id}).Delete(nil)
+		if result.Error != nil {
+			return result.Error
+		}
+		result = tx.Delete(&model.TDownloadJob{SelectedNodeID: &id})
+		if result.Error != nil {
+			return result.Error
+		}
 		return nil
 	})
 	if err != nil {
