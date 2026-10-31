@@ -95,7 +95,7 @@ func retryFixture(t *testing.T, db *gorm.DB) (*Server, model.MFileObject, model.
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
-	retryExec(t, db, "INSERT INTO placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, ?, 'error')", file.ID, node.ID, "objects/"+file.ID+"/"+task.ID)
+	retryExec(t, db, "INSERT INTO t_placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, ?, 'error')", file.ID, node.ID, "objects/"+file.ID+"/"+task.ID)
 	s := &Server{db: db, cfg: config.Config{StagingDir: t.TempDir()}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if err := os.WriteFile(filepath.Join(s.cfg.StagingDir, task.ID), content, 0o600); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 					t.Fatal(err)
 				}
 				if alternativeStatus != "missing" {
-					retryExec(t, db, "INSERT INTO placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, 'alternative', ?)", file.ID, alternative.ID, alternativeStatus)
+					retryExec(t, db, "INSERT INTO t_placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, 'alternative', ?)", file.ID, alternative.ID, alternativeStatus)
 				}
 				if alternativeStatus == "error" || alternativeStatus == "missing" {
 					wantNode, wantOriginalStatus = alternative.ID, "error"
@@ -162,9 +162,10 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			}
 			for _, placement := range placements {
 				wantStatus := alternativeStatus
-				if placement.NodeID == original.ID {
+				switch placement.NodeID {
+				case original.ID:
 					wantStatus = wantOriginalStatus
-				} else if placement.NodeID == wantNode {
+				case wantNode:
 					wantStatus = "queued"
 				}
 				if placement.Status != wantStatus {
@@ -199,7 +200,7 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 		if err := db.Create(&alternative).Error; err != nil {
 			t.Fatal(err)
 		}
-		retryExec(t, db, "INSERT INTO placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, 'alternative', 'error')", file.ID, alternative.ID)
+		retryExec(t, db, "INSERT INTO t_placements (file_object_id, node_id, storage_key, status) VALUES (?, ?, 'alternative', 'error')", file.ID, alternative.ID)
 
 		// Hold the file until both requests are blocked. Without serialization,
 		// both requests pass the active-task check before this lock is released.
@@ -282,7 +283,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 				case "missing file":
 					retryExec(t, db, "DELETE FROM m_file_objects WHERE id = ?", file.ID)
 				case "rejected":
-					retryExec(t, db, "UPDATE file_objects SET preservation_status = 'verified' WHERE id = ?", file.ID)
+					retryExec(t, db, "UPDATE m_file_objects SET preservation_status = 'verified' WHERE id = ?", file.ID)
 				case "internal error":
 					prepareSourceFetchRetry(t, db, file, task)
 					injectRetryAuditError(t, db, task.ID, internalDetail)
