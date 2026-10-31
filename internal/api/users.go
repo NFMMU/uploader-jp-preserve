@@ -90,32 +90,32 @@ func (s *Server) updateUser(c *gin.Context) {
 				return errLastActiveAdmin
 			}
 		}
-		updates := model.MUser{
-			UpdatedAt: time.Now(),
+		updates := map[string]interface{}{
+			"updated_at": time.Now(),
 		}
 		if req.Role != nil {
-			updates.Role = *req.Role
+			updates["role"] = *req.Role
 		}
 		if req.DisplayName != nil {
-			updates.DisplayName = strings.TrimSpace(*req.DisplayName)
+			updates["display_name"] = strings.TrimSpace(*req.DisplayName)
 		}
 		if req.CustomID != nil {
-			updates.CustomID = strings.TrimSpace(*req.CustomID)
+			updates["custom_id"] = strings.TrimSpace(*req.CustomID)
 		}
 		if req.Email != nil {
-			updates.Email = strings.ToLower(strings.TrimSpace(*req.Email))
+			updates["email"] = strings.ToLower(strings.TrimSpace(*req.Email))
 		}
 		if hash != nil {
-			updates.PasswordHash = *hash
+			updates["password_hash"] = *hash
 		}
 		if req.Disabled != nil {
 			if *req.Disabled {
-				now := time.Now().UTC()
-				updates.DisabledAt = &now
+				updates["disabled_at"] = time.Now().UTC()
 			} else {
-				updates.DisabledAt = nil
+				updates["disabled_at"] = nil
 			}
 		}
+
 		return tx.Where("id = ?", target.ID).Updates(updates).Error
 	})
 	if err != nil {
