@@ -191,6 +191,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								type="text"
 								name="custom_id"
 								required
+								minLength={3}
+								maxLength={16}
 								onChange={(e) =>
 									setForm({ ...form, custom_id: e.target.value })
 								}
