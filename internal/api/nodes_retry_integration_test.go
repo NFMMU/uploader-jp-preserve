@@ -208,7 +208,7 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			t.Fatal(blocker.Error)
 		}
 		defer blocker.Rollback()
-		retryExec(t, blocker, "SELECT id FROM file_objects WHERE id = ? FOR UPDATE", file.ID)
+		retryExec(t, blocker, "SELECT id FROM m_file_objects WHERE id = ? FOR UPDATE", file.ID)
 		responses := make(chan *httptest.ResponseRecorder, 2)
 		var requests sync.WaitGroup
 		requests.Add(2)
@@ -280,7 +280,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 				case "missing task":
 					task.ID = uuid.NewString()
 				case "missing file":
-					retryExec(t, db, "DELETE FROM file_objects WHERE id = ?", file.ID)
+					retryExec(t, db, "DELETE FROM m_file_objects WHERE id = ?", file.ID)
 				case "rejected":
 					retryExec(t, db, "UPDATE file_objects SET preservation_status = 'verified' WHERE id = ?", file.ID)
 				case "internal error":
@@ -314,7 +314,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 		prepareSourceFetchRetry(t, db, failedFile, failed)
 		injectRetryAuditError(t, db, failed.ID, internalDetail)
 		_, missingFile, _, missing := retryFixture(t, db)
-		retryExec(t, db, "DELETE FROM file_objects WHERE id = ?", missingFile.ID)
+		retryExec(t, db, "DELETE FROM m_file_objects WHERE id = ?", missingFile.ID)
 
 		var logs bytes.Buffer
 		s.logger = slog.New(slog.NewTextHandler(&logs, nil))

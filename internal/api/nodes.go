@@ -113,7 +113,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 			RequestedCapacityBytes int64
 		}
 		err := tx.Raw(`SELECT id::text, name, node_type, requested_capacity_bytes
-			FROM node_enrollment_requests
+			FROM t_node_enrollment_requests
 			WHERE enrollment_token_hash = ? AND status = 'approved' AND token_expires_at > now()
 			FOR UPDATE`, hashNodeToken(strings.TrimSpace(c.GetHeader("X-Node-Enrollment-Token")))).Scan(&enrollment).Error
 		if err != nil {
@@ -178,7 +178,7 @@ func (s *Server) authenticateNode() gin.HandlerFunc {
 			return
 		}
 		var storedHash string
-		err := s.db.WithContext(c.Request.Context()).Raw("SELECT api_token_hash FROM nodes WHERE id = ?", nodeID).Row().Scan(&storedHash)
+		err := s.db.WithContext(c.Request.Context()).Raw("SELECT api_token_hash FROM m_nodes WHERE id = ?", nodeID).Row().Scan(&storedHash)
 		if err != nil || storedHash == "" || subtle.ConstantTimeCompare([]byte(storedHash), []byte(hashNodeToken(token))) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid node credentials"})
 			return
@@ -349,7 +349,7 @@ func (s *Server) listTasks(c *gin.Context) {
             tasks.status = 'failed'
             AND tasks.task_type IN ('source_fetch', 'store')
             AND EXISTS (
-                SELECT 1 FROM file_objects
+                SELECT 1 FROM m_file_objects
                 WHERE file_objects.id = tasks.file_object_id
                 AND file_objects.preservation_status = 'verified'
             )
@@ -874,11 +874,11 @@ func (s *Server) retryFailedTask(
 
 		if err := tx.Raw(`
 			SELECT n.id, n.name
-			FROM nodes AS n
+			FROM m_nodes AS n
 			WHERE n.status = 'online'
 			  AND NOT EXISTS (
 			      SELECT 1
-			      FROM placements AS p
+			      FROM t_placements AS p
 			      WHERE p.node_id = n.id
 			        AND p.file_object_id = ?
 			        AND p.status = 'verified'
@@ -1099,12 +1099,12 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			return err
 		}
 		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
-			(SELECT file_object_id FROM tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
+			(SELECT file_object_id FROM t_tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
 		err := tx.Raw(`
     SELECT *
-    FROM tasks
+    FROM t_tasks
     WHERE
         (
             (task_type IN ('store', 'delete') AND target_node_id = ?)
@@ -1263,7 +1263,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		return
 	}
 	var leaseToken string
-	if err := s.db.WithContext(c.Request.Context()).Raw("SELECT lease_token::text FROM tasks WHERE id = ?", taskID).Row().Scan(&leaseToken); err != nil || leaseToken != req.LeaseToken {
+	if err := s.db.WithContext(c.Request.Context()).Raw("SELECT lease_token::text FROM t_tasks WHERE id = ?", taskID).Row().Scan(&leaseToken); err != nil || leaseToken != req.LeaseToken {
 		c.JSON(http.StatusConflict, gin.H{"error": "task lease token does not match"})
 		return
 	}
@@ -1568,7 +1568,7 @@ func sourceFetchFailureIsPermanent(message string) bool {
 
 func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	var healthy int64
-	if err := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthy).Error; err != nil {
+	if err := tx.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthy).Error; err != nil {
 		return err
 	}
 	var active int64
@@ -1580,7 +1580,7 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 		return err
 	}
 	var offlineVerified int64
-	if err := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND (n.status <> 'online' OR n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '2 minutes')", fileID).Count(&offlineVerified).Error; err != nil {
+	if err := tx.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND (n.status <> 'online' OR n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '2 minutes')", fileID).Count(&offlineVerified).Error; err != nil {
 		return err
 	}
 	status := "queued"

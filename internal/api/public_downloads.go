@@ -24,7 +24,7 @@ func (s *Server) publicEligible(c *gin.Context, id string) (model.MFileObject, m
 		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.TPlacement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN m_nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
 	if err != nil {
 		return f, model.TPlacement{}, err
 	}

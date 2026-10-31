@@ -66,7 +66,7 @@ func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.MFile
 		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.TPlacement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN m_nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
 	if err != nil {
 		return f, model.TPlacement{}, err
 	}
@@ -182,7 +182,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM t_download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN t_placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN m_nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
 		if err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return tx.Raw("SELECT * FROM download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
+		return tx.Raw("SELECT * FROM t_download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
 	})
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -208,7 +208,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		return
 	}
 	var storageKey string
-	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
+	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM t_placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
 	var f model.MFileObject
 	_ = s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error
 	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})

@@ -186,7 +186,7 @@ func (s *Server) listConversationLinks(c *gin.Context) {
 		return
 	}
 	var items []conversationLink
-	if err := s.db.WithContext(c.Request.Context()).Raw(`SELECT id, target_type, target_id, url, label, created_at FROM request_conversation_links WHERE target_type = ? AND target_id = ? ORDER BY created_at ASC`, targetType, targetID).Scan(&items).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Raw(`SELECT id, target_type, target_id, url, label, created_at FROM t_request_conversation_links WHERE target_type = ? AND target_id = ? ORDER BY created_at ASC`, targetType, targetID).Scan(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list conversation links"})
 		return
 	}
@@ -245,7 +245,7 @@ func (s *Server) deleteConversationLink(c *gin.Context) {
 		return
 	}
 	var link conversationLink
-	if err := s.db.WithContext(c.Request.Context()).Raw(`SELECT id, target_type, target_id, url, label, created_at FROM request_conversation_links WHERE id = ?`, id).Scan(&link).Error; err != nil || link.ID == "" {
+	if err := s.db.WithContext(c.Request.Context()).Raw(`SELECT id, target_type, target_id, url, label, created_at FROM t_request_conversation_links WHERE id = ?`, id).Scan(&link).Error; err != nil || link.ID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation link not found"})
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) deleteConversationLink(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "administrator role is required for node enrollment conversation links"})
 		return
 	}
-	if err := s.db.WithContext(c.Request.Context()).Exec(`DELETE FROM request_conversation_links WHERE id = ?`, id).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Exec(`DELETE FROM t_request_conversation_links WHERE id = ?`, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete conversation link"})
 		return
 	}

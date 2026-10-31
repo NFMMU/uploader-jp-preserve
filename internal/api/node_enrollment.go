@@ -140,7 +140,7 @@ func (s *Server) reviewNodeEnrollmentRequest(c *gin.Context) {
 		Status string
 		Name   string
 	}
-	if err := s.db.WithContext(c.Request.Context()).Raw("SELECT status, name FROM node_enrollment_requests WHERE id = ?", id).Scan(&existing).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Raw("SELECT status, name FROM t_node_enrollment_requests WHERE id = ?", id).Scan(&existing).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load enrollment request"})
 		return
 	}

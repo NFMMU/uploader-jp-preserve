@@ -220,7 +220,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 					}
 					cutoff := time.Now().UTC().Add(-2 * time.Minute)
 					var healthy int64
-					if err := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
+					if err := tx.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
 						return err
 					}
 					if healthy == 0 {

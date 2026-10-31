@@ -38,7 +38,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	}
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.MArtifact{}).Where(`EXISTS (
-		SELECT 1 FROM file_objects f
+		SELECT 1 FROM m_file_objects f
 		WHERE f.artifact_id = artifacts.id
 		  AND f.deleted_at IS NULL
 		  AND f.public_download_enabled = TRUE
@@ -47,7 +47,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		  AND f.sha256 ~ '^[0-9a-fA-F]{64}$'
 		  AND f.size_bytes >= 0
 		  AND EXISTS (
-			SELECT 1 FROM placements p JOIN nodes n ON n.id = p.node_id
+			SELECT 1 FROM t_placements p JOIN m_nodes n ON n.id = p.node_id
 			WHERE p.file_object_id = f.id AND p.status = 'verified'
 			  AND n.status = 'online' AND n.last_seen_at >= ?
 		  )
@@ -58,14 +58,14 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 			artifacts.title ILIKE ? OR COALESCE(artifacts.creator_name, '') ILIKE ?
 			OR COALESCE(artifacts.description, '') ILIKE ? OR artifacts.source_url ILIKE ?
 			OR EXISTS (
-				SELECT 1 FROM file_objects f
+				SELECT 1 FROM m_file_objects f
 				WHERE f.artifact_id = artifacts.id AND f.original_filename ILIKE ?
 				  AND f.deleted_at IS NULL
 				  AND f.public_download_enabled = TRUE AND f.redistribution_policy = 'allowed'
 				  AND f.preservation_status = 'verified' AND f.sha256 ~ '^[0-9a-fA-F]{64}$'
 				  AND f.size_bytes >= 0
 				  AND EXISTS (
-					SELECT 1 FROM placements p JOIN nodes n ON n.id = p.node_id
+					SELECT 1 FROM t_placements p JOIN m_nodes n ON n.id = p.node_id
 					WHERE p.file_object_id = f.id AND p.status = 'verified'
 					  AND n.status = 'online' AND n.last_seen_at >= ?
 				  )
@@ -78,7 +78,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		return
 	}
 	var artifacts []model.MArtifact
-	artifactQuery := query.Order("artifacts.title ASC").Offset((page - 1) * limit).Limit(limit)
+	artifactQuery := query.Order("m_artifacts.title ASC").Offset((page - 1) * limit).Limit(limit)
 	if err := artifactQuery.Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "公開カタログを検索できませんでした。"})
 		return
@@ -179,9 +179,9 @@ func (s *Server) publicCatalogFilesAll(c *gin.Context, artifactID string) ([]pub
 	var files []model.MFileObject
 	err := s.db.WithContext(c.Request.Context()).Raw(`
 		SELECT DISTINCT f.*
-		FROM file_objects f
-		JOIN placements p ON p.file_object_id = f.id AND p.status = 'verified'
-		JOIN nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
+		FROM m_file_objects f
+		JOIN t_placements p ON p.file_object_id = f.id AND p.status = 'verified'
+		JOIN m_nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
 		WHERE f.artifact_id = ?
 		  AND f.deleted_at IS NULL
 		  AND f.public_download_enabled = TRUE
@@ -214,9 +214,9 @@ func (s *Server) publicCatalogFiles(
 	var files []model.MFileObject
 	err := s.db.WithContext(c.Request.Context()).Raw(`
 		SELECT DISTINCT f.*
-		FROM file_objects f
-		JOIN placements p ON p.file_object_id = f.id AND p.status = 'verified'
-		JOIN nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
+		FROM m_file_objects f
+		JOIN t_placements p ON p.file_object_id = f.id AND p.status = 'verified'
+		JOIN m_nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
 		WHERE f.artifact_id = ?
 		  AND f.deleted_at IS NULL
 		  AND f.public_download_enabled = TRUE
@@ -255,9 +255,9 @@ func (s *Server) publicCatalogFileCount(
 	var total int64
 	err := s.db.WithContext(c.Request.Context()).Raw(`
 		SELECT COUNT(DISTINCT f.id)
-		FROM file_objects f
-		JOIN placements p ON p.file_object_id = f.id AND p.status = 'verified'
-		JOIN nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
+		FROM m_file_objects f
+		JOIN t_placements p ON p.file_object_id = f.id AND p.status = 'verified'
+		JOIN m_nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
 		WHERE f.artifact_id = ?
 		  AND f.deleted_at IS NULL
 		  AND f.public_download_enabled = TRUE

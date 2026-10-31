@@ -104,7 +104,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 
 			if tt.wantDelete {
 				var targetID string
-				if err := db.Raw("SELECT target_node_id FROM tasks WHERE file_object_id = ? AND task_type = 'delete' LIMIT 1", fileID).Scan(&targetID).Error; err != nil {
+				if err := db.Raw("SELECT target_node_id FROM t_tasks WHERE file_object_id = ? AND task_type = 'delete' LIMIT 1", fileID).Scan(&targetID).Error; err != nil {
 					t.Fatalf("read delete target: %v", err)
 				}
 				if targetID != newestNodeID {
@@ -133,14 +133,14 @@ func createSurplusCleanupFixture(t *testing.T, db *gorm.DB, replicaCount int, no
 	sha := strings.Repeat("a", 64)
 
 	t.Cleanup(func() {
-		if err := db.Exec("DELETE FROM audit_logs WHERE target_id = ?", fileID).Error; err != nil {
+		if err := db.Exec("DELETE FROM t_audit_logs WHERE target_id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup audit logs: %v", err)
 		}
 		if err := db.Exec("DELETE FROM artifacts WHERE id = ?", artifactID).Error; err != nil {
 			t.Errorf("cleanup artifact: %v", err)
 		}
 		if len(nodeIDs) > 0 {
-			if err := db.Exec("DELETE FROM nodes WHERE id IN ?", nodeIDs).Error; err != nil {
+			if err := db.Exec("DELETE FROM m_nodes WHERE id IN ?", nodeIDs).Error; err != nil {
 				t.Errorf("cleanup nodes: %v", err)
 			}
 		}
