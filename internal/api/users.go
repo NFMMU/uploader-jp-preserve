@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -184,11 +185,41 @@ func (s *Server) createUser(c *gin.Context) {
 }
 
 func (s *Server) listUsers(c *gin.Context) {
+	page, limit, all := pagination(c)
+
+	ctx := s.db.WithContext(c.Request.Context())
+
 	var users []model.MUser
-	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "custom_id", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
+	var total int64
+
+	if err := ctx.Model(&model.MUser{}).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count users"})
+		return
+	}
+
+	query := ctx.
+		Select(
+			"id",
+			"email",
+			"display_name",
+			"custom_id",
+			"role",
+			"disabled_at",
+			"created_at",
+			"updated_at",
+		).
+		Order("created_at DESC")
+
+	if !all {
+		offset := (page - 1) * limit
+		query = query.Offset(offset).Limit(limit)
+	}
+
+	if err := query.Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
 		return
 	}
+
 	type userView struct {
 		ID          string     `json:"id"`
 		Email       string     `json:"email"`
@@ -199,6 +230,7 @@ func (s *Server) listUsers(c *gin.Context) {
 		CreatedAt   time.Time  `json:"created_at"`
 		UpdatedAt   time.Time  `json:"updated_at"`
 	}
+
 	items := make([]userView, 0, len(users))
 	for _, user := range users {
 		items = append(items, userView{
@@ -212,5 +244,21 @@ func (s *Server) listUsers(c *gin.Context) {
 			UpdatedAt:   user.UpdatedAt,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+
+	response := gin.H{
+		"items": items,
+		"total": total,
+	}
+
+	if !all {
+		totalPages := int(math.Ceil(float64(total) / float64(limit)))
+
+		response["page"] = page
+		response["limit"] = limit
+		response["total_pages"] = totalPages
+	} else {
+		response["all"] = true
+	}
+
+	c.JSON(http.StatusOK, response)
 }
