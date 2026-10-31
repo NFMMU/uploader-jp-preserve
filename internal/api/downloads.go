@@ -66,7 +66,7 @@ func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.MFile
 		return f, model.TPlacement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.TPlacement
-	err := s.db.WithContext(c.Request.Context()).Table("t_placements").Select("t_placements.*").Joins("JOIN m_nodes ON m_nodes.id = placements.node_id").Where("t_placements.file_object_id = ? AND t_placements.status = ? AND m_nodes.status = ? AND m_nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("t_placements.created_at ASC").Find(&rows).Error
+	err := s.db.WithContext(c.Request.Context()).Table("t_placements").Select("t_placements.*").Joins("JOIN m_nodes ON m_nodes.id = t_placements.node_id").Where("t_placements.file_object_id = ? AND t_placements.status = ? AND m_nodes.status = ? AND m_nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("t_placements.created_at ASC").Find(&rows).Error
 	if err != nil {
 		return f, model.TPlacement{}, err
 	}
