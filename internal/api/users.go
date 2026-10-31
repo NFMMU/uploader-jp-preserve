@@ -143,7 +143,7 @@ func (s *Server) createUser(c *gin.Context) {
 
 func (s *Server) listUsers(c *gin.Context) {
 	var users []model.MUser
-	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "custom_id", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
 		return
 	}
