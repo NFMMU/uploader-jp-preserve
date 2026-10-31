@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
@@ -124,6 +125,11 @@ func (s *Server) createUser(c *gin.Context) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+		return
+	}
+	customID := strings.TrimSpace(req.CustomID)
+	if utf8.RuneCountInString(customID) < 3 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
 		return
 	}
 	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: strings.TrimSpace(req.CustomID), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
