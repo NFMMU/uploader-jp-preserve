@@ -120,14 +120,14 @@ func (s *Server) reconcilePlacements(ctx context.Context) error {
 		return err
 	}
 	if err := db.Exec(`UPDATE tasks AS t SET status='failed', last_error=COALESCE(t.last_error, 'node went offline during placement task'), lease_until=NULL, lease_token=NULL, updated_at=now()
-		WHERE t.status IN ('queued','running') AND ((t.task_type IN ('store','delete') AND t.target_node_id IN (SELECT id FROM nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM nodes WHERE status='offline')))`).Error; err != nil {
+		WHERE t.status IN ('queued','running') AND ((t.task_type IN ('store','delete') AND t.target_node_id IN (SELECT id FROM m_nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM m_nodes WHERE status='offline')))`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM nodes WHERE status='offline') AND status IN ('queued','running','stored','deleting')`).Error; err != nil {
+	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM m_nodes WHERE status='offline') AND status IN ('queued','running','stored','deleting')`).Error; err != nil {
 		return err
 	}
 	var fileIDs []string
-	if err := db.Raw("SELECT id FROM file_objects WHERE deleted_at IS NULL AND deletion_requested_at IS NULL AND preservation_status IN ('verified','degraded','missing','error','queued','stored') ORDER BY created_at ASC LIMIT 10000").Scan(&fileIDs).Error; err != nil {
+	if err := db.Raw("SELECT id FROM m_file_objects WHERE deleted_at IS NULL AND deletion_requested_at IS NULL AND preservation_status IN ('verified','degraded','missing','error','queued','stored') ORDER BY created_at ASC LIMIT 10000").Scan(&fileIDs).Error; err != nil {
 		return err
 	}
 	for _, fileID := range fileIDs {
@@ -180,7 +180,7 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 		var healthy []candidate
 		if err := tx.Table("placements AS p").
 			Select("p.id AS placement_id, p.node_id, n.name AS node_name, p.verified_at, n.online_since").
-			Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Joins("JOIN m_nodes AS n ON n.id = p.node_id").
 			Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).
 			Order("p.verified_at DESC NULLS LAST, p.created_at DESC").Find(&healthy).Error; err != nil {
 			return err
@@ -246,7 +246,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 			placementByNode[p.NodeID] = p
 		}
 		var healthySources []model.TPlacement
-		if err := tx.Table("placements AS p").Select("p.*").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).Order("p.verified_at DESC NULLS LAST").Find(&healthySources).Error; err != nil {
+		if err := tx.Table("placements AS p").Select("p.*").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).Order("p.verified_at DESC NULLS LAST").Find(&healthySources).Error; err != nil {
 			return err
 		}
 		var active int64

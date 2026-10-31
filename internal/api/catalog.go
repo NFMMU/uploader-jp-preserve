@@ -215,7 +215,7 @@ func (s *Server) listFiles(c *gin.Context) {
 		case "public":
 			cutoff := time.Now().UTC().Add(-2 * time.Minute)
 			query = query.Where(`public_download_enabled = TRUE AND redistribution_policy = 'allowed' AND preservation_status = 'verified' AND sha256 ~ '^[0-9a-fA-F]{64}$' AND EXISTS (
-				SELECT 1 FROM placements p JOIN nodes n ON n.id = p.node_id
+				SELECT 1 FROM t_placements p JOIN m_nodes n ON n.id = p.node_id
 				WHERE p.file_object_id = file_objects.id AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?
 			)`, cutoff)
 		case "private":
@@ -383,7 +383,7 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		}
 		cutoff := time.Now().UTC().Add(-2 * time.Minute)
 		var healthy int64
-		if err := s.db.WithContext(c.Request.Context()).Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
+		if err := s.db.WithContext(c.Request.Context()).Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check healthy placements"})
 			return
 		}

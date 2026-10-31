@@ -49,7 +49,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 	}
 
 	var nodeBStatus string
-	if err := db.Raw("SELECT status FROM nodes WHERE id = ?", nodeBID).Scan(&nodeBStatus).Error; err != nil {
+	if err := db.Raw("SELECT status FROM m_nodes WHERE id = ?", nodeBID).Scan(&nodeBStatus).Error; err != nil {
 		t.Fatalf("read offline node status: %v", err)
 	}
 	if nodeBStatus != "offline" {
@@ -61,7 +61,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 		Status       string
 		TargetNodeID string
 	}
-	if err := db.Raw("SELECT task_type, status, target_node_id FROM tasks WHERE file_object_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1", fileID).Scan(&task).Error; err != nil {
+	if err := db.Raw("SELECT task_type, status, target_node_id FROM t_tasks WHERE file_object_id = ? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1", fileID).Scan(&task).Error; err != nil {
 		t.Fatalf("read replacement task: %v", err)
 	}
 	if task.TaskType != "replicate" || task.Status != "queued" || task.TargetNodeID != nodeCID {
@@ -69,7 +69,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 	}
 
 	var cPlacementStatus string
-	if err := db.Raw("SELECT status FROM placements WHERE file_object_id = ? AND node_id = ?", fileID, nodeCID).Scan(&cPlacementStatus).Error; err != nil {
+	if err := db.Raw("SELECT status FROM t_placements WHERE file_object_id = ? AND node_id = ?", fileID, nodeCID).Scan(&cPlacementStatus).Error; err != nil {
 		t.Fatalf("read replacement placement: %v", err)
 	}
 	if cPlacementStatus != "queued" {
@@ -92,7 +92,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 	}
 
 	var healthyCount int64
-	if err := db.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthyCount).Error; err != nil {
+	if err := db.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthyCount).Error; err != nil {
 		t.Fatalf("count healthy placements after recovery: %v", err)
 	}
 	if healthyCount != 3 {
@@ -106,7 +106,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 		t.Fatalf("delete task count after recovery = %d, want 0", deleteCount)
 	}
 	var preservationStatus string
-	if err := db.Raw("SELECT preservation_status FROM file_objects WHERE id = ?", fileID).Scan(&preservationStatus).Error; err != nil {
+	if err := db.Raw("SELECT preservation_status FROM m_file_objects WHERE id = ?", fileID).Scan(&preservationStatus).Error; err != nil {
 		t.Fatalf("read preservation status after recovery: %v", err)
 	}
 	if preservationStatus != "verified" {
@@ -123,22 +123,22 @@ func createNodeRecoveryFixture(t *testing.T, db *gorm.DB) (fileID, nodeAID, node
 	sha := strings.Repeat("b", 64)
 
 	t.Cleanup(func() {
-		if err := db.Exec("DELETE FROM audit_logs WHERE target_id = ?", fileID).Error; err != nil {
+		if err := db.Exec("DELETE FROM t_audit_logs WHERE target_id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup audit logs: %v", err)
 		}
-		if err := db.Exec("DELETE FROM tasks WHERE file_object_id = ?", fileID).Error; err != nil {
+		if err := db.Exec("DELETE FROM t_tasks WHERE file_object_id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup tasks: %v", err)
 		}
-		if err := db.Exec("DELETE FROM placements WHERE file_object_id = ?", fileID).Error; err != nil {
+		if err := db.Exec("DELETE FROM t_placements WHERE file_object_id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup placements: %v", err)
 		}
-		if err := db.Exec("DELETE FROM file_objects WHERE id = ?", fileID).Error; err != nil {
+		if err := db.Exec("DELETE FROM m_file_objects WHERE id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup file object: %v", err)
 		}
 		if err := db.Exec("DELETE FROM artifacts WHERE id = ?", artifactID).Error; err != nil {
 			t.Errorf("cleanup artifact: %v", err)
 		}
-		if err := db.Exec("DELETE FROM nodes WHERE id IN ?", []string{nodeAID, nodeBID, nodeCID}).Error; err != nil {
+		if err := db.Exec("DELETE FROM m_nodes WHERE id IN ?", []string{nodeAID, nodeBID, nodeCID}).Error; err != nil {
 			t.Errorf("cleanup nodes: %v", err)
 		}
 	})
