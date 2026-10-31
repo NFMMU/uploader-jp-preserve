@@ -39,7 +39,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	cutoff := time.Now().UTC().Add(-2 * time.Minute)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.MArtifact{}).Where(`EXISTS (
 		SELECT 1 FROM m_file_objects f
-		WHERE f.artifact_id = artifacts.id
+		WHERE f.artifact_id = m_artifacts.id
 		  AND f.deleted_at IS NULL
 		  AND f.public_download_enabled = TRUE
 		  AND f.redistribution_policy = 'allowed'
@@ -59,7 +59,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 			OR COALESCE(artifacts.description, '') ILIKE ? OR artifacts.source_url ILIKE ?
 			OR EXISTS (
 				SELECT 1 FROM m_file_objects f
-				WHERE f.artifact_id = artifacts.id AND f.original_filename ILIKE ?
+				WHERE f.artifact_id = m_artifacts.id AND f.original_filename ILIKE ?
 				  AND f.deleted_at IS NULL
 				  AND f.public_download_enabled = TRUE AND f.redistribution_policy = 'allowed'
 				  AND f.preservation_status = 'verified' AND f.sha256 ~ '^[0-9a-fA-F]{64}$'
