@@ -131,11 +131,12 @@ func (s *Server) createUser(c *gin.Context) {
 		return
 	}
 	customID := strings.TrimSpace(req.CustomID)
-	if utf8.RuneCountInString(customID) < 3 {
+	displayName := strings.TrimSpace(req.DisplayName)
+	if utf8.RuneCountInString(customID) < 3 || utf8.RuneCountInString(displayName) < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
 		return
 	}
-	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: customID, DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
+	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: customID, DisplayName: displayName, Role: req.Role}
 	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
 		return
