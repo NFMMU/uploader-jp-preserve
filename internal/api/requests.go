@@ -211,11 +211,11 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			Item             publicRequestListItem `gorm:"embedded"`
 			LinkedArtifactID *string
 		}
-		if err := query.Select(`public_requests.*, f.original_filename AS linked_file_name,
-			a.title AS linked_artifact_title, COALESCE(public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
-			Joins("LEFT JOIN m_file_objects f ON f.id = public_requests.file_object_id").
-			Joins("LEFT JOIN artifacts a ON a.id = COALESCE(public_requests.artifact_id, f.artifact_id)").
-			Order("CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
+		if err := query.Select(`t_public_requests.*, f.original_filename AS linked_file_name,
+			a.title AS linked_artifact_title, COALESCE(t_public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
+			Joins("LEFT JOIN m_file_objects f ON f.id = t_public_requests.file_object_id").
+			Joins("LEFT JOIN m_artifacts a ON a.id = COALESCE(t_public_requests.artifact_id, f.artifact_id)").
+			Order("CASE WHEN t_public_requests.status = 'pending' THEN 0 WHEN t_public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
 			Scan(&rows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 			return
