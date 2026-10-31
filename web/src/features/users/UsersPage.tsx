@@ -190,7 +190,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							<input
 								type="text"
 								name="custom_id"
-								id="custom_id"
+								required
 								onChange={(e) =>
 									setForm({ ...form, custom_id: e.target.value })
 								}
