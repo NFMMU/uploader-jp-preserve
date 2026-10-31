@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,6 +14,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+var customIdRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,16}$`)
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
@@ -59,8 +62,8 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 	if req.CustomID != nil {
 		customID := strings.TrimSpace(*req.CustomID)
-		if utf8.RuneCountInString(customID) < 3 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+		if !customIdRegex.MatchString(customID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Custom ID must be 3–16 characters long and contain only lowercase letters, numbers, hyphens (-), and underscores (_)"})
 			return
 		}
 	}
@@ -146,10 +149,14 @@ func (s *Server) createUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
 		return
 	}
-	customID := strings.TrimSpace(req.CustomID)
 	displayName := strings.TrimSpace(req.DisplayName)
-	if utf8.RuneCountInString(customID) < 3 || utf8.RuneCountInString(displayName) < 1 {
+	if utf8.RuneCountInString(displayName) < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+		return
+	}
+	customID := strings.TrimSpace(req.CustomID)
+	if !customIdRegex.MatchString(customID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Custom ID must be 3–16 characters long and contain only lowercase letters, numbers, hyphens (-), and underscores (_)"})
 		return
 	}
 	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: customID, DisplayName: displayName, Role: req.Role}
