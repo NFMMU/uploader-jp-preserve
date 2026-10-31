@@ -24,6 +24,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		Disabled    *bool   `json:"disabled"`
 		DisplayName *string `json:"display_name" binding:"omitempty,min=1,max=120"`
 		CustomID    *string `json:"custom_id" binding:"omitempty,min=3,max=16"`
+		Password    *string `json:"password" binding:"omitempty,min=12,max=1024"`
 		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.Role == nil && req.Disabled == nil && req.DisplayName == nil && req.CustomID == nil && req.Email == nil) {
@@ -68,6 +69,17 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 	}
 
+	var hash *string
+	if req.Password != nil {
+		hashRaw, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+			return
+		}
+		hashRawStrng := string(hashRaw)
+		hash = &hashRawStrng
+	}
+
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if target.Role == "admin" && (newRole != "admin" || disable) {
 			var activeAdmins []model.MUser
@@ -92,6 +104,9 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 		if req.Email != nil {
 			updates.Email = strings.ToLower(strings.TrimSpace(*req.Email))
+		}
+		if hash != nil {
+			updates.PasswordHash = *hash
 		}
 		if req.Disabled != nil {
 			if *req.Disabled {
