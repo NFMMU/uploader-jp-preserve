@@ -47,7 +47,7 @@ func randomSecret() (string, error) {
 
 func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
 	ctx := s.db.WithContext(context.Background())
-	_ = ctx.Exec(`INSERT INTO download_audit_logs (download_job_id,file_object_id,selected_node_id,action,result,reason,bytes_sent,duration_ms) VALUES (NULLIF(?, '')::uuid,NULLIF(?, '')::uuid,?::uuid,?,?,?,?,?)`, jobID, fileID, nodeID, action, result, nullableText(reason), bytes, duration.Milliseconds()).Error
+	_ = ctx.Exec(`INSERT INTO t_download_audit_logs (download_job_id,file_object_id,selected_node_id,action,result,reason,bytes_sent,duration_ms) VALUES (NULLIF(?, '')::uuid,NULLIF(?, '')::uuid,?::uuid,?,?,?,?,?)`, jobID, fileID, nodeID, action, result, nullableText(reason), bytes, duration.Milliseconds()).Error
 }
 
 func nullableText(s string) any {

@@ -49,7 +49,7 @@ func retryTestDB(t *testing.T) *gorm.DB {
 	schema := "retry_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	retryExec(t, db, "CREATE SCHEMA "+schema)
 	t.Cleanup(func() { retryExec(t, db, "DROP SCHEMA "+schema+" CASCADE") })
-	for _, table := range []string{"artifacts", "file_objects", "nodes", "placements", "tasks", "audit_logs"} {
+	for _, table := range []string{"m_artifacts", "m_file_objects", "m_nodes", "t_placements", "t_tasks", "t_audit_logs"} {
 		retryExec(t, db, "CREATE TABLE "+schema+"."+table+" (LIKE public."+table+" INCLUDING ALL)")
 	}
 	query := dsn.Query()

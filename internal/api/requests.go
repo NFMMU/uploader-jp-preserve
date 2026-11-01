@@ -901,9 +901,9 @@ func (s *Server) listAuditLogs(c *gin.Context) {
 	var logs []auditLogView
 	query := s.db.WithContext(c.Request.Context()).
 		Model(&model.TAuditLog{}).
-		Select("audit_logs.*, users.display_name AS actor_display_name").
+		Select("t_audit_logs.*, users.display_name AS actor_display_name").
 		Joins("LEFT JOIN m_users ON users.id = audit_logs.actor_id").
-		Order("audit_logs.created_at DESC")
+		Order("t_audit_logs.created_at DESC")
 
 	if !isAll {
 		query = query.Offset((page - 1) * limit).Limit(limit)
