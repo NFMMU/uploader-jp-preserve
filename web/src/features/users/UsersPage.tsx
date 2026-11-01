@@ -3,6 +3,7 @@ import type React from "react";
 import { useState } from "react";
 import { Heading } from "../../components/common/Heading";
 import { Modal } from "../../components/common/Modal";
+import { Pagination } from "../../components/common/Pagination";
 import { Status } from "../../components/common/Status";
 import { Table } from "../../components/common/Table";
 import { useData } from "../../hooks/useData";
@@ -11,7 +12,21 @@ import type { Obj } from "../../types/common";
 
 export function UsersPage({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/admin/users", refresh + localRefresh);
+
+	// ページネーション
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+
+	// ページ番号・表示件数を API に渡す
+	const d = useData(
+		api,
+		`/admin/users?page=${page}&limit=${limit}`,
+		refresh + localRefresh,
+	);
+
+	const items = d.data?.items ?? [];
+	const total = d.data?.total ?? 0;
+
 	const [modal, setModal] = useState(false);
 	const [form, setForm] = useState({
 		email: "",
@@ -20,11 +35,18 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		password: "",
 		role: "reviewer",
 	});
+
 	async function create(e: React.FormEvent) {
 		e.preventDefault();
+
 		try {
-			await api("/admin/users", { method: "POST", body: JSON.stringify(form) });
+			await api("/admin/users", {
+				method: "POST",
+				body: JSON.stringify(form),
+			});
+
 			notify("ユーザーを作成しました");
+
 			setForm({
 				email: "",
 				display_name: "",
@@ -32,14 +54,19 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				password: "",
 				role: "reviewer",
 			});
+
+			// 作成したユーザーを一覧に反映するため、1ページ目に戻す
+			setPage(1);
 			setLocalRefresh((x) => x + 1);
 			setModal(false);
 		} catch (e) {
 			notify((e as Error).message);
 		}
 	}
+
 	const [editModal, setEditModal] = useState(false);
 	const [editingUser, setEditingUser] = useState<Obj | null>(null);
+
 	const [editForm, setEditForm] = useState({
 		email: "",
 		display_name: "",
@@ -50,6 +77,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 
 	function openEditModal(user: Obj) {
 		setEditingUser(user);
+
 		setEditForm({
 			email: String(user.email ?? ""),
 			display_name: String(user.display_name ?? ""),
@@ -57,6 +85,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 			password: "",
 			role: String(user.role ?? "reviewer"),
 		});
+
 		setEditModal(true);
 	}
 
@@ -78,10 +107,13 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				body.password = editForm.password;
 			}
 
-			await api(`/admin/users/${encodeURIComponent(String(editingUser.id))}`, {
-				method: "PATCH",
-				body: JSON.stringify(body),
-			});
+			await api(
+				`/admin/users/${encodeURIComponent(String(editingUser.id))}`,
+				{
+					method: "PATCH",
+					body: JSON.stringify(body),
+				},
+			);
 
 			notify("ユーザーを更新しました");
 			setEditModal(false);
@@ -91,6 +123,18 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 			notify((e as Error).message);
 		}
 	}
+
+	// ページ変更
+	function handlePageChange(nextPage: number) {
+		setPage(nextPage);
+	}
+
+	// 表示件数変更時は1ページ目に戻す
+	function handleLimitChange(nextLimit: number) {
+		setLimit(nextLimit);
+		setPage(1);
+	}
+
 	return (
 		<>
 			<Heading
@@ -105,6 +149,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 					)
 				}
 			/>
+
 			{role !== "admin" ? (
 				<div className="info-card">
 					<LockKeyhole />
@@ -133,30 +178,49 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							</tr>
 						) : d.error ? (
 							<tr>
-								<td colSpan={5} className="empty">
+								<td colSpan={6} className="empty">
 									{d.error}
 								</td>
 							</tr>
+						) : items.length === 0 ? (
+							<tr>
+								<td colSpan={6} className="empty">
+									ユーザーがいません。
+								</td>
+							</tr>
 						) : (
-							(d.data.items || []).map((x: Obj) => (
+							items.map((x: Obj) => (
 								<tr key={x.id}>
 									<td>
 										<div className="file-cell">
 											<div className="avatar">
-												{(x.display_name || x.email).slice(0, 1).toUpperCase()}
+												{(
+													x.display_name ||
+													x.email ||
+													"?"
+												)
+													.slice(0, 1)
+													.toUpperCase()}
 											</div>
 											<b>{x.display_name}</b>
 											<small>{`@${x.custom_id}`}</small>
 										</div>
 									</td>
+
 									<td>{x.email}</td>
+
 									<td>
 										<span className="type-pill">{x.role}</span>
 									</td>
+
 									<td>
-										<Status value={x.disabled_at ? "offline" : "online"} />
+										<Status
+											value={x.disabled_at ? "offline" : "online"}
+										/>
 									</td>
+
 									<td>{date(x.created_at)}</td>
+
 									<td>
 										<button
 											type="button"
@@ -170,10 +234,23 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							))
 						)}
 					</Table>
+
+					<Pagination
+						page={page}
+						limit={limit}
+						total={total}
+						loading={d.loading}
+						onPageChange={handlePageChange}
+						onLimitChange={handleLimitChange}
+					/>
 				</section>
 			)}
+
 			{modal && (
-				<Modal title="ユーザーを作成" close={() => setModal(false)}>
+				<Modal
+					title="ユーザーを作成"
+					close={() => setModal(false)}
+				>
 					<form className="form-stack" onSubmit={create}>
 						<label>
 							表示名
@@ -181,10 +258,14 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								required
 								value={form.display_name}
 								onChange={(e) =>
-									setForm({ ...form, display_name: e.target.value })
+									setForm({
+										...form,
+										display_name: e.target.value,
+									})
 								}
 							/>
 						</label>
+
 						<label>
 							ユーザーID
 							<input
@@ -196,34 +277,56 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								pattern="[a-zA-Z0-9_-]{3,16}"
 								value={form.custom_id}
 								onChange={(e) =>
-									setForm({ ...form, custom_id: e.target.value })
+									setForm({
+										...form,
+										custom_id: e.target.value,
+									})
 								}
 							/>
 						</label>
+
 						<label>
 							メールアドレス
 							<input
 								required
 								type="email"
 								value={form.email}
-								onChange={(e) => setForm({ ...form, email: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										email: e.target.value,
+									})
+								}
 							/>
 						</label>
+
 						<label>
 							初期パスワード（12文字以上）
 							<input
 								required
 								minLength={12}
 								type="password"
+								autoComplete="new-password"
 								value={form.password}
-								onChange={(e) => setForm({ ...form, password: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										password: e.target.value,
+									})
+								}
 							/>
 						</label>
+
 						<label>
 							ロール
 							<select
 								value={form.role}
-								onChange={(e) => setForm({ ...form, role: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										role: e.target.value,
+									})
+								}
 							>
 								<option value="viewer">閲覧者</option>
 								<option value="author">権利者</option>
@@ -231,6 +334,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								<option value="admin">管理者</option>
 							</select>
 						</label>
+
 						<div className="modal-actions">
 							<button
 								type="button"
@@ -239,11 +343,15 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary">作成</button>
+
+							<button type="submit" className="primary">
+								作成
+							</button>
 						</div>
 					</form>
 				</Modal>
 			)}
+
 			{editModal && editingUser && (
 				<Modal
 					title="ユーザーを編集"
