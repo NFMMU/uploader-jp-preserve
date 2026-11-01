@@ -370,7 +370,7 @@ func (s *Server) listTasks(c *gin.Context) {
 
 	// タスクを取得
 	var tasks []model.Task
-	taskQuery := query.Order("priority DESC, created_at DESC, tasks.id ASC")
+	taskQuery := query.Order("priority DESC, created_at ASC, tasks.id ASC")
 	if !isAll {
 		taskQuery = taskQuery.Limit(limit).Offset((page - 1) * limit)
 	}
