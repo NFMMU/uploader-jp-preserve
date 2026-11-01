@@ -1580,7 +1580,7 @@ func sourceFetchFailureIsPermanent(message string) bool {
 
 func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	var healthy int64
-	if err := tx.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthy).Error; err != nil {
+	if err := tx.Table("t_placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthy).Error; err != nil {
 		return err
 	}
 	var active int64
@@ -1592,7 +1592,7 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 		return err
 	}
 	var offlineVerified int64
-	if err := tx.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND (n.status <> 'online' OR n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '2 minutes')", fileID).Count(&offlineVerified).Error; err != nil {
+	if err := tx.Table("t_placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND (n.status <> 'online' OR n.last_seen_at IS NULL OR n.last_seen_at < now() - interval '2 minutes')", fileID).Count(&offlineVerified).Error; err != nil {
 		return err
 	}
 	status := "queued"

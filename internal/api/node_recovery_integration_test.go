@@ -92,7 +92,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 	}
 
 	var healthyCount int64
-	if err := db.Table("placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthyCount).Error; err != nil {
+	if err := db.Table("t_placements AS p").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= now() - interval '2 minutes'", fileID).Count(&healthyCount).Error; err != nil {
 		t.Fatalf("count healthy placements after recovery: %v", err)
 	}
 	if healthyCount != 3 {

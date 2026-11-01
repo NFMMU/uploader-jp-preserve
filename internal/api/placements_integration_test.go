@@ -84,14 +84,14 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 			}
 
 			var deletingCount int64
-			if err := db.Table("placements").Where("file_object_id = ? AND status = 'deleting'", fileID).Count(&deletingCount).Error; err != nil {
+			if err := db.Table("t_placements").Where("file_object_id = ? AND status = 'deleting'", fileID).Count(&deletingCount).Error; err != nil {
 				t.Fatalf("count deleting placements: %v", err)
 			}
 			if deletingCount != wantCount {
 				t.Fatalf("deleting placement count = %d, want %d", deletingCount, wantCount)
 			}
 			var verifiedCount int64
-			if err := db.Table("placements").Where("file_object_id = ? AND status = 'verified'", fileID).Count(&verifiedCount).Error; err != nil {
+			if err := db.Table("t_placements").Where("file_object_id = ? AND status = 'verified'", fileID).Count(&verifiedCount).Error; err != nil {
 				t.Fatalf("count verified placements: %v", err)
 			}
 			wantVerified := int64(tt.replicaCount)

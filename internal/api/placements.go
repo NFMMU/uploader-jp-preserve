@@ -178,7 +178,7 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 			OnlineSince *time.Time
 		}
 		var healthy []candidate
-		if err := tx.Table("placements AS p").
+		if err := tx.Table("t_placements AS p").
 			Select("p.id AS placement_id, p.node_id, n.name AS node_name, p.verified_at, n.online_since").
 			Joins("JOIN m_nodes AS n ON n.id = p.node_id").
 			Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).
@@ -246,7 +246,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 			placementByNode[p.NodeID] = p
 		}
 		var healthySources []model.TPlacement
-		if err := tx.Table("placements AS p").Select("p.*").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).Order("p.verified_at DESC NULLS LAST").Find(&healthySources).Error; err != nil {
+		if err := tx.Table("t_placements AS p").Select("p.*").Joins("JOIN m_nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).Order("p.verified_at DESC NULLS LAST").Find(&healthySources).Error; err != nil {
 			return err
 		}
 		var active int64
