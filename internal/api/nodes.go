@@ -358,17 +358,17 @@ func (s *Server) listTasks(c *gin.Context) {
 	query := s.db.WithContext(c.Request.Context()).
 		Model(&model.TTask{}).
 		Where(`NOT (
-            tasks.status = 'failed'
-            AND tasks.task_type IN ('source_fetch', 'store')
+            t_tasks.status = 'failed'
+            AND t_tasks.task_type IN ('source_fetch', 'store')
             AND EXISTS (
                 SELECT 1 FROM m_file_objects
-                WHERE t_file_objects.id = tasks.file_object_id
-                AND file_objects.preservation_status = 'verified'
+                WHERE m_file_objects.id = t_tasks.file_object_id
+                AND m_file_objects.preservation_status = 'verified'
             )
         )`)
 
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
-		query = query.Where("tasks.status = ?", status)
+		query = query.Where("t_tasks.status = ?", status)
 	}
 
 	// フィルター適用後の全件数を取得
@@ -382,7 +382,7 @@ func (s *Server) listTasks(c *gin.Context) {
 
 	// タスクを取得
 	var tasks []model.TTask
-	taskQuery := query.Order("priority DESC, created_at DESC, tasks.id ASC")
+	taskQuery := query.Order("priority DESC, created_at DESC, t_tasks.id ASC")
 	if !isAll {
 		taskQuery = taskQuery.Limit(limit).Offset((page - 1) * limit)
 	}
