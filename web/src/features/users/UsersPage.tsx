@@ -194,6 +194,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								minLength={3}
 								maxLength={16}
 								pattern="[a-zA-Z0-9_-]{3,16}"
+								value={form.custom_id}
 								onChange={(e) =>
 									setForm({ ...form, custom_id: e.target.value })
 								}
