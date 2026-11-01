@@ -128,7 +128,7 @@ func (s *Server) updateUser(c *gin.Context) {
 			}
 		}
 
-		return tx.Where("id = ?", target.ID).Updates(updates).Error
+		return tx.Model(&model.MUser{}).Where("id = ?", target.ID).Updates(updates).Error
 	})
 	if err != nil {
 		if err == errLastActiveAdmin {
