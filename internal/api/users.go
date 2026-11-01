@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var customIdRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,16}$`)
+var customIdRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,16}$`)
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
