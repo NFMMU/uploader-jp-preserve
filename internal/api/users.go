@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -135,6 +136,11 @@ func (s *Server) updateUser(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "cannot disable or demote the last active administrator"})
 			return
 		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			c.JSON(http.StatusConflict, gin.H{"error": "email or custom_id is already in use"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update user"})
 		return
 	}
@@ -194,7 +200,12 @@ func (s *Server) createUser(c *gin.Context) {
 	}
 	user := model.MUser{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), CustomID: customID, DisplayName: displayName, Role: req.Role}
 	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			c.JSON(http.StatusConflict, gin.H{"error": "email or custom_id is already in use"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	s.audit(c, &actor, "user", user.ID, "user.create", "success", nil)
