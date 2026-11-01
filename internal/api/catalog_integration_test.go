@@ -90,10 +90,10 @@ func TestListFilesAllIntegration(t *testing.T) {
 	// More distinct artifacts than the PostgreSQL extended protocol permits
 	// as bind parameters in a single statement.
 	const count = 65536
-	catalogExec(t, db, `INSERT INTO artifacts (id, title, source_url, created_at, updated_at)
+	catalogExec(t, db, `INSERT INTO m_artifacts (id, title, source_url, created_at, updated_at)
 		SELECT md5(i::text)::uuid, 'artifact-' || i, 'https://example.invalid/' || i, now(), now()
 		FROM generate_series(1, ?) i`, count)
-	catalogExec(t, db, `INSERT INTO file_objects (id, artifact_id, original_filename, size_bytes,
+	catalogExec(t, db, `INSERT INTO m_file_objects (id, artifact_id, original_filename, size_bytes,
 		preservation_status, redistribution_policy, public_download_enabled, created_at)
 		SELECT md5('file-' || i)::uuid, md5(i::text)::uuid, 'file-' || i, i, 'verified', 'unknown', false, now()
 		FROM generate_series(1, ?) i`, count)
@@ -190,17 +190,17 @@ func TestListPublicRequestsAllIntegration(t *testing.T) {
 
 func TestPublicCatalogPaginationIntegration(t *testing.T) {
 	db, _ := catalogTestDB(t)
-	catalogExec(t, db, `INSERT INTO artifacts (id, title, source_url, created_at, updated_at)
+	catalogExec(t, db, `INSERT INTO m_artifacts (id, title, source_url, created_at, updated_at)
 		SELECT md5(i::text)::uuid, lpad(i::text, 3, '0'), 'https://example.invalid/' || i, now(), now()
 		FROM generate_series(1, 105) i`)
-	catalogExec(t, db, `INSERT INTO nodes (id, name, node_type, status, capacity_bytes, used_bytes,
+	catalogExec(t, db, `INSERT INTO m_nodes (id, name, node_type, status, capacity_bytes, used_bytes,
 		available_bytes, requested_capacity_bytes, created_at, updated_at, last_seen_at)
 		VALUES (md5('node')::uuid, 'test node', 'A', 'online', 1000, 0, 1000, 1000, now(), now(), now())`)
-	catalogExec(t, db, `INSERT INTO file_objects (id, artifact_id, original_filename, size_bytes,
+	catalogExec(t, db, `INSERT INTO m_file_objects (id, artifact_id, original_filename, size_bytes,
 		sha256, preservation_status, redistribution_policy, public_download_enabled, created_at)
 		SELECT md5('file-' || i)::uuid, md5(i::text)::uuid, 'file-' || i, i, repeat('a', 64), 'verified', 'allowed', true, now()
 		FROM generate_series(1, 105) i`)
-	catalogExec(t, db, `INSERT INTO placements (id, file_object_id, node_id, storage_key, status, created_at)
+	catalogExec(t, db, `INSERT INTO t_placements (id, file_object_id, node_id, storage_key, status, created_at)
 		SELECT md5('placement-' || i)::uuid, md5('file-' || i)::uuid, md5('node')::uuid, 'test', 'verified', now()
 		FROM generate_series(1, 105) i`)
 	s := &Server{db: db}
