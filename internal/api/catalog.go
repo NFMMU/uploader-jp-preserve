@@ -184,7 +184,7 @@ func (s *Server) listFiles(c *gin.Context) {
     	OR original_filename ILIKE ?
     	OR COALESCE(sha256, '') ILIKE ?
     	OR artifact_id IN (
-    	    SELECT id FROM artifacts
+    	    SELECT id FROM m_artifacts
     	    WHERE CAST(id AS TEXT) ILIKE ?
     	       OR title ILIKE ?
     	       OR COALESCE(creator_name, '') ILIKE ?
@@ -218,7 +218,7 @@ func (s *Server) listFiles(c *gin.Context) {
 			cutoff := time.Now().UTC().Add(-2 * time.Minute)
 			query = query.Where(`public_download_enabled = TRUE AND redistribution_policy = 'allowed' AND preservation_status = 'verified' AND sha256 ~ '^[0-9a-fA-F]{64}$' AND EXISTS (
 				SELECT 1 FROM t_placements p JOIN m_nodes n ON n.id = p.node_id
-				WHERE p.file_object_id = file_objects.id AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?
+				WHERE p.file_object_id = t_file_objects.id AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?
 			)`, cutoff)
 		case "private":
 			query = query.Where("public_download_enabled = FALSE")

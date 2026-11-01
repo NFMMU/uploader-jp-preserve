@@ -84,7 +84,7 @@ func (s *Server) submitNodeEnrollmentRequest(c *gin.Context) {
 	}
 	id := uuid.NewString()
 	err := s.db.WithContext(c.Request.Context()).Exec(`
-		INSERT INTO node_enrollment_requests
+		INSERT INTO t_node_enrollment_requests
 			(id, name, node_type, requested_capacity_bytes, contact_email, message, status, terms_accepted_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, 'pending', now(), now(), now())`, id, strings.TrimSpace(req.Name), req.NodeType, *req.RequestedCapacityBytes, strings.ToLower(strings.TrimSpace(req.ContactEmail)), strings.TrimSpace(req.Message)).Error
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *Server) listNodeEnrollmentRequests(c *gin.Context) {
 		ApprovedAt             *time.Time `json:"approved_at,omitempty"`
 	}
 	var items []enrollmentRequestView
-	err := s.db.WithContext(c.Request.Context()).Table("node_enrollment_requests").
+	err := s.db.WithContext(c.Request.Context()).Table("t_node_enrollment_requests").
 		Select("id, name, node_type, requested_capacity_bytes, contact_email, message, status, node_id, token_expires_at, created_at, updated_at, approved_at").
 		Order("created_at DESC").Limit(500).Find(&items).Error
 	if err != nil {
@@ -153,7 +153,7 @@ func (s *Server) reviewNodeEnrollmentRequest(c *gin.Context) {
 		return
 	}
 	if req.Status == "rejected" {
-		result := s.db.WithContext(c.Request.Context()).Exec(`UPDATE node_enrollment_requests SET status = 'rejected', enrollment_token_hash = NULL, token_expires_at = NULL, reviewed_by = ?, updated_at = now() WHERE id = ? AND status <> 'enrolled'`, actor.ID, id)
+		result := s.db.WithContext(c.Request.Context()).Exec(`UPDATE t_node_enrollment_requests SET status = 'rejected', enrollment_token_hash = NULL, token_expires_at = NULL, reviewed_by = ?, updated_at = now() WHERE id = ? AND status <> 'enrolled'`, actor.ID, id)
 		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not reject enrollment request"})
 			return
@@ -176,7 +176,7 @@ func (s *Server) reviewNodeEnrollmentRequest(c *gin.Context) {
 		return
 	}
 	expires := time.Now().UTC().Add(nodeEnrollmentTTL)
-	result := s.db.WithContext(c.Request.Context()).Exec(`UPDATE node_enrollment_requests SET status = 'approved', enrollment_token_hash = ?, token_expires_at = ?, approved_by = ?, approved_at = now(), reviewed_by = ?, updated_at = now() WHERE id = ? AND status IN ('pending', 'approved')`, hashNodeToken(token), expires, actor.ID, actor.ID, id)
+	result := s.db.WithContext(c.Request.Context()).Exec(`UPDATE t_node_enrollment_requests SET status = 'approved', enrollment_token_hash = ?, token_expires_at = ?, approved_by = ?, approved_at = now(), reviewed_by = ?, updated_at = now() WHERE id = ? AND status IN ('pending', 'approved')`, hashNodeToken(token), expires, actor.ID, actor.ID, id)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not approve enrollment request"})
 		return

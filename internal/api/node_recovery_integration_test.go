@@ -78,13 +78,13 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 
 	// Simulate successful transfer, hash verification, and the original node's return.
 	now := time.Now().UTC()
-	if err := db.Exec("UPDATE tasks SET status = 'completed', updated_at = ? WHERE file_object_id = ? AND task_type = 'replicate' AND status = 'queued'", now, fileID).Error; err != nil {
+	if err := db.Exec("UPDATE t_tasks SET status = 'completed', updated_at = ? WHERE file_object_id = ? AND task_type = 'replicate' AND status = 'queued'", now, fileID).Error; err != nil {
 		t.Fatalf("complete simulated replication task: %v", err)
 	}
-	if err := db.Exec("UPDATE placements SET status = 'verified', verified_at = ? WHERE file_object_id = ? AND node_id = ?", now, fileID, nodeCID).Error; err != nil {
+	if err := db.Exec("UPDATE t_placements SET status = 'verified', verified_at = ? WHERE file_object_id = ? AND node_id = ?", now, fileID, nodeCID).Error; err != nil {
 		t.Fatalf("verify replacement placement: %v", err)
 	}
-	if err := db.Exec("UPDATE nodes SET status = 'online', last_seen_at = ?, online_since = ?, updated_at = ? WHERE id = ?", now, now, now, nodeBID).Error; err != nil {
+	if err := db.Exec("UPDATE m_nodes SET status = 'online', last_seen_at = ?, online_since = ?, updated_at = ? WHERE id = ?", now, now, now, nodeBID).Error; err != nil {
 		t.Fatalf("simulate original node returning: %v", err)
 	}
 	if err := s.reconcilePlacements(context.Background()); err != nil {
@@ -135,7 +135,7 @@ func createNodeRecoveryFixture(t *testing.T, db *gorm.DB) (fileID, nodeAID, node
 		if err := db.Exec("DELETE FROM m_file_objects WHERE id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup file object: %v", err)
 		}
-		if err := db.Exec("DELETE FROM artifacts WHERE id = ?", artifactID).Error; err != nil {
+		if err := db.Exec("DELETE FROM m_artifacts WHERE id = ?", artifactID).Error; err != nil {
 			t.Errorf("cleanup artifact: %v", err)
 		}
 		if err := db.Exec("DELETE FROM m_nodes WHERE id IN ?", []string{nodeAID, nodeBID, nodeCID}).Error; err != nil {

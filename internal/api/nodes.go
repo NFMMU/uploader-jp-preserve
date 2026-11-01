@@ -89,7 +89,7 @@ func (s *Server) registerDevelopmentNode(c *gin.Context, req struct {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register development node"})
 		return
 	}
-	if err := s.db.WithContext(c.Request.Context()).Exec("UPDATE nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(token), node.ID).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Exec("UPDATE m_nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(token), node.ID).Error; err != nil {
 		_ = s.db.Delete(&node).Error
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not store node credential"})
 		return
@@ -113,7 +113,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 			RequestedCapacityBytes int64
 		}
 		err := tx.Raw(`SELECT id::text, name, node_type, requested_capacity_bytes
-			FROM t_node_enrollment_requests
+			FROM t_t_node_enrollment_requests
 			WHERE enrollment_token_hash = ? AND status = 'approved' AND token_expires_at > now()
 			FOR UPDATE`, hashNodeToken(strings.TrimSpace(c.GetHeader("X-Node-Enrollment-Token")))).Scan(&enrollment).Error
 		if err != nil {
@@ -133,10 +133,10 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 		if err := tx.Create(&responseNode).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("UPDATE nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(nodeToken), responseNode.ID).Error; err != nil {
+		if err := tx.Exec("UPDATE m_nodes SET api_token_hash = ?, updated_at = now() WHERE id = ?", hashNodeToken(nodeToken), responseNode.ID).Error; err != nil {
 			return err
 		}
-		result := tx.Exec(`UPDATE node_enrollment_requests SET status = 'enrolled', node_id = ?, enrollment_token_hash = NULL, token_expires_at = NULL, updated_at = now() WHERE id = ? AND status = 'approved'`, responseNode.ID, enrollment.ID)
+		result := tx.Exec(`UPDATE t_node_enrollment_requests SET status = 'enrolled', node_id = ?, enrollment_token_hash = NULL, token_expires_at = NULL, updated_at = now() WHERE id = ? AND status = 'approved'`, responseNode.ID, enrollment.ID)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -270,7 +270,7 @@ func (s *Server) listNodes(c *gin.Context) {
 	if len(nodeIDs) > 0 {
 		var latestContacts []enrollmentContact
 		if err := s.db.WithContext(c.Request.Context()).
-			Table("node_enrollment_requests").
+			Table("t_node_enrollment_requests").
 			Select("DISTINCT ON (node_id) node_id, contact_email").
 			Where("node_id IN ? AND status = ?", nodeIDs, "enrolled").
 			Order("node_id, created_at DESC").
@@ -319,7 +319,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 	}
 	actor, _ := currentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		result := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil)
+		result := tx.Table("t_node_enrollment_requests").Where("node_id = ?", id).Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -362,7 +362,7 @@ func (s *Server) listTasks(c *gin.Context) {
             AND tasks.task_type IN ('source_fetch', 'store')
             AND EXISTS (
                 SELECT 1 FROM m_file_objects
-                WHERE file_objects.id = tasks.file_object_id
+                WHERE t_file_objects.id = tasks.file_object_id
                 AND file_objects.preservation_status = 'verified'
             )
         )`)
@@ -1092,7 +1092,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	leaseToken := uuid.NewString()
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
-    UPDATE tasks
+    UPDATE t_tasks
     SET status = 'failed',
         updated_at = NOW()
     WHERE
@@ -1110,7 +1110,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		`, node.ID, node.ID, node.ID, maxTaskAttempts).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
+		if err := tx.Exec(`UPDATE t_placements SET status = 'error' WHERE node_id = ? AND file_object_id IN
 			(SELECT file_object_id FROM t_tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
@@ -1142,7 +1142,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		if claimed.Task.TaskType == "source_fetch" {
 			claimed.Task.TargetNodeID = &node.ID
 		}
-		if err := tx.Exec(`UPDATE tasks SET status = 'running', attempt_count = attempt_count + 1,
+		if err := tx.Exec(`UPDATE t_tasks SET status = 'running', attempt_count = attempt_count + 1,
     target_node_id = CASE WHEN task_type = 'source_fetch' AND target_node_id IS NULL THEN ? ELSE target_node_id END,
     lease_until = ?, lease_token = ?, last_error = NULL, updated_at = now() WHERE id = ?`,
 			node.ID, time.Now().UTC().Add(nodeLeaseDuration), leaseToken, claimed.Task.ID).Error; err != nil {

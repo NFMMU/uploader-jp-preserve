@@ -127,7 +127,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			return err
 		}
 		if request.RequestType == "preservation" && request.SourceURL != nil {
-			result := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
+			result := tx.Exec(`INSERT INTO t_source_url_registry (normalized_url, source_url, origin, public_request_id, created_at, updated_at)
 				VALUES (?, ?, 'public_request', ?, now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, *request.SourceURL, *request.SourceURL, request.ID)
 			if result.Error != nil {
 				return result.Error
@@ -142,7 +142,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			var existing struct {
 				PublicRequestID *string `gorm:"column:public_request_id"`
 			}
-			_ = s.db.WithContext(c.Request.Context()).Table("source_url_registry").Select("public_request_id").Where("normalized_url = ?", *request.SourceURL).Scan(&existing).Error
+			_ = s.db.WithContext(c.Request.Context()).Table("t_source_url_registry").Select("public_request_id").Where("normalized_url = ?", *request.SourceURL).Scan(&existing).Error
 			c.JSON(http.StatusOK, gin.H{"duplicate": true, "request_id": existing.PublicRequestID, "message": "同じURLの申請・収集リクエストがすでに存在するため、重複リクエストを破棄しました。"})
 			return
 		}
@@ -215,7 +215,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			a.title AS linked_artifact_title, COALESCE(t_public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
 			Joins("LEFT JOIN m_file_objects f ON f.id = t_public_requests.file_object_id").
 			Joins("LEFT JOIN m_artifacts a ON a.id = COALESCE(t_public_requests.artifact_id, f.artifact_id)").
-			Order("CASE WHEN t_public_requests.status = 'pending' THEN 0 WHEN t_public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
+			Order("CASE WHEN t_public_requests.status = 'pending' THEN 0 WHEN t_public_requests.status = 'in_review' THEN 1 ELSE 2 END, t_public_requests.created_at ASC").
 			Scan(&rows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 			return
@@ -603,7 +603,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			// Register the new normalized URL. A conflict with the same
 			// request is allowed; a conflict with another request is not.
 			result := tx.Exec(`
-		INSERT INTO source_url_registry (
+		INSERT INTO t_source_url_registry (
 			normalized_url,
 			source_url,
 			origin,
@@ -616,7 +616,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		SET
 			source_url = EXCLUDED.source_url,
 			updated_at = now()
-		WHERE source_url_registry.public_request_id =
+		WHERE t_source_url_registry.public_request_id =
 			EXCLUDED.public_request_id
 	`, *req.SourceURL, *req.SourceURL, publicRequest.ID)
 
@@ -902,7 +902,7 @@ func (s *Server) listAuditLogs(c *gin.Context) {
 	query := s.db.WithContext(c.Request.Context()).
 		Model(&model.TAuditLog{}).
 		Select("audit_logs.*, users.display_name AS actor_display_name").
-		Joins("LEFT JOIN users ON users.id = audit_logs.actor_id").
+		Joins("LEFT JOIN m_users ON users.id = audit_logs.actor_id").
 		Order("audit_logs.created_at DESC")
 
 	if !isAll {

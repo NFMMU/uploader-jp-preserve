@@ -136,7 +136,7 @@ func createSurplusCleanupFixture(t *testing.T, db *gorm.DB, replicaCount int, no
 		if err := db.Exec("DELETE FROM t_audit_logs WHERE target_id = ?", fileID).Error; err != nil {
 			t.Errorf("cleanup audit logs: %v", err)
 		}
-		if err := db.Exec("DELETE FROM artifacts WHERE id = ?", artifactID).Error; err != nil {
+		if err := db.Exec("DELETE FROM m_artifacts WHERE id = ?", artifactID).Error; err != nil {
 			t.Errorf("cleanup artifact: %v", err)
 		}
 		if len(nodeIDs) > 0 {

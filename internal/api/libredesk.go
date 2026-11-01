@@ -146,7 +146,7 @@ func (s *Server) createLibreDeskConversation(targetType, targetID, subject, cont
 		return ""
 	}
 	if err := s.db.WithContext(context.Background()).Exec(`
-		INSERT INTO request_conversation_links (target_type, target_id, url, label, created_at)
+		INSERT INTO t_request_conversation_links (target_type, target_id, url, label, created_at)
 		VALUES (?, ?, ?, ?, now()) ON CONFLICT (target_type, target_id, url) DO NOTHING`, targetType, targetID, conversationURL, fmt.Sprintf("LibreDesk 会話 #%s", shortID(result.Data.UUID))).Error; err != nil {
 		s.logger.Error("libredesk conversation was created but its link could not be saved", "target_type", targetType, "target_id", targetID, "error", err)
 		return ""
@@ -226,7 +226,7 @@ func (s *Server) addConversationLink(c *gin.Context) {
 		label = "関連する会話"
 	}
 	id := uuid.NewString()
-	if err := s.db.WithContext(c.Request.Context()).Exec(`INSERT INTO request_conversation_links (id, target_type, target_id, url, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, now())`, id, req.TargetType, req.TargetID, cleanURL, label, actor.ID).Error; err != nil {
+	if err := s.db.WithContext(c.Request.Context()).Exec(`INSERT INTO t_request_conversation_links (id, target_type, target_id, url, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, now())`, id, req.TargetType, req.TargetID, cleanURL, label, actor.ID).Error; err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			c.JSON(http.StatusConflict, gin.H{"error": "このURLはすでに登録されています"})
 			return
@@ -271,9 +271,9 @@ func (s *Server) conversationTargetExists(c *gin.Context, targetType, targetID s
 	var err error
 	switch targetType {
 	case "public_request":
-		err = s.db.WithContext(c.Request.Context()).Table("public_requests").Where("id = ?", targetID).Count(&count).Error
+		err = s.db.WithContext(c.Request.Context()).Table("t_public_requests").Where("id = ?", targetID).Count(&count).Error
 	case "node_enrollment_request":
-		err = s.db.WithContext(c.Request.Context()).Table("node_enrollment_requests").Where("id = ?", targetID).Count(&count).Error
+		err = s.db.WithContext(c.Request.Context()).Table("t_node_enrollment_requests").Where("id = ?", targetID).Count(&count).Error
 	default:
 		return false
 	}

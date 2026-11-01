@@ -367,7 +367,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.MFileObject, task model.TTask) {
 	t.Helper()
 	retryExec(t, db, "UPDATE file_objects SET source_url = ? WHERE id = ?", "https://example.invalid/file", file.ID)
-	retryExec(t, db, "UPDATE tasks SET task_type = 'source_fetch' WHERE id = ?", task.ID)
+	retryExec(t, db, "UPDATE t_tasks SET task_type = 'source_fetch' WHERE id = ?", task.ID)
 }
 
 func injectRetryAuditError(t *testing.T, db *gorm.DB, taskID, detail string) {

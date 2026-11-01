@@ -189,7 +189,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		registeredURLs := make([]string, 0, len(lookupURLs))
 		if len(lookupURLs) > 0 {
 			if err := s.db.WithContext(c.Request.Context()).
-				Table("source_url_registry").
+				Table("t_source_url_registry").
 				Where("normalized_url IN ?", lookupURLs).
 				Pluck("normalized_url", &registeredURLs).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "登録済みURLを確認できませんでした。"})
@@ -240,7 +240,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		duplicate := false
 		var requestCreated bool
 		err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-			reserve := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, created_at, updated_at)
+			reserve := tx.Exec(`INSERT INTO t_source_url_registry (normalized_url, source_url, origin, created_at, updated_at)
 				VALUES (?, ?, 'auto_collection', now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, item.URL, item.URL)
 			if reserve.Error != nil {
 				return reserve.Error
@@ -254,7 +254,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			fileErr := tx.Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", item.URL).First(&existingFile).Error
 			if fileErr == nil {
 				duplicate = true
-				return tx.Exec("UPDATE source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", item.URL).Error
+				return tx.Exec("UPDATE t_source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", item.URL).Error
 			}
 			if !errors.Is(fileErr, gorm.ErrRecordNotFound) {
 				return fileErr
@@ -264,7 +264,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			requestErr := tx.Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", item.URL).Order("created_at ASC").First(&existingRequest).Error
 			if requestErr == nil {
 				duplicate = true
-				return tx.Exec("UPDATE source_url_registry SET public_request_id = ?, origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", existingRequest.ID, item.URL).Error
+				return tx.Exec("UPDATE t_source_url_registry SET public_request_id = ?, origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", existingRequest.ID, item.URL).Error
 			}
 			if !errors.Is(requestErr, gorm.ErrRecordNotFound) {
 				return requestErr
@@ -277,7 +277,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			if err := tx.Create(&preserveRequest).Error; err != nil {
 				return err
 			}
-			if err := tx.Exec("UPDATE source_url_registry SET public_request_id = ?, updated_at = now() WHERE normalized_url = ?", preserveRequest.ID, item.URL).Error; err != nil {
+			if err := tx.Exec("UPDATE t_source_url_registry SET public_request_id = ?, updated_at = now() WHERE normalized_url = ?", preserveRequest.ID, item.URL).Error; err != nil {
 				return err
 			}
 			requestCreated = true
