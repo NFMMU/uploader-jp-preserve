@@ -113,7 +113,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 			RequestedCapacityBytes int64
 		}
 		err := tx.Raw(`SELECT id::text, name, node_type, requested_capacity_bytes
-			FROM t_t_node_enrollment_requests
+			FROM t_node_enrollment_requests
 			WHERE enrollment_token_hash = ? AND status = 'approved' AND token_expires_at > now()
 			FOR UPDATE`, hashNodeToken(strings.TrimSpace(c.GetHeader("X-Node-Enrollment-Token")))).Scan(&enrollment).Error
 		if err != nil {
