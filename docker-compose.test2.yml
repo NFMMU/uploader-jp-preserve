@@ -81,7 +81,7 @@ services:
     working_dir: /workspace
     volumes:
       - ./atlas:/workspace
-    command: ["migrate", "hash", "--dir", "file://atlas/migrations", "--force"]
+    command: ["migrate", "hash", "--dir", "file://migrations", "--force"]
     restart: "no"
 
   migrate:
