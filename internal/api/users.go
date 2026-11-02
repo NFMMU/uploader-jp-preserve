@@ -150,6 +150,12 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.DisplayName != nil {
 		target.DisplayName = strings.TrimSpace(*req.DisplayName)
 	}
+	if req.Email != nil {
+		target.Email = strings.ToLower(strings.TrimSpace(*req.Email))
+	}
+	if req.CustomID != nil {
+		target.CustomID = strings.TrimSpace(*req.CustomID)
+	}
 	if req.Disabled != nil {
 		if *req.Disabled {
 			now := time.Now().UTC()
@@ -159,7 +165,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 	}
 	s.audit(c, &actor, "user", target.ID, "user.update", "success", req.Reason)
-	c.JSON(http.StatusOK, gin.H{"id": target.ID, "email": target.Email, "display_name": target.DisplayName, "role": target.Role, "disabled": target.DisabledAt != nil})
+	c.JSON(http.StatusOK, gin.H{"id": target.ID, "email": target.Email, "display_name": target.DisplayName, "custom_id": target.CustomID, "role": target.Role, "disabled": target.DisabledAt != nil})
 }
 
 var errLastActiveAdmin = errors.New("last active administrator cannot be demoted or disabled")
