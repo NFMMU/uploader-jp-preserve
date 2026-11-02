@@ -8,18 +8,22 @@ table "artifacts" {
   column "title" {
     type = varchar(500)
     null = false
+    collate = collation.case_insensitive
   }
   column "creator_name" {
     type = varchar(255)
     null = true
+    collate = collation.case_insensitive
   }
   column "source_url" {
     type = text
     null = false
+    collate = collation.case_insensitive
   }
   column "description" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "created_at" {
     type = timestamptz
