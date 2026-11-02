@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/query"
 )
 
 type downloadJob struct {
@@ -48,35 +49,53 @@ func randomSecret() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
-	ctx := s.db.WithContext(context.Background())
-	_ = ctx.Exec(`INSERT INTO download_audit_logs (download_job_id,file_object_id,selected_node_id,action,result,reason,bytes_sent,duration_ms) VALUES (NULLIF(?, '')::uuid,NULLIF(?, '')::uuid,?::uuid,?,?,?,?,?)`, jobID, fileID, nodeID, action, result, nullableText(reason), bytes, duration.Milliseconds()).Error
+func (s *Server) writeDownloadAudit(c *gin.Context, jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
+	// contextの取得
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+
+	_ = query.DownloadAuditLog.WithContext(ctx).
+		Create(&model.DownloadAuditLog{
+			DownloadJobID:  &jobID,
+			FileObjectID:   &fileID,
+			SelectedNodeID: nodeID,
+			Action:         action,
+			Result:         result,
+			Reason:         &reason,
+			BytesSent:      bytes,
+			DurationMs:     duration.Milliseconds(),
+			CreatedAt:      time.Now(),
+		})
 }
 
-func nullableText(s string) any {
-	if strings.TrimSpace(s) == "" {
-		return nil
+func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (*model.FileObject, *model.Placement, error) {
+	// contextの取得
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
 	}
-	return s
-}
 
-func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.FileObject, model.Placement, error) {
-	var f model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
-		return f, model.Placement{}, err
-	}
-	if f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
-	}
-	var rows []model.Placement
-	err := s.db.WithContext(c.Request.Context()).Table("placements").Select("placements.*").Joins("JOIN nodes ON nodes.id = placements.node_id").Where("placements.file_object_id = ? AND placements.status = ? AND nodes.status = ? AND nodes.last_seen_at >= ?", id, "verified", "online", time.Now().Add(-2*time.Minute)).Order("placements.created_at ASC").Find(&rows).Error
+	file, err := query.FileObject.WithContext(ctx).Where(query.FileObject.ID.Eq(id)).First()
 	if err != nil {
-		return f, model.Placement{}, err
+		return file, nil, err
 	}
-	if len(rows) == 0 {
-		return f, model.Placement{}, gorm.ErrRecordNotFound
+	if file.PreservationStatus != "verified" || file.Sha256 == nil || len(strings.TrimSpace(*file.Sha256)) != 64 || file.SizeBytes < 0 {
+		return file, nil, gorm.ErrRecordNotFound
 	}
-	return f, rows[0], nil
+	placements, err := query.Placement.WithContext(ctx).Where(query.Placement.FileObjectID.Eq(id), query.Placement.Status.Eq("verified")).
+		Join(query.Node, query.Node.ID.EqCol(query.Placement.NodeID)).
+		Where(query.Node.Status.Eq("online"), query.Node.LastSeenAt.Gte(time.Now().Add(-2*time.Minute))).
+		Order(query.Placement.CreatedAt.Asc()).
+		Find()
+	if err != nil {
+		return file, nil, err
+	}
+	if len(placements) == 0 {
+		return file, nil, gorm.ErrRecordNotFound
+	}
+	return file, placements[0], nil
 }
 
 func (s *Server) createDownloadJob(c *gin.Context) {
@@ -85,42 +104,62 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file id"})
 		return
 	}
+
+	// ダウンロード可能かどうかを確認する
 	f, _, err := s.fileDownloadIsAvailable(c, fileID)
 	if err != nil {
-		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_healthy", 0, 0)
+		s.writeDownloadAudit(c, "", fileID, nil, "requested", "denied", "file_not_healthy", 0, 0)
 		c.JSON(http.StatusNotFound, gin.H{"error": "file is not available for download"})
 		return
 	}
+
+	// ダウンロードジョブを作成する
 	token, err := randomSecret()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download token"})
 		return
 	}
-	job := downloadJob{FileObjectID: f.ID, Status: "queued", AccessTokenHash: tokenHash(token), ExpiresAt: time.Now().Add(30 * time.Minute)}
-	if err := s.db.WithContext(c.Request.Context()).Raw(`INSERT INTO download_jobs (file_object_id,status,access_token_hash,expires_at) VALUES (?, 'queued', ?, now() + interval '30 minutes') RETURNING id,file_object_id,selected_node_id,status,access_token_hash,attempt_count,expires_at,created_at`, f.ID, job.AccessTokenHash).Scan(&job).Error; err != nil {
+	job := model.DownloadJob{
+		FileObjectID:    f.ID,
+		Status:          "queued",
+		AccessTokenHash: tokenHash(token),
+		ExpiresAt:       time.Now().Add(30 * time.Minute),
+	}
+	err = query.DownloadJob.WithContext(c.Request.Context()).Create(&job)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download job"})
 		return
 	}
-	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
-	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/downloads/" + job.ID, "content_url": "/api/v1/downloads/" + job.ID + "/content"})
+	s.writeDownloadAudit(c, job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
+	c.JSON(http.StatusAccepted, gin.H{
+		"job":          job,
+		"access_token": token,
+		"status_url":   "/api/v1/downloads/" + job.ID,
+		"content_url":  "/api/v1/downloads/" + job.ID + "/content",
+	})
 }
 
-func (s *Server) authorizedDownloadJob(c *gin.Context) (downloadJob, bool) {
+func (s *Server) authorizedDownloadJob(c *gin.Context) (*model.DownloadJob, bool) {
 	id := c.Param("id")
 	if _, err := uuid.Parse(id); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid download id"})
-		return downloadJob{}, false
+		return nil, false
 	}
 	header := c.GetHeader("Download-Authorization")
 	if !strings.HasPrefix(header, "Bearer ") {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "download bearer token required"})
-		return downloadJob{}, false
+		return nil, false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-	var job downloadJob
-	if err := s.db.WithContext(c.Request.Context()).First(&job, "id = ?", id).Error; err != nil || job.ExpiresAt.Before(time.Now()) || tokenHash(token) != job.AccessTokenHash {
+	job, err := query.DownloadJob.WithContext(c.Request.Context()).
+		Where(
+			query.DownloadJob.ID.Eq(id),
+			query.DownloadJob.AccessTokenHash.Eq(tokenHash(token)),
+			query.DownloadJob.ExpiresAt.Gt(time.Now())).
+		First()
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "download job unavailable"})
-		return downloadJob{}, false
+		return nil, false
 	}
 	return job, true
 }
@@ -135,20 +174,28 @@ func (s *Server) getDownloadJob(c *gin.Context) {
 
 func (s *Server) downloadContent(c *gin.Context) {
 	started := time.Now()
+
+	// ダウンロードジョブの認証
 	job, ok := s.authorizedDownloadJob(c)
 	if !ok {
 		return
 	}
+
+	// ダウンロードジョブの状態を確認する
 	if job.Status != "ready" {
 		c.JSON(http.StatusConflict, gin.H{"error": "download is not ready", "status": job.Status})
 		return
 	}
+
+	// ダウンロード可能かどうかを確認する
 	f, _, err := s.fileDownloadIsAvailable(c, job.FileObjectID)
 	if err != nil {
-		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "health_changed", 0, time.Since(started))
+		s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "health_changed", 0, time.Since(started))
 		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
+
+	// 配信ファイルの存在を確認する
 	path := filepath.Join(s.cfg.DeliveryDir, job.ID)
 	file, err := os.Open(path)
 	if err != nil {
@@ -156,6 +203,8 @@ func (s *Server) downloadContent(c *gin.Context) {
 		return
 	}
 	defer file.Close()
+
+	// 配信レスポンスを返す
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", strings.ReplaceAll(urlQueryEscape(f.OriginalFilename), "+", "%20")))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("X-Content-Type-Options", "nosniff")
@@ -169,17 +218,22 @@ func (s *Server) downloadContent(c *gin.Context) {
 		result = "failed"
 		reason = copyErr.Error()
 	}
-	s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
+	s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
 }
-func urlQueryEscape(v string) string { return url.PathEscape(v) }
+
+func urlQueryEscape(v string) string {
+	return url.PathEscape(v)
+}
 
 func (s *Server) claimDeliveryJob(c *gin.Context) {
+	// ノードの認証
 	node, ok := currentNode(c)
 	if !ok {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
-	var job downloadJob
+
+	var job model.DownloadJob
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var candidate struct {
 			ID           string
@@ -227,7 +281,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	}
 	jobID := c.Param("jobID")
 	lease := c.Query("lease_token")
-	var job downloadJob
+	var job model.DownloadJob
 	if err := s.db.WithContext(c.Request.Context()).First(&job, "id = ? AND selected_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", jobID, node.ID, lease).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "invalid or expired delivery lease"})
 		return
@@ -238,7 +292,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		return
 	}
 	if _, _, err := s.fileDownloadIsAvailable(c, f.ID); err != nil {
-		s.failDelivery(job, "health_changed")
+		s.failDelivery(c, job, "health_changed")
 		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
@@ -258,13 +312,13 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	closeErr := tmp.Close()
 	gotHash := hex.EncodeToString(h.Sum(nil))
 	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.Sha256)) {
-		s.failDelivery(job, "size_or_sha256_mismatch")
-		s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
+		s.failDelivery(c, job, "size_or_sha256_mismatch")
+		s.writeDownloadAudit(c, job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content validation failed"})
 		return
 	}
 	if err := os.Rename(tmpName, filepath.Join(s.cfg.DeliveryDir, job.ID)); err != nil {
-		s.failDelivery(job, "finalize_failed")
+		s.failDelivery(c, job, "finalize_failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize content"})
 		return
 	}
@@ -273,15 +327,36 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize job"})
 		return
 	}
-	s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "success", "", n, time.Since(started))
+	s.writeDownloadAudit(c, job.ID, f.ID, &node.ID, "prepared", "success", "", n, time.Since(started))
 	c.Status(http.StatusCreated)
 }
 
-func (s *Server) failDelivery(job downloadJob, reason string) {
-	_ = s.db.Exec(`UPDATE download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
+func (s *Server) failDelivery(c *gin.Context, job model.DownloadJob, reason string) {
+	// contextの取得
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	data, err := query.DownloadJob.WithContext(ctx).Where(query.DownloadJob.ID.Eq(job.ID)).First()
+	if err != nil {
+		s.logger.Error("failDelivery_query_failed", "job_id", job.ID, "error", err)
+		return
+	}
+	if data.AttemptCount < 3 && data.ExpiresAt.After(time.Now()) {
+		data.Status = "queued"
+	} else {
+		data.Status = "failed"
+	}
+	data.LastError = &reason
+	data.LeaseToken = nil
+	data.LeaseUntil = nil
+	data.UpdatedAt = time.Now()
+	if err := query.DownloadJob.WithContext(ctx).Save(data); err != nil {
+		s.logger.Error("failDelivery_update_failed", "job_id", job.ID, "error", err)
+	}
 }
 
-func (s *Server) runDownloadCleanup() {
+func (s *Server) runDownloadCleanup(c *gin.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -296,7 +371,7 @@ func (s *Server) runDownloadCleanup() {
 				s.logger.Warn("download_cleanup_file_failed", "job_id", job.ID, "error", err)
 			}
 			_ = s.db.Exec("UPDATE download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
-			s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
+			s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
 		}
 	}
 }
