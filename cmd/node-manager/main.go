@@ -22,8 +22,10 @@ import (
 	"time"
 )
 
-const dockerAPIVersion = "v1.45"
-const agentContainerName = "archive-node-agent"
+const (
+	dockerAPIVersion   = "v1.45"
+	agentContainerName = "archive-node-agent"
+)
 
 var (
 	namePattern   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._ -]{0,99}$`)

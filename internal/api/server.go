@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+
 	"github.com/nfmmu/uploader-archive/internal/config"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/security"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type Server struct {
