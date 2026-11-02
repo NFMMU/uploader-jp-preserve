@@ -247,7 +247,7 @@ func (s *Server) listFiles(c *gin.Context) {
 	}
 
 	fileObjectQuery := query.FileObject
-	var targetQuery = fileObjectQuery.WithContext(ctx)
+	targetQuery := fileObjectQuery.WithContext(ctx)
 	if c.Query("include_deleted") != "true" {
 		targetQuery = targetQuery.Where(fileObjectQuery.DeletedAt.IsNull(), fileObjectQuery.DeletionRequestedAt.IsNull())
 	}
