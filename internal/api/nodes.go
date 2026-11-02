@@ -586,7 +586,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		stagePaths = append(stagePaths, stagePath)
 		task := model.Task{ID: taskID, TaskType: "store", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
 		storageKey := "objects/" + file.ID + "/" + taskID
-		placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, SHA256: &sha, Status: "queued"}
+		placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: storageKey, Sha256: &sha, Status: "queued"}
 		tasks = append(tasks, task)
 		placements = append(placements, placement)
 	}
@@ -877,7 +877,7 @@ func (s *Server) retryFailedTask(
 			return errTaskNotRetryable
 		}
 
-		if file.SHA256 == nil || len(*file.SHA256) != 64 {
+		if file.Sha256 == nil || len(*file.Sha256) != 64 {
 			return &retryRejection{reason: "file has no valid expected SHA-256"}
 		}
 
@@ -888,7 +888,7 @@ func (s *Server) retryFailedTask(
 			return &retryRejection{reason: "staged source is missing or unreadable"}
 		}
 
-		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.SHA256) {
+		if gotSize != file.SizeBytes || !strings.EqualFold(gotSHA, *file.Sha256) {
 			return &retryRejection{reason: "staged source failed integrity verification"}
 		}
 
@@ -934,7 +934,7 @@ func (s *Server) retryFailedTask(
 				FileObjectID: file.ID,
 				NodeID:       targetNode.ID,
 				StorageKey:   "objects/" + file.ID + "/" + task.ID,
-				SHA256:       file.SHA256,
+				Sha256:       file.Sha256,
 				Status:       "queued",
 			}
 
@@ -952,7 +952,7 @@ func (s *Server) retryFailedTask(
 				Where("id = ?", placement.ID).
 				Updates(map[string]any{
 					"status":      "queued",
-					"sha256":      file.SHA256,
+					"sha256":      file.Sha256,
 					"verified_at": nil,
 				}).Error; err != nil {
 				return err
@@ -1211,7 +1211,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken, "file_object_id": file.ID,
-		"original_filename": file.OriginalFilename, "size_bytes": file.SizeBytes, "sha256": file.SHA256,
+		"original_filename": file.OriginalFilename, "size_bytes": file.SizeBytes, "sha256": file.Sha256,
 		"storage_key": placement.StorageKey, "attempt_count": claimed.Task.AttemptCount,
 		"source_node_id": claimed.Task.SourceNodeID, "target_node_id": claimed.Task.TargetNodeID,
 	})
@@ -1265,7 +1265,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	var req struct {
 		LeaseToken string `json:"lease_token" binding:"required,uuid"`
 		Status     string `json:"status" binding:"required,oneof=success failure"`
-		SHA256     string `json:"sha256" binding:"omitempty,len=64,hexadecimal"`
+		Sha256     string `json:"sha256" binding:"omitempty,len=64,hexadecimal"`
 		SizeBytes  int64  `json:"size_bytes" binding:"gte=0"`
 		Error      string `json:"error" binding:"omitempty,max=2000"`
 	}
@@ -1300,9 +1300,9 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load task file"})
 		return
 	}
-	if req.Status == "success" && task.TaskType != "delete" && (file.SHA256 == nil || !strings.EqualFold(*file.SHA256, req.SHA256) || file.SizeBytes != req.SizeBytes) {
+	if req.Status == "success" && task.TaskType != "delete" && (file.Sha256 == nil || !strings.EqualFold(*file.Sha256, req.Sha256) || file.SizeBytes != req.SizeBytes) {
 		req.Status = "failure"
-		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.SHA256), req.SizeBytes, req.SHA256)
+		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.Sha256), req.SizeBytes, req.Sha256)
 	}
 	terminal := req.Status == "failure" && (task.AttemptCount >= maxTaskAttempts || (task.TaskType == "source_fetch" && sourceFetchFailureIsPermanent(req.Error)))
 	nextStatus := "queued"
@@ -1332,7 +1332,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 			if task.TaskType == "delete" {
 				placementUpdates = map[string]any{"status": "deleted"}
 			} else {
-				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}
+				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.Sha256), "verified_at": now}
 			}
 		} else if terminal {
 			placementUpdates = map[string]any{"status": "error"}
@@ -1363,7 +1363,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 			}
 		}
 		if req.Status == "success" && task.TaskType == "store" {
-			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(map[string]any{"status": "verified", "sha256": strings.ToLower(req.SHA256), "verified_at": now}).Error; err != nil {
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, node.ID).Updates(map[string]any{"status": "verified", "sha256": strings.ToLower(req.Sha256), "verified_at": now}).Error; err != nil {
 				return err
 			}
 		}
@@ -1527,7 +1527,7 @@ func (s *Server) replicaContent(c *gin.Context) {
 		return
 	}
 	gotSHA := hex.EncodeToString(hasher.Sum(nil))
-	if written != file.SizeBytes || file.SHA256 == nil || !strings.EqualFold(gotSHA, *file.SHA256) {
+	if written != file.SizeBytes || file.Sha256 == nil || !strings.EqualFold(gotSHA, *file.Sha256) {
 		cleanup()
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "source replica failed size or SHA-256 validation"})
 		return
@@ -1551,14 +1551,14 @@ func (s *Server) replicaContent(c *gin.Context) {
 		var placement model.Placement
 		placementErr := tx.Where("file_object_id = ? AND node_id = ?", file.ID, valueOrEmpty(task.TargetNodeID)).First(&placement).Error
 		if errors.Is(placementErr, gorm.ErrRecordNotFound) {
-			if err := tx.Create(&model.Placement{FileObjectID: file.ID, NodeID: valueOrEmpty(task.TargetNodeID), StorageKey: storageKey, SHA256: file.SHA256, Status: "queued"}).Error; err != nil {
+			if err := tx.Create(&model.Placement{FileObjectID: file.ID, NodeID: valueOrEmpty(task.TargetNodeID), StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
 				return err
 			}
 		} else if placementErr != nil {
 			return placementErr
 		} else {
 			storageKey = placement.StorageKey
-			if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.SHA256, "status": "queued", "verified_at": nil}).Error; err != nil {
+			if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.Sha256, "status": "queued", "verified_at": nil}).Error; err != nil {
 				return err
 			}
 		}
