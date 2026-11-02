@@ -59,7 +59,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.DisplayName != nil {
 		displayName := strings.TrimSpace(*req.DisplayName)
 		if utf8.RuneCountInString(displayName) < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-16 chars) and valid role are required"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "display_name cannot be empty"})
 			return
 		}
 	}
