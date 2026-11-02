@@ -310,7 +310,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 		s, file, _, queued := retryFixture(t, db)
 		prepareSourceFetchRetry(t, db, file, queued)
 		_, rejectedFile, _, rejected := retryFixture(t, db)
-		retryExec(t, db, "UPDATE file_objects SET preservation_status = 'verified' WHERE id = ?", rejectedFile.ID)
+		retryExec(t, db, "UPDATE m_file_objects SET preservation_status = 'verified' WHERE id = ?", rejectedFile.ID)
 		_, failedFile, _, failed := retryFixture(t, db)
 		prepareSourceFetchRetry(t, db, failedFile, failed)
 		injectRetryAuditError(t, db, failed.ID, internalDetail)
@@ -366,7 +366,7 @@ func TestRetryErrorHandlingIntegration(t *testing.T) {
 
 func prepareSourceFetchRetry(t *testing.T, db *gorm.DB, file model.MFileObject, task model.TTask) {
 	t.Helper()
-	retryExec(t, db, "UPDATE file_objects SET source_url = ? WHERE id = ?", "https://example.invalid/file", file.ID)
+	retryExec(t, db, "UPDATE m_file_objects SET source_url = ? WHERE id = ?", "https://example.invalid/file", file.ID)
 	retryExec(t, db, "UPDATE t_tasks SET task_type = 'source_fetch' WHERE id = ?", task.ID)
 }
 

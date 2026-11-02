@@ -62,7 +62,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fileID, newestNodeID := createSurplusCleanupFixture(t, db, tt.replicaCount, tt.nodeDAge, tt.nodeDVerifiedAge)
 			if tt.activeTask {
-				if err := db.Exec("INSERT INTO tasks (id, task_type, file_object_id, status, priority, attempt_count) VALUES (?, 'replicate', ?, 'queued', 3, 0)", uuid.NewString(), fileID).Error; err != nil {
+				if err := db.Exec("INSERT INTO t_tasks (id, task_type, file_object_id, status, priority, attempt_count) VALUES (?, 'replicate', ?, 'queued', 3, 0)", uuid.NewString(), fileID).Error; err != nil {
 					t.Fatalf("insert active task: %v", err)
 				}
 			}
@@ -72,7 +72,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 				t.Fatalf("schedule surplus deletion: %v", err)
 			}
 			var deleteCount int64
-			if err := db.Table("tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
+			if err := db.Table("t_tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
 				t.Fatalf("count delete tasks: %v", err)
 			}
 			wantCount := int64(0)
@@ -113,7 +113,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 				if err := s.scheduleSurplusPlacementDeletion(context.Background(), fileID); err != nil {
 					t.Fatalf("repeat surplus deletion scheduling: %v", err)
 				}
-				if err := db.Table("tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
+				if err := db.Table("t_tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
 					t.Fatalf("recount delete tasks: %v", err)
 				}
 				if deleteCount != 1 {
@@ -146,10 +146,10 @@ func createSurplusCleanupFixture(t *testing.T, db *gorm.DB, replicaCount int, no
 		}
 	})
 
-	if err := db.Exec("INSERT INTO artifacts (id, title, source_url) VALUES (?, ?, ?)", artifactID, "surplus cleanup integration test", "https://example.invalid/test").Error; err != nil {
+	if err := db.Exec("INSERT INTO m_artifacts (id, title, source_url) VALUES (?, ?, ?)", artifactID, "surplus cleanup integration test", "https://example.invalid/test").Error; err != nil {
 		t.Fatalf("insert artifact: %v", err)
 	}
-	if err := db.Exec("INSERT INTO file_objects (id, artifact_id, original_filename, size_bytes, sha256, preservation_status, redistribution_policy, public_download_enabled) VALUES (?, ?, ?, ?, ?, 'verified', 'unknown', false)", fileID, artifactID, "test.bin", 32, sha).Error; err != nil {
+	if err := db.Exec("INSERT INTO m_file_objects (id, artifact_id, original_filename, size_bytes, sha256, preservation_status, redistribution_policy, public_download_enabled) VALUES (?, ?, ?, ?, ?, 'verified', 'unknown', false)", fileID, artifactID, "test.bin", 32, sha).Error; err != nil {
 		t.Fatalf("insert file object: %v", err)
 	}
 
@@ -169,11 +169,11 @@ func createSurplusCleanupFixture(t *testing.T, db *gorm.DB, replicaCount int, no
 		onlineSince := now.Add(-onlineAge)
 		createdAt := now.Add(-time.Duration(replicaCount-i) * time.Minute)
 		verifiedAt := now.Add(-verifiedAge)
-		if err := db.Exec(`INSERT INTO nodes (id, name, node_type, status, capacity_bytes, used_bytes, available_bytes, requested_capacity_bytes, last_seen_at, created_at, updated_at, online_since)
+		if err := db.Exec(`INSERT INTO m_nodes (id, name, node_type, status, capacity_bytes, used_bytes, available_bytes, requested_capacity_bytes, last_seen_at, created_at, updated_at, online_since)
 			VALUES (?, ?, ?, 'online', 1073741824, 32, 1073741792, 1073741824, ?, ?, ?, ?)`, nodeID, name, map[bool]string{true: "A", false: "B"}[i == 0], lastSeen, createdAt, now, onlineSince).Error; err != nil {
 			t.Fatalf("insert node: %v", err)
 		}
-		if err := db.Exec(`INSERT INTO placements (id, file_object_id, node_id, storage_key, sha256, status, verified_at, created_at)
+		if err := db.Exec(`INSERT INTO t_placements (id, file_object_id, node_id, storage_key, sha256, status, verified_at, created_at)
 			VALUES (?, ?, ?, ?, ?, 'verified', ?, ?)`, uuid.NewString(), fileID, nodeID, "objects/"+fileID+"/"+nodeID, sha, verifiedAt, createdAt).Error; err != nil {
 			t.Fatalf("insert placement: %v", err)
 		}

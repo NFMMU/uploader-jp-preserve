@@ -99,7 +99,7 @@ func TestReconcileRepairsOfflineReplicaIntegration(t *testing.T) {
 		t.Fatalf("healthy placement count after recovery = %d, want 3 (nodes A=%s, B=%s, C=%s)", healthyCount, nodeAID, nodeBID, nodeCID)
 	}
 	var deleteCount int64
-	if err := db.Table("tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
+	if err := db.Table("t_tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {
 		t.Fatalf("count delete tasks after recovery: %v", err)
 	}
 	if deleteCount != 0 {
@@ -143,10 +143,10 @@ func createNodeRecoveryFixture(t *testing.T, db *gorm.DB) (fileID, nodeAID, node
 		}
 	})
 
-	if err := db.Exec("INSERT INTO artifacts (id, title, source_url) VALUES (?, ?, ?)", artifactID, "node recovery integration test", "https://example.invalid/"+artifactID).Error; err != nil {
+	if err := db.Exec("INSERT INTO m_artifacts (id, title, source_url) VALUES (?, ?, ?)", artifactID, "node recovery integration test", "https://example.invalid/"+artifactID).Error; err != nil {
 		t.Fatalf("insert artifact: %v", err)
 	}
-	if err := db.Exec("INSERT INTO file_objects (id, artifact_id, original_filename, size_bytes, sha256, preservation_status, redistribution_policy, public_download_enabled) VALUES (?, ?, ?, ?, ?, 'verified', 'unknown', false)", fileID, artifactID, "node-recovery-test.bin", 32, sha).Error; err != nil {
+	if err := db.Exec("INSERT INTO m_file_objects (id, artifact_id, original_filename, size_bytes, sha256, preservation_status, redistribution_policy, public_download_enabled) VALUES (?, ?, ?, ?, ?, 'verified', 'unknown', false)", fileID, artifactID, "node-recovery-test.bin", 32, sha).Error; err != nil {
 		t.Fatalf("insert file object: %v", err)
 	}
 
@@ -161,14 +161,14 @@ func createNodeRecoveryFixture(t *testing.T, db *gorm.DB) (fileID, nodeAID, node
 		{id: nodeCID, name: "recovery-test-c-" + fileID[:8], typ: "B", lastSeen: now.Add(-10 * time.Second)},
 	} {
 		onlineSince := now.Add(-15 * time.Minute)
-		if err := db.Exec(`INSERT INTO nodes (id, name, node_type, status, capacity_bytes, used_bytes, available_bytes, requested_capacity_bytes, last_seen_at, created_at, updated_at, online_since)
+		if err := db.Exec(`INSERT INTO m_nodes (id, name, node_type, status, capacity_bytes, used_bytes, available_bytes, requested_capacity_bytes, last_seen_at, created_at, updated_at, online_since)
 			VALUES (?, ?, ?, 'online', 1073741824, 0, 1073741824, 1073741824, ?, ?, ?, ?)`, n.id, n.name, n.typ, n.lastSeen, now.Add(-20*time.Minute), now, onlineSince).Error; err != nil {
 			t.Fatalf("insert node %s: %v", n.name, err)
 		}
 	}
 
 	for _, n := range []struct{ id, name string }{{nodeAID, "a"}, {nodeBID, "b"}} {
-		if err := db.Exec(`INSERT INTO placements (id, file_object_id, node_id, storage_key, sha256, status, verified_at, created_at)
+		if err := db.Exec(`INSERT INTO t_placements (id, file_object_id, node_id, storage_key, sha256, status, verified_at, created_at)
 			VALUES (?, ?, ?, ?, ?, 'verified', ?, ?)`, uuid.NewString(), fileID, n.id, "objects/"+fileID+"/"+n.name, sha, now.Add(-10*time.Minute), now.Add(-20*time.Minute)).Error; err != nil {
 			t.Fatalf("insert placement on node %s: %v", n.id, err)
 		}
