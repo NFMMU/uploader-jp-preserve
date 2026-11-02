@@ -20,7 +20,7 @@ func (s *Server) publicEligible(c *gin.Context, id string) (model.FileObject, mo
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
 		return f, model.Placement{}, err
 	}
-	if !f.PublicDownloadEnabled || f.RedistributionPolicy != "allowed" || f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
+	if !f.PublicDownloadEnabled || f.RedistributionPolicy != "allowed" || f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
 		return f, model.Placement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.Placement
@@ -85,7 +85,7 @@ func (s *Server) getPublicDownloadJob(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.SHA256, "last_error": job.LastError})
+	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.Sha256, "last_error": job.LastError})
 }
 
 func (s *Server) downloadPublicContent(c *gin.Context) {

@@ -30,7 +30,7 @@ type downloadJob struct {
 	LeaseUntil      *time.Time `gorm:"column:lease_until" json:"lease_until,omitempty"`
 	AttemptCount    int        `gorm:"column:attempt_count" json:"attempt_count"`
 	SizeBytes       *int64     `gorm:"column:size_bytes" json:"size_bytes,omitempty"`
-	SHA256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
+	Sha256          *string    `gorm:"column:sha256" json:"sha256,omitempty"`
 	LastError       *string    `gorm:"column:last_error" json:"last_error,omitempty"`
 	ExpiresAt       time.Time  `gorm:"column:expires_at" json:"expires_at"`
 	CreatedAt       time.Time  `gorm:"column:created_at" json:"created_at"`
@@ -62,7 +62,7 @@ func (s *Server) fileDownloadIsAvailable(c *gin.Context, id string) (model.FileO
 	if err := s.db.WithContext(c.Request.Context()).First(&f, "id = ?", id).Error; err != nil {
 		return f, model.Placement{}, err
 	}
-	if f.PreservationStatus != "verified" || f.SHA256 == nil || len(strings.TrimSpace(*f.SHA256)) != 64 || f.SizeBytes < 0 {
+	if f.PreservationStatus != "verified" || f.Sha256 == nil || len(strings.TrimSpace(*f.Sha256)) != 64 || f.SizeBytes < 0 {
 		return f, model.Placement{}, gorm.ErrRecordNotFound
 	}
 	var rows []model.Placement
@@ -126,7 +126,7 @@ func (s *Server) getDownloadJob(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.SHA256, "last_error": job.LastError})
+	c.JSON(http.StatusOK, gin.H{"id": job.ID, "file_object_id": job.FileObjectID, "status": job.Status, "expires_at": job.ExpiresAt, "size_bytes": job.SizeBytes, "sha256": job.Sha256, "last_error": job.LastError})
 }
 
 func (s *Server) downloadContent(c *gin.Context) {
@@ -211,7 +211,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
 	var f model.FileObject
 	_ = s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error
-	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.SHA256, "original_filename": f.OriginalFilename})
+	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
 func (s *Server) receiveDeliveryContent(c *gin.Context) {
@@ -253,7 +253,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	n, copyErr := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(c.Request.Body, f.SizeBytes+1))
 	closeErr := tmp.Close()
 	gotHash := hex.EncodeToString(h.Sum(nil))
-	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.SHA256)) {
+	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.Sha256)) {
 		s.failDelivery(job, "size_or_sha256_mismatch")
 		s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content validation failed"})
