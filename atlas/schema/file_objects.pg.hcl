@@ -12,6 +12,7 @@ table "file_objects" {
   column "original_filename" {
     type = varchar(500)
     null = false
+    collate = collation.case_insensitive
   }
   column "size_bytes" {
     type = bigint
@@ -29,6 +30,7 @@ table "file_objects" {
   column "source_url" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "source_password_encrypted" {
     type = text
