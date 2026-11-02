@@ -59,14 +59,14 @@ func (s *Server) updateUser(c *gin.Context) {
 	if req.DisplayName != nil {
 		displayName := strings.TrimSpace(*req.DisplayName)
 		if utf8.RuneCountInString(displayName) < 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-16 chars) and valid role are required"})
 			return
 		}
 	}
 	if req.CustomID != nil {
 		customID := strings.TrimSpace(*req.CustomID)
 		if !customIdRegex.MatchString(customID) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Custom ID must be 3–16 characters long and contain only lowercase letters, numbers, hyphens (-), and underscores (_)"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Custom ID must be 3–16 characters long and contain only alphabets, numbers, hyphens (-), and underscores (_)"})
 			return
 		}
 	}
@@ -179,7 +179,7 @@ func (s *Server) createUser(c *gin.Context) {
 		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer author"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-16 chars) and valid role are required"})
 		return
 	}
 	actor, _ := currentUser(c)
@@ -196,7 +196,7 @@ func (s *Server) createUser(c *gin.Context) {
 	}
 	displayName := strings.TrimSpace(req.DisplayName)
 	if utf8.RuneCountInString(displayName) < 1 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-15 chars) and valid role are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), custom_id (3-16 chars) and valid role are required"})
 		return
 	}
 	customID := strings.TrimSpace(req.CustomID)
