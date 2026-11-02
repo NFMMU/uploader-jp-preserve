@@ -215,7 +215,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 				}
 			case "publication":
 				if *req.Enabled {
-					if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.SHA256 == nil || !isHexDigest(*file.SHA256) {
+					if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
 						return fmt.Errorf("file %s cannot be published: policy must be allowed, preservation verified, and SHA-256 valid", id)
 					}
 					cutoff := time.Now().UTC().Add(-2 * time.Minute)
@@ -271,7 +271,7 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.Publi
 	} else if request.ArtifactID == nil || *request.ArtifactID != file.ArtifactID {
 		return errors.New("deletion request must target this file or its artifact")
 	}
-	if file.DeletedAt != nil {
+	if file.DeletedAt.Valid {
 		return nil
 	}
 	var running int64
