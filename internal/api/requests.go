@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
-var requestTypes = map[string]bool{"takedown": true, "deletion": true, "external_publication": true, "preservation": true, "redistribution_assistance": true, "publisher_assistance": true}
-var requestStatuses = map[string]bool{"pending": true, "in_review": true, "accepted": true, "rejected": true, "closed": true}
+var (
+	requestTypes    = map[string]bool{"takedown": true, "deletion": true, "external_publication": true, "preservation": true, "redistribution_assistance": true, "publisher_assistance": true}
+	requestStatuses = map[string]bool{"pending": true, "in_review": true, "accepted": true, "rejected": true, "closed": true}
+)
 
 func (s *Server) submitPublicRequest(c *gin.Context) {
 	var req struct {
@@ -713,7 +716,6 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		return nil
 	})
-
 	if err != nil {
 		// Preserve the existing not-found handling.
 		if errors.Is(err, gorm.ErrRecordNotFound) {

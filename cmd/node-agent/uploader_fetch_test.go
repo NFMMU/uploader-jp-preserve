@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func TestFindDownloadFormAcceptsGetUploaderTokenHandshake(t *testing.T) {
 	if !ok {
 		t.Fatal("expected standard getuploader token form to be detected")
 	}
-	if form.Method != "POST" || form.Values.Get("token") != "secret-token" || form.Values.Get("md5") != "abc123" {
+	if form.Method != http.MethodPost || form.Values.Get("token") != "secret-token" || form.Values.Get("md5") != "abc123" {
 		t.Fatalf("unexpected token form: method=%q values=%v", form.Method, form.Values)
 	}
 }

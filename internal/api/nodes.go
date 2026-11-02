@@ -18,9 +18,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 const (
@@ -78,13 +79,14 @@ func (s *Server) registerDevelopmentNode(c *gin.Context, req struct {
 	NodeType               string `json:"node_type" binding:"required,oneof=A B"`
 	RequestedCapacityBytes int64  `json:"requested_capacity_bytes" binding:"gte=0"`
 	AgentVersion           string `json:"agent_version" binding:"required,max=64"`
-}) {
+},
+) {
 	token, err := newNodeToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue node credential"})
 		return
 	}
-	node := model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
+	node := model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: new(req.AgentVersion)}
 	if err := s.db.WithContext(c.Request.Context()).Create(&node).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not register development node"})
 		return
@@ -102,7 +104,8 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 	NodeType               string `json:"node_type" binding:"required,oneof=A B"`
 	RequestedCapacityBytes int64  `json:"requested_capacity_bytes" binding:"gte=0"`
 	AgentVersion           string `json:"agent_version" binding:"required,max=64"`
-}) {
+},
+) {
 	var responseNode model.Node
 	var nodeToken string
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
@@ -129,7 +132,7 @@ func (s *Server) registerApprovedNode(c *gin.Context, req struct {
 		if err != nil {
 			return err
 		}
-		responseNode = model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: stringPtr(req.AgentVersion)}
+		responseNode = model.Node{Name: req.Name, NodeType: req.NodeType, Status: "offline", RequestedCapacityBytes: req.RequestedCapacityBytes, AgentVersion: new(req.AgentVersion)}
 		if err := tx.Create(&responseNode).Error; err != nil {
 			return err
 		}
@@ -523,7 +526,6 @@ func (s *Server) ingestFile(c *gin.Context) {
 		mediaType = "application/octet-stream"
 	}
 	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, priority, file.SourceURL, "", "", "")
-
 }
 
 // queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
@@ -624,7 +626,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 	if hasActor {
 		actorPtr = &actor
 	}
-	s.audit(c, actorPtr, "file_object", file.ID, "file_object.ingest.queued", "success", stringPtr("File staged and queued for two-node storage"))
+	s.audit(c, actorPtr, "file_object", file.ID, "file_object.ingest.queued", "success", new("File staged and queued for two-node storage"))
 	taskViews := make([]gin.H, 0, len(tasks))
 	nodeViews := make([]gin.H, 0, len(nodes))
 	for i := range tasks {
@@ -749,9 +751,9 @@ func (s *Server) retryFailedTask(
 ) error {
 	now := time.Now().UTC()
 
-	var errTaskNotRetryable = &retryRejection{reason: "task is no longer failed or cannot be retried"}
-	var errActiveTaskExists = &retryRejection{reason: "another active task already exists for this file object"}
-	var errNoAlternativeNode = &retryRejection{reason: "no online storage node available"}
+	errTaskNotRetryable := &retryRejection{reason: "task is no longer failed or cannot be retried"}
+	errActiveTaskExists := &retryRejection{reason: "another active task already exists for this file object"}
+	errNoAlternativeNode := &retryRejection{reason: "no online storage node available"}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task model.Task
@@ -1327,7 +1329,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 				if err := tx.Model(&model.FileObject{}).Where("id = ? AND deleted_at IS NULL", file.ID).Update("deleted_at", now).Error; err != nil {
 					return err
 				}
-				entry := model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "file_object", TargetID: &file.ID, Action: "file_object.deletion.completed", Result: "success", Reason: stringPtr("All known placements reported successful deletion")}
+				entry := model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "file_object", TargetID: &file.ID, Action: "file_object.deletion.completed", Result: "success", Reason: new("All known placements reported successful deletion")}
 				if err := tx.Create(&entry).Error; err != nil {
 					return err
 				}
@@ -1347,7 +1349,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		if req.Status == "failure" {
 			result, action = "failure", "node.task.failed"
 		}
-		if err := tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: stringPtr(req.Error)}).Error; err != nil {
+		if err := tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: action, Result: result, Reason: new(req.Error)}).Error; err != nil {
 			return err
 		}
 		return recomputeFilePreservation(tx, file.ID)
@@ -1541,7 +1543,7 @@ func (s *Server) replicaContent(c *gin.Context) {
 		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("preservation_status", "queued").Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: "node.replication.source-uploaded", Result: "success", Reason: stringPtr("Verified source-node bytes staged for target-node storage")}).Error
+		return tx.Create(&model.AuditLog{ActorLabel: "node:" + node.Name, TargetType: "task", TargetID: &task.ID, Action: "node.replication.source-uploaded", Result: "success", Reason: new("Verified source-node bytes staged for target-node storage")}).Error
 	})
 	if err != nil {
 		_ = os.Remove(stagingPath)
@@ -1602,5 +1604,3 @@ func valueOrEmpty(value *string) string {
 	}
 	return *value
 }
-
-func stringPtr(value string) *string { return &value }
