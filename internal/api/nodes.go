@@ -330,7 +330,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		if result.RowsAffected != 1 {
 			return errors.New("node has been aleady deleted")
 		}
-		result = tx.Delete(&model.TPlacement{NodeID: id})
+		result = tx.Where("node_id = ?", id).Delete(&model.TPlacement{})
 		if result.Error != nil {
 			return result.Error
 		}
