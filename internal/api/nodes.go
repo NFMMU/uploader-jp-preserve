@@ -888,6 +888,7 @@ func (s *Server) retryFailedTask(
 			SELECT n.id, n.name
 			FROM m_nodes AS n
 			WHERE n.status = 'online'
+				AND n.deleted_at IS NULL
 			  AND NOT EXISTS (
 			      SELECT 1
 			      FROM t_placements AS p
