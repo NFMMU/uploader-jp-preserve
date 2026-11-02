@@ -12,13 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nfmmu/uploader-archive/internal/api"
-	"github.com/nfmmu/uploader-archive/internal/config"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+
+	"github.com/nfmmu/uploader-archive/internal/api"
+	"github.com/nfmmu/uploader-archive/internal/config"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 func main() {
@@ -97,7 +98,8 @@ func bootstrapAdmin(db *gorm.DB, cfg config.Config) error {
 	if err := db.Create(&user).Error; err != nil {
 		return err
 	}
-	return db.Create(&model.AuditLog{ActorID: &user.ID, ActorLabel: user.Email, TargetType: "user", TargetID: &user.ID, Action: "user.bootstrap_admin.create", Result: "success", Reason: ptr("Initial administrator created from environment configuration")}).Error
+	return db.Create(&model.AuditLog{ActorID: &user.ID, ActorLabel: user.Email, TargetType: "user", TargetID: &user.ID, Action: "user.bootstrap_admin.create", Result: "success", Reason: new("Initial administrator created from environment configuration")}).Error
 }
 
-func ptr(value string) *string { return &value }
+//go:fix inline
+func ptr(value string) *string { return new(value) }

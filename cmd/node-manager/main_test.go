@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -14,7 +15,7 @@ func TestParseConfigRequiresHTTPSForNonLoopbackByDefault(t *testing.T) {
 		"name":             {"test-node"},
 		"capacity_bytes":   {"10737418240"},
 	}
-	req := httptest.NewRequest("POST", "/", strings.NewReader(values.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if err := req.ParseForm(); err != nil {
 		t.Fatal(err)
@@ -28,7 +29,7 @@ func TestParseConfigRequiresHTTPSForNonLoopbackByDefault(t *testing.T) {
 	}
 
 	values.Set("central_api_url", "http://archive.example.org")
-	req = httptest.NewRequest("POST", "/", strings.NewReader(values.Encode()))
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if err := req.ParseForm(); err != nil {
 		t.Fatal(err)
@@ -48,7 +49,7 @@ func TestParseConfigRejectsNegativeCapacityAndUnsafeName(t *testing.T) {
 		"name":             {"test-node"},
 		"capacity_bytes":   {"-1"},
 	}
-	req := httptest.NewRequest("POST", "/", strings.NewReader(values.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if err := req.ParseForm(); err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestParseConfigRejectsNegativeCapacityAndUnsafeName(t *testing.T) {
 
 	values.Set("capacity_bytes", "0")
 	values.Set("name", "../unsafe")
-	req = httptest.NewRequest("POST", "/", strings.NewReader(values.Encode()))
+	req = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if err := req.ParseForm(); err != nil {
 		t.Fatal(err)

@@ -11,8 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 var preservationStatuses = map[string]bool{
@@ -520,7 +521,7 @@ func isHexDigest(value string) bool {
 }
 
 func notFoundOrError(c *gin.Context, err error, label string) {
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": label + " not found"})
 		return
 	}
