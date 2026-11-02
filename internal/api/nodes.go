@@ -319,18 +319,18 @@ func (s *Server) deleteNodes(c *gin.Context) {
 	}
 	actor, _ := currentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		result := tx.Table("t_node_enrollment_requests").Where("node_id = ?", id).Delete(nil)
+		result := tx.Where(&model.TNodeEnrollmentRequest{NodeID: &id}).Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
-		result = tx.Delete(&model.MNode{ID: id})
+		result = tx.Where(&model.MNode{ID: id}).Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
 			return errors.New("node has been aleady deleted")
 		}
-		result = tx.Where("node_id = ?", id).Delete(&model.TPlacement{})
+		result = tx.Where(&model.TPlacement{NodeID: id}).Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -338,7 +338,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		if result.Error != nil {
 			return result.Error
 		}
-		result = tx.Delete(&model.TDownloadJob{SelectedNodeID: &id})
+		result = tx.Where(&model.TDownloadJob{SelectedNodeID: &id}).Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
