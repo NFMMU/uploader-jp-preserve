@@ -19,7 +19,7 @@ services:
     image: arigaio/atlas:latest
     working_dir: /workspace
     volumes:
-      - .:/workspace
+      - ./atlas:/workspace
     command: ["migrate", "apply", "--env", "local"]
     environment:
       DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/archive?sslmode=disable

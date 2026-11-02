@@ -31,7 +31,11 @@ services:
   delivery-data-init:
     image: alpine:3.24
     command:
-      ["sh", "-ec", "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery"]
+      [
+        "sh",
+        "-ec",
+        "mkdir -p /data/delivery && chown -R 65532:65532 /data/delivery",
+      ]
     volumes:
       - delivery_data:/data/delivery
     restart: "no"
@@ -76,7 +80,7 @@ services:
     image: arigaio/atlas:latest
     working_dir: /workspace
     volumes:
-      - .:/workspace
+      - ./atlas:/workspace
     command: ["migrate", "hash", "--dir", "file://atlas/migrations", "--force"]
     restart: "no"
 
@@ -84,7 +88,7 @@ services:
     image: arigaio/atlas:latest
     working_dir: /workspace
     volumes:
-      - .:/workspace
+      - ./atlas:/workspace
     command: ["migrate", "apply", "--env", "local"]
     environment:
       DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
