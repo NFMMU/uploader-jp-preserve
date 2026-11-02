@@ -29,7 +29,8 @@ func main() {
 		FieldWithIndexTag: true,
 	})
 	generator.UseDB(db)
-	generator.GenerateAllTable()
+	allModels := generator.GenerateAllTable()
+	generator.ApplyBasic(allModels...)
 	generator.Execute()
 	log.Println("GORM models and query code regenerated")
 }
