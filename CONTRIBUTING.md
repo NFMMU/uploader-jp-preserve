@@ -17,6 +17,8 @@ Go の変更：
 ```sh
 gofmt -w <変更したGoファイル>
 go test ./...
+golangci-lint run --fix
+golangci-lint fmt
 ```
 
 Web の変更：
@@ -24,6 +26,7 @@ Web の変更：
 ```sh
 cd web
 npm install
+npm run lint
 npm run build
 ```
 
