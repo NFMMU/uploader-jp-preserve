@@ -323,7 +323,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		result, err := downloadJobQuery.
 			WithContext(c.Request.Context()).
 			Where(downloadJobQuery.ID.Eq(candidate.ID)).
-			Updates(map[string]interface{}{
+			Updates(map[string]any{
 				"status":           "running",
 				"selected_node_id": node.ID,
 				"lease_token":      lease[:32],
