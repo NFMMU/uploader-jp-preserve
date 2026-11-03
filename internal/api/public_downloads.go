@@ -43,7 +43,7 @@ func (s *Server) createPublicDownloadJob(c *gin.Context) {
 	}
 	f, _, err := s.publicEligible(c, fileID)
 	if err != nil {
-		s.writeDownloadAudit(c, "", fileID, nil, "requested", "denied", "file_not_public_or_healthy", 0, 0)
+		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_public_or_healthy", 0, 0)
 		c.JSON(http.StatusNotFound, gin.H{"error": "このファイルは現在公開されていないため、ダウンロードできません。"})
 		return
 	}
@@ -57,7 +57,7 @@ func (s *Server) createPublicDownloadJob(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ダウンロード処理を開始できませんでした。"})
 		return
 	}
-	s.writeDownloadAudit(c, job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
+	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
 	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/public/downloads/" + job.ID, "content_url": "/api/v1/public/downloads/" + job.ID + "/content"})
 }
 
@@ -101,7 +101,7 @@ func (s *Server) downloadPublicContent(c *gin.Context) {
 	}
 	f, _, err := s.publicEligible(c, job.FileObjectID)
 	if err != nil {
-		s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "publication_or_health_changed", 0, time.Since(started))
+		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "publication_or_health_changed", 0, time.Since(started))
 		c.JSON(http.StatusForbidden, gin.H{"error": "このファイルは公開対象外になったためダウンロードできません。"})
 		return
 	}
@@ -125,5 +125,5 @@ func (s *Server) downloadPublicContent(c *gin.Context) {
 		result = "failed"
 		reason = copyErr.Error()
 	}
-	s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
+	s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
 }
