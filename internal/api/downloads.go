@@ -54,14 +54,27 @@ func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action
 	// contextの取得
 	ctx := context.Background()
 
+	var jobIDPtr *string
+	if jobID != "" {
+		jobIDPtr = &jobID
+	}
+	var fileIDPtr *string
+	if fileID != "" {
+		fileIDPtr = &fileID
+	}
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+
 	_ = query.DownloadAuditLog.WithContext(ctx).
 		Create(&model.DownloadAuditLog{
-			DownloadJobID:  nil,
-			FileObjectID:   &fileID,
+			DownloadJobID:  jobIDPtr,
+			FileObjectID:   fileIDPtr,
 			SelectedNodeID: nodeID,
 			Action:         action,
 			Result:         result,
-			Reason:         &reason,
+			Reason:         reasonPtr,
 			BytesSent:      bytes,
 			DurationMs:     duration.Milliseconds(),
 			CreatedAt:      time.Now(),
