@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -332,23 +333,29 @@ func (s *Server) failDelivery(job model.DownloadJob, reason string) {
 	// contextの取得
 	ctx := context.Background()
 
-	data, err := query.DownloadJob.WithContext(ctx).Where(query.DownloadJob.ID.Eq(job.ID)).First()
+	err := query.Q.Transaction(func(tx *query.Query) error {
+		data, err := tx.DownloadJob.WithContext(ctx).Where(query.DownloadJob.ID.Eq(job.ID)).First()
+		if err != nil {
+			return err
+		}
+		if data.AttemptCount < 3 && data.ExpiresAt.After(time.Now()) {
+			data.Status = "queued"
+		} else {
+			data.Status = "failed"
+		}
+		data.LastError = &reason
+		data.LeaseToken = nil
+		data.LeaseUntil = nil
+		data.UpdatedAt = time.Now()
+		if err := tx.DownloadJob.WithContext(ctx).Save(data); err != nil {
+			return err
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		s.logger.Error("failDelivery_query_failed", "job_id", job.ID, "error", err)
-		return
 	}
-	if data.AttemptCount < 3 && data.ExpiresAt.After(time.Now()) {
-		data.Status = "queued"
-	} else {
-		data.Status = "failed"
-	}
-	data.LastError = &reason
-	data.LeaseToken = nil
-	data.LeaseUntil = nil
-	data.UpdatedAt = time.Now()
-	if err := query.DownloadJob.WithContext(ctx).Save(data); err != nil {
-		s.logger.Error("failDelivery_update_failed", "job_id", job.ID, "error", err)
-	}
+
 }
 
 func (s *Server) runDownloadCleanup(c *gin.Context) {
