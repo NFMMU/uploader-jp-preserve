@@ -333,12 +333,19 @@ func (s *Server) listFiles(c *gin.Context) {
 					),
 				).
 				UnderlyingDB()
+
+			sha256Regex := field.NewUnsafeFieldRaw(
+				"? ~ ?",
+				query.FileObject.Sha256,
+				"^[0-9a-fA-F]{64}$",
+			)
+
 			targetQuery = targetQuery.Where(
 				field.And(
 					query.FileObject.PublicDownloadEnabled.Is(true),
 					query.FileObject.RedistributionPolicy.Eq("allowed"),
 					query.FileObject.PreservationStatus.Eq("verified"),
-					query.FileObject.Sha256.Regexp("^[0-9a-fA-F]{64}$"),
+					sha256Regex,
 					field.CompareSubQuery(field.ExistsOp, nil, placementsSub),
 				),
 			)
