@@ -358,7 +358,7 @@ func (s *Server) failDelivery(job model.DownloadJob, reason string) {
 			q.Status.Eq("running"),
 			q.LeaseToken.Eq(*job.LeaseToken),
 		).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status": gorm.Expr(
 				"CASE WHEN attempt_count < 3 AND expires_at > now() " +
 					"THEN 'queued' ELSE 'failed' END",
