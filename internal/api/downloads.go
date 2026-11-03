@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -344,32 +343,40 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 }
 
 func (s *Server) failDelivery(job model.DownloadJob, reason string) {
-	// contextの取得
-	ctx := context.Background()
-
-	err := query.Q.Transaction(func(tx *query.Query) error {
-		data, err := tx.DownloadJob.WithContext(ctx).Where(query.DownloadJob.ID.Eq(job.ID)).First()
-		if err != nil {
-			return err
-		}
-		if data.AttemptCount < 3 && data.ExpiresAt.After(time.Now()) {
-			data.Status = "queued"
-		} else {
-			data.Status = "failed"
-		}
-		data.LastError = &reason
-		data.LeaseToken = nil
-		data.LeaseUntil = nil
-		data.UpdatedAt = time.Now()
-		if err := tx.DownloadJob.WithContext(ctx).Save(data); err != nil {
-			return err
-		}
-		return nil
-	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		s.logger.Error("failDelivery_query_failed", "job_id", job.ID, "error", err)
+	if job.LeaseToken == nil || *job.LeaseToken == "" {
+		return
 	}
 
+	// contextの取得
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	q := query.DownloadJob
+	info, err := q.WithContext(ctx).
+		Where(
+			q.ID.Eq(job.ID),
+			q.Status.Eq("running"),
+			q.LeaseToken.Eq(*job.LeaseToken),
+		).
+		Updates(map[string]interface{}{
+			"status": gorm.Expr(
+				"CASE WHEN attempt_count < 3 AND expires_at > now() " +
+					"THEN 'queued' ELSE 'failed' END",
+			),
+			"last_error":  reason,
+			"lease_token": nil,
+			"lease_until": nil,
+			"updated_at":  gorm.Expr("now()"),
+		})
+	if err != nil {
+		s.logger.Error("failDelivery_query_failed", "job_id", job.ID, "error", err)
+		return
+	}
+
+	if info.RowsAffected == 0 {
+		// 別のリースへ移行済み、または実行中ではないため更新しない。
+		return
+	}
 }
 
 func (s *Server) runDownloadCleanup(c *gin.Context) {
