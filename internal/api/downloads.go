@@ -52,7 +52,8 @@ func randomSecret() (string, error) {
 
 func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
 	// contextの取得
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	var jobIDPtr *string
 	if jobID != "" {
