@@ -289,7 +289,8 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 					),
 				),
 				downloadJobQuery.ExpiresAt.Gt(now),
-				downloadJobQuery.SelectedNodeID.IsNull().Or(
+				field.Or(
+					downloadJobQuery.SelectedNodeID.IsNull(),
 					downloadJobQuery.SelectedNodeID.Neq(node.ID),
 				),
 				fileObjectQuery.PreservationStatus.Eq("verified"),
