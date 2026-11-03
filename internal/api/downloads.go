@@ -49,7 +49,7 @@ func randomSecret() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *Server) writeDownloadAudit(c *gin.Context, jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
+func (s *Server) writeDownloadAudit(jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
 	// contextの取得
 	ctx := context.Background()
 
@@ -105,7 +105,7 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 	// ダウンロード可能かどうかを確認する
 	f, _, err := s.fileDownloadIsAvailable(c, fileID)
 	if err != nil {
-		s.writeDownloadAudit(c, "", fileID, nil, "requested", "denied", "file_not_healthy", 0, 0)
+		s.writeDownloadAudit("", fileID, nil, "requested", "denied", "file_not_healthy", 0, 0)
 		c.JSON(http.StatusNotFound, gin.H{"error": "file is not available for download"})
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create download job"})
 		return
 	}
-	s.writeDownloadAudit(c, job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
+	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
 	c.JSON(http.StatusAccepted, gin.H{
 		"job":          job,
 		"access_token": token,
@@ -187,7 +187,7 @@ func (s *Server) downloadContent(c *gin.Context) {
 	// ダウンロード可能かどうかを確認する
 	f, _, err := s.fileDownloadIsAvailable(c, job.FileObjectID)
 	if err != nil {
-		s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "health_changed", 0, time.Since(started))
+		s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", "denied", "health_changed", 0, time.Since(started))
 		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
@@ -215,7 +215,7 @@ func (s *Server) downloadContent(c *gin.Context) {
 		result = "failed"
 		reason = copyErr.Error()
 	}
-	s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
+	s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "delivered", result, reason, written, time.Since(started))
 }
 
 func urlQueryEscape(v string) string {
@@ -289,7 +289,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		return
 	}
 	if _, _, err := s.fileDownloadIsAvailable(c, f.ID); err != nil {
-		s.failDelivery(c, job, "health_changed")
+		s.failDelivery(job, "health_changed")
 		c.JSON(http.StatusForbidden, gin.H{"error": "file is no longer available"})
 		return
 	}
@@ -309,13 +309,13 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	closeErr := tmp.Close()
 	gotHash := hex.EncodeToString(h.Sum(nil))
 	if copyErr != nil || closeErr != nil || n != f.SizeBytes || !strings.EqualFold(gotHash, strings.TrimSpace(*f.Sha256)) {
-		s.failDelivery(c, job, "size_or_sha256_mismatch")
-		s.writeDownloadAudit(c, job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
+		s.failDelivery(job, "size_or_sha256_mismatch")
+		s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "failed", "size_or_sha256_mismatch", n, time.Since(started))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content validation failed"})
 		return
 	}
 	if err := os.Rename(tmpName, filepath.Join(s.cfg.DeliveryDir, job.ID)); err != nil {
-		s.failDelivery(c, job, "finalize_failed")
+		s.failDelivery(job, "finalize_failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize content"})
 		return
 	}
@@ -324,16 +324,14 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not finalize job"})
 		return
 	}
-	s.writeDownloadAudit(c, job.ID, f.ID, &node.ID, "prepared", "success", "", n, time.Since(started))
+	s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "success", "", n, time.Since(started))
 	c.Status(http.StatusCreated)
 }
 
-func (s *Server) failDelivery(c *gin.Context, job model.DownloadJob, reason string) {
+func (s *Server) failDelivery(job model.DownloadJob, reason string) {
 	// contextの取得
 	ctx := context.Background()
-	if c != nil && c.Request != nil {
-		ctx = c.Request.Context()
-	}
+
 	data, err := query.DownloadJob.WithContext(ctx).Where(query.DownloadJob.ID.Eq(job.ID)).First()
 	if err != nil {
 		s.logger.Error("failDelivery_query_failed", "job_id", job.ID, "error", err)
@@ -368,7 +366,7 @@ func (s *Server) runDownloadCleanup(c *gin.Context) {
 				s.logger.Warn("download_cleanup_file_failed", "job_id", job.ID, "error", err)
 			}
 			_ = s.db.Exec("UPDATE download_jobs SET status='expired',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=? AND expires_at <= now()", job.ID).Error
-			s.writeDownloadAudit(c, job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
+			s.writeDownloadAudit(job.ID, job.FileObjectID, job.SelectedNodeID, "expired", "success", "job_expired", 0, 0)
 		}
 	}
 }
