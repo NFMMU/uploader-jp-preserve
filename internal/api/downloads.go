@@ -17,7 +17,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gen/field"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/gen/query"
@@ -245,13 +247,67 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 	}
 
 	var job model.DownloadJob
-	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := query.Q.Transaction(func(tx *query.Query) error {
 		var candidate struct {
 			ID           string
 			FileObjectID string
 			StorageKey   string
 		}
-		err := tx.Raw(`SELECT dj.id,dj.file_object_id,p.storage_key FROM download_jobs dj JOIN file_objects f ON f.id=dj.file_object_id JOIN placements p ON p.file_object_id=f.id AND p.node_id=? AND p.status='verified' JOIN nodes ON nodes.id=p.node_id WHERE (dj.status='queued' OR (dj.status='running' AND dj.lease_until < now() AND dj.attempt_count < 3)) AND dj.expires_at>now() AND (dj.selected_node_id IS NULL OR dj.selected_node_id <> p.node_id) AND f.preservation_status='verified' AND nodes.status='online' AND nodes.last_seen_at >= now() - interval '2 minutes' ORDER BY dj.created_at LIMIT 1 FOR UPDATE OF dj SKIP LOCKED`, node.ID).Scan(&candidate).Error
+
+		now := time.Now()
+		lastSeenAfter := now.Add(-2 * time.Minute)
+
+		downloadJobQuery := tx.DownloadJob
+		placementQuery := tx.Placement
+		nodeQuery := tx.Node
+		fileObjectQuery := tx.FileObject
+
+		candidateQuery := downloadJobQuery.WithContext(c.Request.Context()).
+			Join(
+				fileObjectQuery,
+				fileObjectQuery.ID.EqCol(downloadJobQuery.FileObjectID),
+			).
+			Join(
+				placementQuery,
+				placementQuery.FileObjectID.EqCol(downloadJobQuery.FileObjectID),
+				placementQuery.NodeID.Eq(node.ID),
+				placementQuery.Status.Eq("verified"),
+			).
+			Join(
+				nodeQuery,
+				nodeQuery.ID.EqCol(placementQuery.NodeID),
+				nodeQuery.Status.Eq("online"),
+				nodeQuery.LastSeenAt.Gte(lastSeenAfter),
+			).
+			Where(
+				field.Or(
+					downloadJobQuery.Status.Eq("queued"),
+					field.And(
+						downloadJobQuery.Status.Eq("running"),
+						downloadJobQuery.LeaseUntil.Lt(now),
+						downloadJobQuery.AttemptCount.Lt(3),
+					),
+				),
+				downloadJobQuery.ExpiresAt.Gt(now),
+				downloadJobQuery.SelectedNodeID.IsNull().Or(
+					downloadJobQuery.SelectedNodeID.Neq(node.ID),
+				),
+				fileObjectQuery.PreservationStatus.Eq("verified"),
+			).
+			Order(downloadJobQuery.CreatedAt.Asc()).
+			Limit(1).
+			Select(
+				downloadJobQuery.ID,
+				downloadJobQuery.FileObjectID,
+				placementQuery.StorageKey,
+			).
+			Clauses(clause.Locking{
+				Strength: "UPDATE",
+				Table:    clause.Table{Name: "download_jobs"},
+				Options:  "SKIP LOCKED",
+			})
+
+		err := candidateQuery.Scan(&candidate)
 		if err != nil {
 			return err
 		}
@@ -262,11 +318,37 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		if leaseErr != nil {
 			return leaseErr
 		}
-		err = tx.Exec(`UPDATE download_jobs SET status='running',selected_node_id=?,lease_token=?::uuid,lease_until=now()+interval '2 minutes',attempt_count=attempt_count+1,updated_at=now() WHERE id=?`, node.ID, lease[:32], candidate.ID).Error
+
+		result, err := downloadJobQuery.
+			WithContext(c.Request.Context()).
+			Where(downloadJobQuery.ID.Eq(candidate.ID)).
+			Updates(map[string]interface{}{
+				"status":           "running",
+				"selected_node_id": node.ID,
+				"lease_token":      lease[:32],
+				"lease_until":      gorm.Expr("now() + interval '2 minutes'"),
+				"attempt_count":    gorm.Expr("attempt_count + 1"),
+				"updated_at":       gorm.Expr("now()"),
+			})
 		if err != nil {
 			return err
 		}
-		return tx.Raw("SELECT * FROM download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
+
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		fetchedJob, err := downloadJobQuery.
+			WithContext(c.Request.Context()).
+			Where(downloadJobQuery.ID.Eq(candidate.ID)).
+			First()
+		if err != nil {
+			return err
+		}
+
+		job = *fetchedJob
+
+		return nil
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
