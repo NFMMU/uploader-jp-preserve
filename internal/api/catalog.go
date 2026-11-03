@@ -266,7 +266,7 @@ func (s *Server) listFiles(c *gin.Context) {
 		    	       OR COALESCE(creator_name, '') ILIKE ?
 		    	)
 				)`, pattern, pattern, pattern, pattern, pattern, pattern)*/
-		artifactIDText := field.NewUnsafeFieldRaw("CAST(artifacts.id AS TEXT)")
+		artifactIDText := field.NewUnsafeFieldRaw("CAST(artifacts.id AS TEXT) COLLATE public.case_strict_insensitive")
 		sub := artifactQuery.WithContext(ctx).
 			Where(artifactIDText.Like(pattern)).
 			Or(artifactQuery.Title.Like(pattern)).
@@ -274,7 +274,7 @@ func (s *Server) listFiles(c *gin.Context) {
 			Select(artifactQuery.ID).
 			UnderlyingDB()
 
-		fileObjectIDText := field.NewUnsafeFieldRaw("CAST(file_objects.id AS TEXT)")
+		fileObjectIDText := field.NewUnsafeFieldRaw("CAST(file_objects.id AS TEXT) COLLATE public.case_strict_insensitive")
 		targetQuery = targetQuery.Where(field.Or(
 			fileObjectIDText.Like(pattern),
 			fileObjectQuery.OriginalFilename.Like(pattern),
