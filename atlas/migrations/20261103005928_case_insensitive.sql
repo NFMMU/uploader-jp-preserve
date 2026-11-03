@@ -2,7 +2,7 @@
 CREATE COLLATION IF NOT EXISTS "case_insensitive" (provider = icu, locale = 'und-u-ks-level1', DETERMINISTIC = FALSE);
 
 -- Create "case_strict_insensitive" collation
-CREATE COLLATION IF NOT EXISTS "case_strict_insensitive" (provider = icu, locale = 'und-u-ks-level2', DETERMINISTIC = TRUE);
+CREATE COLLATION IF NOT EXISTS "case_strict_insensitive" (provider = icu, locale = 'und-u-ks-level2', DETERMINISTIC = FALSE);
 
 -- Modify "artifacts" table
 ALTER TABLE "public"."artifacts"
