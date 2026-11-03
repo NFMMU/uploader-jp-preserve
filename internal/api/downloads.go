@@ -359,10 +359,8 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not claim delivery job"})
 		return
 	}
-	var storageKey string
-	_ = s.db.WithContext(c.Request.Context()).Raw("SELECT storage_key FROM placements WHERE file_object_id=? AND node_id=?", job.FileObjectID, node.ID).Row().Scan(&storageKey)
-	var f model.FileObject
-	_ = s.db.WithContext(c.Request.Context()).First(&f, "id = ?", job.FileObjectID).Error
+	storageKey, _ := query.Placement.WithContext(c.Request.Context()).Select(query.Placement.StorageKey).Where(query.Placement.FileObjectID.Eq(job.FileObjectID), query.Placement.NodeID.Eq(node.ID)).First()
+	f, _ := query.FileObject.WithContext(c.Request.Context()).Where(query.FileObject.ID.Eq(job.FileObjectID)).First()
 	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
