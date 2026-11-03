@@ -273,14 +273,15 @@ func (s *Server) listFiles(c *gin.Context) {
 			Select(artifactQuery.ID).
 			UnderlyingDB()
 
-		targetQuery = targetQuery.
-			Where(fileObjectQuery.ID.Like(pattern)).
-			Or(fileObjectQuery.OriginalFilename.Like(pattern)).
-			Or(fileObjectQuery.Sha256.Like(pattern)).
-			Or(field.ContainsSubQuery(
+		targetQuery = targetQuery.Where(field.Or(
+			fileObjectQuery.ID.Like(pattern),
+			fileObjectQuery.OriginalFilename.Like(pattern),
+			fileObjectQuery.Sha256.Like(pattern),
+			field.ContainsSubQuery(
 				[]field.Expr{fileObjectQuery.ArtifactID},
 				sub,
-			))
+			),
+		))
 
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
