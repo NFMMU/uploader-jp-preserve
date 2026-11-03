@@ -18,7 +18,6 @@ table "artifacts" {
   column "source_url" {
     type = text
     null = false
-    collate = collation.case_insensitive
   }
   column "description" {
     type = text

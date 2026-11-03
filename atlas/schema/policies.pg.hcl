@@ -17,7 +17,6 @@ table "policies" {
   column "evidence_url" {
     type = text
     null = true
-    collate = collation.case_insensitive
   }
   column "evidence_note" {
     type = text

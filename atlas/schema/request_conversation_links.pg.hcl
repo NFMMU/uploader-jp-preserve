@@ -17,7 +17,6 @@ table "request_conversation_links" {
   column "url" {
     type = text
     null = false
-    collate = collation.case_insensitive
   }
   column "label" {
     type = varchar(255)
