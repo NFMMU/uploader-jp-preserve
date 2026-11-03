@@ -35,7 +35,6 @@ table "public_requests" {
   column "source_url" {
     type = text
     null = true
-    collate = collation.case_insensitive
   }
   column "source_password_encrypted" {
     type = text

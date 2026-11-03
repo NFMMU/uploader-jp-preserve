@@ -8,7 +8,7 @@ table "users" {
   column "email" {
     type = varchar(320)
     null = false
-    collate = collation.case_insensitive
+    collate = collation.case_strict_insensitive
   }
   column "password_hash" {
     type = varchar(255)
