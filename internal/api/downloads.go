@@ -359,8 +359,17 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not claim delivery job"})
 		return
 	}
-	storageKey, _ := query.Placement.WithContext(c.Request.Context()).Select(query.Placement.StorageKey).Where(query.Placement.FileObjectID.Eq(job.FileObjectID), query.Placement.NodeID.Eq(node.ID)).First()
-	f, _ := query.FileObject.WithContext(c.Request.Context()).Where(query.FileObject.ID.Eq(job.FileObjectID)).First()
+	placement, err := query.Placement.WithContext(c.Request.Context()).Select(query.Placement.StorageKey).Where(query.Placement.FileObjectID.Eq(job.FileObjectID), query.Placement.NodeID.Eq(node.ID)).First()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load placement"})
+		return
+	}
+	storageKey := placement.StorageKey
+	f, err := query.FileObject.WithContext(c.Request.Context()).Where(query.FileObject.ID.Eq(job.FileObjectID)).First()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file object"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
