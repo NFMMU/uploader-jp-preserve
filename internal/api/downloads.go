@@ -52,13 +52,10 @@ func randomSecret() (string, error) {
 func (s *Server) writeDownloadAudit(c *gin.Context, jobID, fileID string, nodeID *string, action, result, reason string, bytes int64, duration time.Duration) {
 	// contextの取得
 	ctx := context.Background()
-	if c != nil && c.Request != nil {
-		ctx = c.Request.Context()
-	}
 
 	_ = query.DownloadAuditLog.WithContext(ctx).
 		Create(&model.DownloadAuditLog{
-			DownloadJobID:  &jobID,
+			DownloadJobID:  nil,
 			FileObjectID:   &fileID,
 			SelectedNodeID: nodeID,
 			Action:         action,
