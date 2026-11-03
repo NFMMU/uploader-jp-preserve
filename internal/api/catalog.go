@@ -420,7 +420,11 @@ func (s *Server) getFileObject(c *gin.Context) {
 		ctx = c.Request.Context()
 	}
 
-	file, err := query.FileObject.WithContext(ctx).Where(query.FileObject.ID.Eq(c.Param("id"))).First()
+	file, err := query.FileObject.WithContext(ctx).Where(
+		query.FileObject.ID.Eq(c.Param("id")),
+		query.FileObject.DeletedAt.IsNull(),
+		query.FileObject.DeletionRequestedAt.IsNull(),
+	).First()
 	if err != nil {
 		notFoundOrError(c, err, "file object")
 		return
