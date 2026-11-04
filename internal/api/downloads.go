@@ -360,8 +360,8 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		storageKey := placement.StorageKey
-		f, err := tx.FileObject.WithContext(c.Request.Context()).
+		storageKey = placement.StorageKey
+		f, err = tx.FileObject.WithContext(c.Request.Context()).
 			Where(tx.FileObject.ID.Eq(job.FileObjectID)).First()
 		if err != nil {
 			return err
