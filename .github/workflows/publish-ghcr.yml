@@ -30,15 +30,19 @@ jobs:
           - name: api
             context: .
             file: Dockerfile
+            platform: linux/amd64
           - name: node-agent
             context: .
             file: Dockerfile.node
+            platform: linux/amd64,linux/arm64
           - name: node-manager
             context: .
             file: Dockerfile.manager
+            platform: linux/amd64,linux/arm64
           - name: web
             context: ./web
             file: ./web/Dockerfile
+            platform: linux/amd64
 
     steps:
       - name: Check out repository
@@ -81,8 +85,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-          #platforms: linux/amd64,linux/arm64
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
