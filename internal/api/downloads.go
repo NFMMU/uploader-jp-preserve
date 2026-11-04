@@ -247,6 +247,8 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 	}
 
 	var job model.DownloadJob
+	var storageKey string
+	var f *model.FileObject
 	err := query.Q.Transaction(func(tx *query.Query) error {
 		var candidate struct {
 			ID           string
@@ -349,8 +351,25 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 
 		job = *fetchedJob
 
+		placement, err := tx.Placement.WithContext(c.Request.Context()).
+			Select(tx.Placement.StorageKey).
+			Where(
+				tx.Placement.FileObjectID.Eq(job.FileObjectID),
+				tx.Placement.NodeID.Eq(node.ID),
+			).First()
+		if err != nil {
+			return err
+		}
+		storageKey := placement.StorageKey
+		f, err := tx.FileObject.WithContext(c.Request.Context()).
+			Where(tx.FileObject.ID.Eq(job.FileObjectID)).First()
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
+
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.Status(http.StatusNoContent)
@@ -359,17 +378,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not claim delivery job"})
 		return
 	}
-	placement, err := query.Placement.WithContext(c.Request.Context()).Select(query.Placement.StorageKey).Where(query.Placement.FileObjectID.Eq(job.FileObjectID), query.Placement.NodeID.Eq(node.ID)).First()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load placement"})
-		return
-	}
-	storageKey := placement.StorageKey
-	f, err := query.FileObject.WithContext(c.Request.Context()).Where(query.FileObject.ID.Eq(job.FileObjectID)).First()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file object"})
-		return
-	}
+
 	c.JSON(http.StatusOK, gin.H{"job_id": job.ID, "lease_token": job.LeaseToken, "file_object_id": f.ID, "storage_key": storageKey, "size_bytes": f.SizeBytes, "sha256": f.Sha256, "original_filename": f.OriginalFilename})
 }
 
