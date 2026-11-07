@@ -26,7 +26,7 @@ type placementStatusView struct {
 	NodeType   string     `json:"node_type"`
 	NodeStatus string     `json:"node_status"`
 	Status     string     `json:"status"`
-	SHA256     *string    `json:"sha256,omitempty"`
+	Sha256     *string    `json:"sha256,omitempty"`
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
@@ -61,7 +61,7 @@ func (s *Server) listPlacements(c *gin.Context) {
 		if placement.Status == "verified" && status == "online" {
 			healthy++
 		}
-		items = append(items, placementStatusView{ID: placement.ID, NodeID: node.ID, NodeName: node.Name, NodeType: node.NodeType, NodeStatus: status, Status: placement.Status, SHA256: placement.SHA256, VerifiedAt: placement.VerifiedAt, CreatedAt: placement.CreatedAt})
+		items = append(items, placementStatusView{ID: placement.ID, NodeID: node.ID, NodeName: node.Name, NodeType: node.NodeType, NodeStatus: status, Status: placement.Status, Sha256: placement.Sha256, VerifiedAt: placement.VerifiedAt, CreatedAt: placement.CreatedAt})
 	}
 	c.JSON(http.StatusOK, gin.H{"file_object_id": fileID, "preservation_status": file.PreservationStatus, "required_replica_count": requiredReplicaCount, "healthy_replica_count": healthy, "items": items})
 }
@@ -232,7 +232,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
 			return err
 		}
-		if file.DeletionRequestedAt != nil || file.DeletedAt != nil {
+		if file.DeletionRequestedAt != nil || file.DeletedAt.Valid {
 			reason = "file deletion is requested or already complete"
 			return nil
 		}
@@ -310,10 +310,10 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 		storageKey := "objects/" + fileID + "/" + newTaskID
 		if existing, ok := placementByNode[target.ID]; ok {
 			storageKey = existing.StorageKey
-			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.SHA256, "status": "queued", "verified_at": nil}).Error; err != nil {
+			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{"storage_key": storageKey, "sha256": file.Sha256, "status": "queued", "verified_at": nil}).Error; err != nil {
 				return err
 			}
-		} else if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: target.ID, StorageKey: storageKey, SHA256: file.SHA256, Status: "queued"}).Error; err != nil {
+		} else if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: target.ID, StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", "queued").Error; err != nil {

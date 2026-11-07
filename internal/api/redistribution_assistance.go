@@ -181,7 +181,7 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 		RequestType: requestType, Status: "pending", Title: stringPtr(title), CreatorName: trimOptional(&creator), SourceURL: sourceURLPtr,
 		SubmitterName: trimOptional(&name), Contact: trimOptional(&contact), Details: details,
 		RightsHolderContact: trimOptional(&rightsContact), IntakeFilePath: relativePath, IntakeFileName: fileNamePtr,
-		IntakeFileSize: sizePtr, IntakeFileSHA256: shaPtr, IntakeFileUploadedAt: uploadedAt,
+		IntakeFileSize: sizePtr, IntakeFileSha256: shaPtr, IntakeFileUploadedAt: uploadedAt,
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&request).Error; err != nil {
 		if relativePath != "" {
@@ -309,7 +309,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		return
 	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
-	if request.IntakeFileSHA256 != nil && !strings.EqualFold(sha, *request.IntakeFileSHA256) {
+	if request.IntakeFileSha256 != nil && !strings.EqualFold(sha, *request.IntakeFileSha256) {
 		_ = tmp.Close()
 		cleanup()
 		c.JSON(http.StatusConflict, gin.H{"error": "添付ファイルのハッシュが申請時の記録と一致しません。"})
@@ -345,7 +345,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		}
 	}
 	artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
-	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, SHA256: &sha, MediaType: stringPtr("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
+	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: stringPtr("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
 	db := s.db.WithContext(c.Request.Context())
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&artifact).Error; err != nil {

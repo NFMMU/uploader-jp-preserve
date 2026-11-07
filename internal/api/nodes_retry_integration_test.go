@@ -83,7 +83,7 @@ func retryFixture(t *testing.T, db *gorm.DB) (*Server, model.FileObject, model.N
 	if err := db.Create(&artifact).Error; err != nil {
 		t.Fatal(err)
 	}
-	file := model.FileObject{ArtifactID: artifact.ID, OriginalFilename: "retry.bin", SizeBytes: int64(len(content)), SHA256: &digest, PreservationStatus: "error", RedistributionPolicy: "allowed", PublicDownloadEnabled: true}
+	file := model.FileObject{ArtifactID: artifact.ID, OriginalFilename: "retry.bin", SizeBytes: int64(len(content)), Sha256: &digest, PreservationStatus: "error", RedistributionPolicy: "allowed", PublicDownloadEnabled: true}
 	node := model.Node{Name: "original", NodeType: "A", Status: "online"}
 	for _, record := range []any{&file, &node} {
 		if err := db.Create(record).Error; err != nil {

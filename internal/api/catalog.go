@@ -100,7 +100,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 	var req struct {
 		OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
 		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
-		SHA256               *string `json:"sha256" binding:"omitempty,len=64"`
+		Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
 		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
 		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
 		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
@@ -131,13 +131,13 @@ func (s *Server) createFileObject(c *gin.Context) {
 		}
 		req.SourceURL = &validated
 	}
-	if req.SHA256 != nil {
-		value := strings.ToLower(strings.TrimSpace(*req.SHA256))
+	if req.Sha256 != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.Sha256))
 		if !isHexDigest(value) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "sha256 must be 64 hexadecimal characters"})
 			return
 		}
-		req.SHA256 = &value
+		req.Sha256 = &value
 	}
 	if req.Representative != nil {
 		var reviewer model.User
@@ -148,7 +148,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 	}
 	file := model.FileObject{
 		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
-		SHA256: req.SHA256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
+		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
 		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
@@ -377,7 +377,7 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		return
 	}
 	if *req.Enabled {
-		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.SHA256 == nil || !isHexDigest(*file.SHA256) {
+		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
 			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless policy is allowed, preservation is verified, and a valid SHA-256 is recorded"})
 			return
 		}
@@ -432,7 +432,7 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		_ = writer.Write([]string{"artifact", a.ID, "", csvSafe(a.Title), csvSafe(deref(a.CreatorName)), csvSafe(a.SourceURL), "", "", "", "", "", "", a.CreatedAt.UTC().Format(time.RFC3339)})
 	}
 	for _, f := range files {
-		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.SHA256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
+		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.Sha256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
 	}
 	writer.Flush()
 }
