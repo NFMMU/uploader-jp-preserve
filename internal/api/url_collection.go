@@ -12,8 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 var errDuplicateSourceURL = errors.New("source URL has already been requested or catalogued")
@@ -271,8 +272,8 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			}
 
 			preserveRequest := model.PublicRequest{
-				ID: requestID, RequestType: "preservation", Status: "pending", Title: stringPtr(title),
-				SourceURL: stringPtr(item.URL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
+				ID: requestID, RequestType: "preservation", Status: "pending", Title: new(title),
+				SourceURL: new(item.URL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
 			}
 			if err := tx.Create(&preserveRequest).Error; err != nil {
 				return err
@@ -303,7 +304,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 	}
 
 	actor, _ := currentUser(c)
-	s.audit(c, &actor, "url_collection", "batch", "url_collection.scan", "success", stringPtr(fmt.Sprintf("seeds=%d pages=%d candidates=%d created=%d duplicates=%d failed=%d", len(seeds), pagesScanned, len(candidates), created, duplicates, failed)))
+	s.audit(c, &actor, "url_collection", "batch", "url_collection.scan", "success", new(fmt.Sprintf("seeds=%d pages=%d candidates=%d created=%d duplicates=%d failed=%d", len(seeds), pagesScanned, len(candidates), created, duplicates, failed)))
 	c.JSON(http.StatusOK, gin.H{
 		"seed_count": len(seeds), "pages_scanned": pagesScanned, "candidate_count": len(candidates),
 		"requests_created": created, "duplicates_discarded": duplicates, "failed": failed,

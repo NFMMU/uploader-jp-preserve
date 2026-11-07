@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 // updateArtifactMetadata edits the descriptive record separately from file bytes.

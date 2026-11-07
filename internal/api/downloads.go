@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,8 +17,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 type downloadJob struct {
@@ -37,6 +39,7 @@ type downloadJob struct {
 }
 
 func tokenHash(v string) string { sum := sha256.Sum256([]byte(v)); return hex.EncodeToString(sum[:]) }
+
 func randomSecret() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -121,6 +124,7 @@ func (s *Server) authorizedDownloadJob(c *gin.Context) (downloadJob, bool) {
 	}
 	return job, true
 }
+
 func (s *Server) getDownloadJob(c *gin.Context) {
 	job, ok := s.authorizedDownloadJob(c)
 	if !ok {
@@ -200,7 +204,7 @@ func (s *Server) claimDeliveryJob(c *gin.Context) {
 		return tx.Raw("SELECT * FROM download_jobs WHERE id = ?", candidate.ID).Scan(&job).Error
 	})
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -272,6 +276,7 @@ func (s *Server) receiveDeliveryContent(c *gin.Context) {
 	s.writeDownloadAudit(job.ID, f.ID, &node.ID, "prepared", "success", "", n, time.Since(started))
 	c.Status(http.StatusCreated)
 }
+
 func (s *Server) failDelivery(job downloadJob, reason string) {
 	_ = s.db.Exec(`UPDATE download_jobs SET status=CASE WHEN attempt_count<3 AND expires_at>now() THEN 'queued' ELSE 'failed' END,last_error=?,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=?`, reason, job.ID).Error
 }

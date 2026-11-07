@@ -14,8 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 const maxPublicIntakeFileBytes int64 = 100 << 20
@@ -136,14 +137,14 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 		}
 		defer source.Close()
 		dir := filepath.Join(s.cfg.StagingDir, "public-intake")
-		if err := os.MkdirAll(dir, 0700); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "アップロード先を準備できませんでした。"})
 			return
 		}
 		fileID := uuid.NewString()
 		relativePath = filepath.Join("public-intake", fileID+".upload")
 		absolutePath := filepath.Join(s.cfg.StagingDir, relativePath)
-		destination, err := os.OpenFile(absolutePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		destination, err := os.OpenFile(absolutePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ファイルを一時保管できませんでした。"})
 			return
@@ -178,7 +179,7 @@ func (s *Server) submitRedistributionAssistance(c *gin.Context) {
 	}
 
 	request := model.PublicRequest{
-		RequestType: requestType, Status: "pending", Title: stringPtr(title), CreatorName: trimOptional(&creator), SourceURL: sourceURLPtr,
+		RequestType: requestType, Status: "pending", Title: new(title), CreatorName: trimOptional(&creator), SourceURL: sourceURLPtr,
 		SubmitterName: trimOptional(&name), Contact: trimOptional(&contact), Details: details,
 		RightsHolderContact: trimOptional(&rightsContact), IntakeFilePath: relativePath, IntakeFileName: fileNamePtr,
 		IntakeFileSize: sizePtr, IntakeFileSha256: shaPtr, IntakeFileUploadedAt: uploadedAt,
@@ -277,7 +278,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添付ファイルの保存先が正しくありません。"})
 		return
 	}
-	if err := os.MkdirAll(s.cfg.StagingDir, 0750); err != nil {
+	if err := os.MkdirAll(s.cfg.StagingDir, 0o750); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "一時保管領域を準備できませんでした。"})
 		return
 	}
@@ -345,7 +346,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		}
 	}
 	artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
-	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: stringPtr("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
+	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: new("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
 	db := s.db.WithContext(c.Request.Context())
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&artifact).Error; err != nil {
@@ -378,5 +379,5 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	s.audit(c, &actor, "public_request", request.ID, "public_request.upload_ingest.queued", "success", stringPtr("Permission checked by operator before ingest"))
+	s.audit(c, &actor, "public_request", request.ID, "public_request.upload_ingest.queued", "success", new("Permission checked by operator before ingest"))
 }

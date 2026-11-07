@@ -17,16 +17,14 @@ type Claims struct {
 func Issue(secret []byte, ttl time.Duration, userID, role, email string) (string, error) {
 	now := time.Now().UTC()
 	claims := Claims{
-		UserID: userID,
-		Role:   role,
-		Email:  email,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "uploader-jp-archive",
-			Subject:   userID,
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now.Add(-5 * time.Second)),
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-		},
+		UserID:    userID,
+		Role:      role,
+		Email:     email,
+		Issuer:    "uploader-jp-archive",
+		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now.Add(-5 * time.Second)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(secret)
 }

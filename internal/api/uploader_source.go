@@ -17,9 +17,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	xhtml "golang.org/x/net/html"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 const maxUploaderHTMLBytes = 8 << 20
@@ -132,7 +133,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	s.audit(c, &actor, "file_object", file.ID, "file_object.source_fetch.queued", "success", stringPtr("agent="+node.Name))
+	s.audit(c, &actor, "file_object", file.ID, "file_object.source_fetch.queued", "success", new("agent="+node.Name))
 	c.JSON(http.StatusAccepted, gin.H{
 		"file_object_id":    file.ID,
 		"source_fetch_task": gin.H{"task_id": task.ID, "task_type": task.TaskType, "node_id": node.ID, "node_name": node.Name, "status": task.Status},
@@ -522,7 +523,7 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		return
 	}
 	actor, _ := currentUser(c)
-	s.audit(c, &actor, "artifact", artifact.ID, "artifact.source_discover", "success", stringPtr(fmt.Sprintf("pages=%d candidates=%d", pages, len(candidates))))
+	s.audit(c, &actor, "artifact", artifact.ID, "artifact.source_discover", "success", new(fmt.Sprintf("pages=%d candidates=%d", pages, len(candidates))))
 	c.JSON(http.StatusOK, gin.H{"listing_url": listingURL, "pages_scanned": pages, "limit": maxUploaderListingCandidates, "truncated": len(candidates) >= maxUploaderListingCandidates, "items": candidates})
 }
 
