@@ -8,6 +8,7 @@ table "request_conversation_links" {
   column "target_type" {
     type = varchar(32)
     null = false
+    collate = collation.case_insensitive
   }
   column "target_id" {
     type = uuid
@@ -21,6 +22,7 @@ table "request_conversation_links" {
     type = varchar(255)
     null = false
     default = "関連する会話"
+    collate = collation.case_insensitive
   }
   column "created_by" {
     type = uuid

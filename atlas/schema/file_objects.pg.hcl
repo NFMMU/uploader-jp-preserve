@@ -12,6 +12,7 @@ table "file_objects" {
   column "original_filename" {
     type = varchar(500)
     null = false
+    collate = collation.case_insensitive
   }
   column "size_bytes" {
     type = bigint

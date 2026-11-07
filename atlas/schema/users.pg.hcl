@@ -8,6 +8,7 @@ table "users" {
   column "email" {
     type = varchar(320)
     null = false
+    collate = collation.case_strict_insensitive
   }
   column "password_hash" {
     type = varchar(255)
@@ -16,6 +17,7 @@ table "users" {
   column "display_name" {
     type = varchar(120)
     null = false
+    collate = collation.case_insensitive
   }
   column "role" {
     type = varchar(32)

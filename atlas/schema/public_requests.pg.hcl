@@ -25,10 +25,12 @@ table "public_requests" {
   column "title" {
     type = varchar(500)
     null = true
+    collate = collation.case_insensitive
   }
   column "creator_name" {
     type = varchar(255)
     null = true
+    collate = collation.case_insensitive
   }
   column "source_url" {
     type = text
@@ -41,15 +43,18 @@ table "public_requests" {
   column "rights_holder_contact" {
     type = varchar(1000)
     null = true
+    collate = collation.case_insensitive
   }
   column "intake_file_path" {
     type = text
     null = false
     default = ""
+    collate = collation.case_insensitive
   }
   column "intake_file_name" {
     type = varchar(500)
     null = true
+    collate = collation.case_insensitive
   }
   column "intake_file_size" {
     type = bigint
@@ -66,18 +71,22 @@ table "public_requests" {
   column "submitter_name" {
     type = varchar(255)
     null = true
+    collate = collation.case_insensitive
   }
   column "contact" {
     type = varchar(500)
     null = true
+    collate = collation.case_insensitive
   }
   column "details" {
     type = text
     null = false
+    collate = collation.case_insensitive
   }
   column "external_url" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "reviewed_by" {
     type = uuid

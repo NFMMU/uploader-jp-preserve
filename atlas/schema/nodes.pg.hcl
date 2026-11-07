@@ -8,6 +8,7 @@ table "nodes" {
   column "name" {
     type = varchar(120)
     null = false
+    collate = collation.case_insensitive
   }
   column "node_type" {
     type = varchar(8)
