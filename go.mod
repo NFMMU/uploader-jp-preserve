@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gen v0.3.29
 	gorm.io/gorm v1.31.2
