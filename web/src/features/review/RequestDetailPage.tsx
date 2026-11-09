@@ -319,7 +319,6 @@ export function RequestDetailPage({
 				await api(`/public-requests/${request.id}`, {
 					method: "PATCH",
 					body: JSON.stringify({
-						status: "in_review",
 						reason: "保全対象ファイルを登録",
 						artifact_id: aid,
 						file_object_id: file.id,
