@@ -249,7 +249,7 @@ export function RequestDetailPage({
 		await api(`/public-requests/${req.id}`, {
 			method: "PATCH",
 			body: JSON.stringify({
-				status: req.status === "pending" ? "in_review" : req.status,
+				status: req.status,
 				reason: "申請詳細ページから作品情報を登録",
 				artifact_id: artifact.id,
 			}),
