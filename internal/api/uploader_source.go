@@ -42,6 +42,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		Priority        *int   `json:"priority" binding:"omitempty,min=0,max=5"`
 		Password        string `json:"password" binding:"omitempty,max=1024"`
 		PublicRequestID string `json:"public_request_id" binding:"omitempty,uuid"`
+		ClearPassword   *bool  `json:"clear_password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid source-ingest request"})
@@ -69,24 +70,47 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
 		return
 	}
+
+	if req.ClearPassword != nil && *req.ClearPassword && req.Password != "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "password and clear_password cannot be used together",
+		})
+		return
+	}
+
 	passwordEncrypted := file.SourcePasswordEncrypted
-	if req.Password != "" {
+	switch {
+	case req.ClearPassword != nil && *req.ClearPassword:
+		passwordEncrypted = nil
+
+	case req.Password != "":
 		encrypted, encryptErr := s.encryptSourcePassword(req.Password)
 		if encryptErr != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": encryptErr.Error()})
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": encryptErr.Error(),
+			})
 			return
 		}
 		passwordEncrypted = encrypted
-	} else if req.PublicRequestID != "" {
+
+	case req.PublicRequestID != "":
+		// PublicRequestに保存されているパスワードを引き継ぐ
 		var publicRequest model.PublicRequest
-		if err := s.db.WithContext(c.Request.Context()).Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).First(&publicRequest).Error; err != nil {
+		if err := s.db.WithContext(c.Request.Context()).
+			Where("id = ? AND request_type = 'preservation'", req.PublicRequestID).
+			First(&publicRequest).Error; err != nil {
 			notFoundOrError(c, err, "preservation request")
 			return
 		}
-		if publicRequest.ArtifactID != nil && *publicRequest.ArtifactID != file.ArtifactID {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "preservation request does not belong to this file's artifact"})
+
+		if publicRequest.ArtifactID != nil &&
+			*publicRequest.ArtifactID != file.ArtifactID {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "preservation request does not belong to this file's artifact",
+			})
 			return
 		}
+
 		if publicRequest.SourcePasswordEncrypted != nil {
 			passwordEncrypted = publicRequest.SourcePasswordEncrypted
 		}
