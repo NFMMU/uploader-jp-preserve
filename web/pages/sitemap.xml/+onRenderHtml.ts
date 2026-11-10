@@ -10,7 +10,7 @@ const STATIC_PATHS = [
 	"/",
 	"/requests",
 	"/preservation-requests",
-	"/redistribution-support",
+	//"/redistribution-support",
 	"/publisher-support",
 	"/relocation-info",
 	"/participate",

@@ -78,11 +78,11 @@ export function PublicCatalog() {
 			</section>
 
 			<section className="public-service-cards" aria-label="再配布支援サービス">
-				<Link to="/redistribution-support" className="public-service-card">
+				{ /*<Link to="/redistribution-support" className="public-service-card">
 					<span className="public-service-label">ファイルを持っている方</span>
 					<b>再配布の相談・権利者への問い合わせ代行</b>
 					<span>ファイルを送って、権利確認を依頼する →</span>
-				</Link>
+				</Link>*/ }
 				<Link to="/publisher-support" className="public-service-card">
 					<span className="public-service-label">配布元・権利者の方</span>
 					<b>配布・再配布の代行を相談する</b>

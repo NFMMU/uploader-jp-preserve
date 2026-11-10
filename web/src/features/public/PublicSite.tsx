@@ -23,10 +23,10 @@ function PublicSite() {
 						path="/preservation-requests"
 						element={<PreservationRequest />}
 					/>
-					<Route
+					{ /*<Route
 						path="/redistribution-support"
 						element={<RedistributionAssistancePage mode="redistribution" />}
-					/>
+					/>*/ }
 					<Route
 						path="/publisher-support"
 						element={<RedistributionAssistancePage mode="publisher" />}

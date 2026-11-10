@@ -10,7 +10,7 @@ export function PublicHeader() {
 				<nav aria-label="メインナビゲーション">
 					<Link to="/">作品一覧</Link>
 					<Link to="/preservation-requests">保全リクエスト</Link>
-					<Link to="/redistribution-support">再配布の相談</Link>
+					{ /*<Link to="/redistribution-support">再配布の相談</Link>*/ }
 					<Link to="/publisher-support">配布元向け代行</Link>
 					<Link to="/requests">公開停止・削除</Link>
 					<Link to="/relocation-info">移設先情報の提供</Link>

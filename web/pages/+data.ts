@@ -44,10 +44,10 @@ export async function data(pageContext: PageContextServer) {
 			title: "保全リクエスト",
 			description: "創作関連アセットの保全について相談できます。",
 		},
-		"/redistribution-support": {
+		/*"/redistribution-support": {
 			title: "再配布の相談",
 			description: "ファイルの再配布や権利者への問い合わせを相談できます。",
-		},
+		},*/
 		"/publisher-support": {
 			title: "配布・再配布の支援",
 			description: "配布元・権利者の方向けの配布支援ページです。",
