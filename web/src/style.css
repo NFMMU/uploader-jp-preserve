@@ -791,7 +791,7 @@ footer > span {
 	background: transparent;
 }
 .modal {
-	width: min(520px, 100%);
+	width: min(680px, 100%);
 	max-height: 90vh;
 	overflow: auto;
 	background: #fff;
