@@ -2671,3 +2671,10 @@ footer > span {
 		flex: 1;
 	}
 }
+
+.form-stack .check-label input[type="radio"] {
+	width: auto;
+	flex: 0 0 auto;
+	margin: 0;
+	accent-color: #333;
+}

@@ -238,7 +238,13 @@ export function FileRow({
 						</div>
 					</div>
 				</td>
-				<td>
+				<td
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						alignContent: "center",
+					}}
+				>
 					<Status value={x.deleted_at ? "deleted" : x.preservation_status} />
 					{x.deletion_requested_at && !x.deleted_at && (
 						<small className="cell-sub">削除処理中</small>
@@ -246,6 +252,7 @@ export function FileRow({
 					{x.preservation_status === "error" && (
 						<button
 							type="button"
+							className="small-btn"
 							disabled={
 								retrying ||
 								role === "viewer" ||
@@ -255,7 +262,7 @@ export function FileRow({
 							}
 							onClick={() => {
 								setPasswordMode("saved");
-								setRetryError("")
+								setRetryError("");
 								setRetryPassword("");
 								setRetryModalOpen(true);
 							}}
@@ -320,71 +327,73 @@ export function FileRow({
 						}
 					}}
 				>
-					<div className="modal-body">
-						<p>
-							<strong>{x.original_filename}</strong>
-							の保全処理を再試行します。
-						</p>
+					<div className="form-stack">
+						<div className="detail-summary">
+							<b>{x.original_filename}</b>
+							<small>保全処理を再試行します。</small>
+						</div>
 
-						<fieldset disabled={retrying}>
-							<legend>ダウンロードパスワード</legend>
-
-							<label>
+						<div>
+							<label className="check-label">
 								<input
 									type="radio"
 									name={`retry-password-${x.id}`}
-									value="saved"
 									checked={passwordMode === "saved"}
 									onChange={() => setPasswordMode("saved")}
+									disabled={retrying}
 								/>
-								保存済みのパスワードを使用
+								保存済みのパスワードを使用する
 							</label>
 
-							<label>
+							<label className="check-label">
 								<input
 									type="radio"
 									name={`retry-password-${x.id}`}
-									value="change"
 									checked={passwordMode === "change"}
 									onChange={() => setPasswordMode("change")}
+									disabled={retrying}
 								/>
-								新しいパスワードを指定
+								新しいパスワードを指定する
 							</label>
 
 							{passwordMode === "change" && (
-								<input
-									type="password"
-									value={retryPassword}
-									onChange={(e) => setRetryPassword(e.target.value)}
-									placeholder="新しいパスワード"
-									autoComplete="new-password"
-									maxLength={1024}
-								/>
+								<label>
+									新しいパスワード
+									<input
+										type="password"
+										value={retryPassword}
+										onChange={(e) => setRetryPassword(e.target.value)}
+										placeholder="新しいパスワード"
+										autoComplete="new-password"
+										maxLength={1024}
+										disabled={retrying}
+									/>
+								</label>
 							)}
 
-							<label>
+							<label className="check-label">
 								<input
 									type="radio"
 									name={`retry-password-${x.id}`}
-									value="clear"
 									checked={passwordMode === "clear"}
 									onChange={() => setPasswordMode("clear")}
+									disabled={retrying}
 								/>
 								保存済みのパスワードを削除する
 							</label>
-						</fieldset>
+						</div>
 
 						{passwordMode === "clear" && (
-							<p className="cell-sub">
-								パスワードを削除して、パスワードなしで取得を試みます。
-							</p>
+							<div className="policy-warning">
+								保存済みのパスワードを削除し、パスワードなしで 取得を試みます。
+							</div>
 						)}
 
-						{retryError && (
-							<p role="alert" className="cell-sub">
-								{retryError}
-							</p>
-						)}
+						<p className="muted">
+							パスワードが不要なファイルの場合は、
+							保存済みのパスワードを削除するか、
+							保存済みの値を維持する設定を選択してください。
+						</p>
 
 						<div className="modal-actions">
 							<button
@@ -401,6 +410,7 @@ export function FileRow({
 
 							<button
 								type="button"
+								className="primary"
 								disabled={
 									retrying || (passwordMode === "change" && !retryPassword)
 								}
