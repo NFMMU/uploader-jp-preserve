@@ -43,6 +43,7 @@ export function FileRow({
 	const [passwordMode, setPasswordMode] =
 		React.useState<RetryPasswordMode>("saved");
 	const [retryPassword, setRetryPassword] = React.useState("");
+	const [retryError, setRetryError] = React.useState("");
 
 	async function download() {
 		setBusy(true);
@@ -132,11 +133,12 @@ export function FileRow({
 		if (!x.source_url || retrying) return;
 
 		if (passwordMode === "change" && !retryPassword) {
-			setMessage("新しいパスワードを入力してください。");
+			setRetryError("新しいパスワードを入力してください。");
 			return;
 		}
 
 		setRetrying(true);
+		setRetryError("");
 		setMessage("再試行タスクを登録しています…");
 
 		try {
@@ -197,7 +199,7 @@ export function FileRow({
 				setMessage("タスクは登録されましたが、一覧の更新に失敗しました。");
 			}
 		} catch (e) {
-			setMessage(
+			setRetryError(
 				e instanceof Error
 					? `再試行に失敗しました：${e.message}`
 					: "再試行に失敗しました。",
@@ -253,6 +255,7 @@ export function FileRow({
 							}
 							onClick={() => {
 								setPasswordMode("saved");
+								setRetryError("")
 								setRetryPassword("");
 								setRetryModalOpen(true);
 							}}
@@ -374,6 +377,12 @@ export function FileRow({
 						{passwordMode === "clear" && (
 							<p className="cell-sub">
 								パスワードを削除して、パスワードなしで取得を試みます。
+							</p>
+						)}
+
+						{retryError && (
+							<p role="alert" className="cell-sub">
+								{retryError}
 							</p>
 						)}
 
