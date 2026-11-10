@@ -28,7 +28,12 @@ export default function CopyEmail({ email, label }: CopyEmailProps) {
 	}
 
 	return (
-		<button type="button" className="copy-email-btn" onClick={copy} title={email}>
+		<button
+			type="button"
+			className="copy-email-btn"
+			onClick={copy}
+			title={email}
+		>
 			<span>{label ?? email}</span>
 			<small>{copied ? "コピーしました" : "コピー"}</small>
 		</button>
