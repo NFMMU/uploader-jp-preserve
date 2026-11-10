@@ -32,7 +32,7 @@ function PublicSite() {
 						element={<RedistributionAssistancePage mode="publisher" />}
 					/>
 					<Route path="/relocation-info" element={<RelocationInfoRequest />} />
-					<Route path="/participate" element={<NodeParticipationRequest />} />
+					{/*<Route path="/participate" element={<NodeParticipationRequest />} />*/}
 					<Route path="/terms" element={<TermsPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route path="/disclaimer" element={<DisclaimerPage />} />
@@ -49,7 +49,7 @@ function PublicSite() {
 					<Link to="/terms">利用規約</Link>
 					<Link to="/privacy">プライバシー・ポリシー</Link>
 					<Link to="/disclaimer">免責事項</Link>
-					<Link to="/participate">ストレージノード参加</Link>
+					{/*<Link to="/participate">ストレージノード参加</Link>*/}
 					<a href="mailto:uploaderjp-archive@udonya.moe">お問い合わせ</a>
 					<CopyEmail email="uploaderjp-archive@udonya.moe" />
 				</div>

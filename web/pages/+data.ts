@@ -56,10 +56,10 @@ export async function data(pageContext: PageContextServer) {
 			title: "移設先情報の提供",
 			description: "uploader.jp上の作品の移設先情報を提供できます。",
 		},
-		"/participate": {
+		/*"/participate": {
 			title: "保存ノード参加",
 			description: "プロジェクトの分散保存ノードへの参加案内です。",
-		},
+		},*/
 		"/terms": {
 			title: "利用規約",
 			description: "uploader.jp保全プロジェクトの利用規約です。",

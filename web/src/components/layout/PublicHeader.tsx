@@ -14,7 +14,7 @@ export function PublicHeader() {
 					<Link to="/publisher-support">配布元向け代行</Link>
 					<Link to="/requests">公開停止・削除</Link>
 					<Link to="/relocation-info">移設先情報の提供</Link>
-					<Link to="/participate">ストレージノード参加</Link>
+					{ /*<Link to="/participate">ストレージノード参加</Link>*/ }
 					<Link to="/admin/login">管理者ログイン</Link>
 				</nav>
 			</div>

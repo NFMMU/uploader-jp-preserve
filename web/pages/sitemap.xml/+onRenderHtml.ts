@@ -13,7 +13,7 @@ const STATIC_PATHS = [
 	//"/redistribution-support",
 	"/publisher-support",
 	"/relocation-info",
-	"/participate",
+	//"/participate",
 	"/terms",
 	"/privacy",
 	"/disclaimer",
