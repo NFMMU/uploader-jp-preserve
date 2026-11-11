@@ -10,7 +10,7 @@ import { Pagination } from "../../components/common/Pagination";
 export function Audit({ api, refresh }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const [page, setPage] = useState(1);
-	const [limit, setLimit] = useState(10);
+	const [limit, setLimit] = useState(20);
 
 	const taskParams = new URLSearchParams({
 		page: String(page),
