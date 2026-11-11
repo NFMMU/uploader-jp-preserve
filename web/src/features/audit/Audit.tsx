@@ -1,12 +1,28 @@
+import { useState } from "react";
 import { Heading } from "../../components/common/Heading";
 import { Status } from "../../components/common/Status";
 import { Table } from "../../components/common/Table";
 import { useData } from "../../hooks/useData";
 import { date } from "../../lib/format";
 import type { Obj } from "../../types/common";
+import { Pagination } from "../../components/common/Pagination";
 
 export function Audit({ api, refresh }: any) {
-	const d = useData(api, "/admin/audit-logs", refresh);
+	const [localRefresh, setLocalRefresh] = useState(0);
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(10);
+
+	const taskParams = new URLSearchParams({
+		page: String(page),
+		limit: String(limit),
+	});
+
+	const d = useData(api, `/admin/audit-logs?${taskParams.toString()}`, refresh + localRefresh);
+
+	const total = d.data.total ?? 0;
+	const totalPages = Math.ceil(total / limit);
+	const currentPage = Math.min(page, Math.max(1, totalPages));
+
 	return (
 		<>
 			<Heading eyebrow="" title="操作履歴" desc="管理操作の履歴" />
@@ -51,6 +67,17 @@ export function Audit({ api, refresh }: any) {
 					)}
 				</Table>
 			</section>
+			<Pagination
+				page={currentPage}
+				limit={limit}
+				total={total}
+				loading={d.loading}
+				onPageChange={setPage}
+				onLimitChange={(newLimit) => {
+					setLimit(newLimit);
+					setPage(1);
+				}}
+			/>
 		</>
 	);
 }
