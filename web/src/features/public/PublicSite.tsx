@@ -7,7 +7,6 @@ import {
 	PrivacyPage,
 	TermsPage,
 } from "./legal/LegalPages";
-import { NodeParticipationRequest } from "./pages/NodeParticipationRequest";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
@@ -39,6 +38,7 @@ function PublicSite() {
 					<Route path="/relocation-info" element={<RelocationInfoRequest />} />
 					{/*<Route path="/participate" element={<NodeParticipationRequest />} />*/}
 					<Route path="/terms" element={<TermsPage />} />
+					<Route path="/disclaimer" element={ <DisclaimerPage/>}/>
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route
 						path="/preservation-policy"

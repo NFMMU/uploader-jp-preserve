@@ -72,6 +72,10 @@ export async function data(pageContext: PageContextServer) {
 			title: "免責事項",
 			description: "uploader.jp保全プロジェクトの免責事項です。",
 		},
+		"/preservation-policy": {
+			title: "保全・再配布審査ポリシー",
+			description: "uploader.jp保全プロジェクトにおける保全・審査ポリシーです。",
+		},
 	};
 
 	const staticPage = staticPages[pathname];
