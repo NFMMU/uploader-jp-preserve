@@ -888,31 +888,3 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			"the catalog entry is hidden after all placements report deletion success.",
 	})
 }
-
-func (s *Server) listAuditLogs(c *gin.Context) {
-	page, limit, isAll := pagination(c)
-	var total int64
-	if err := s.db.WithContext(c.Request.Context()).Model(&model.AuditLog{}).Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count audit logs"})
-		return
-	}
-	type auditLogView struct {
-		model.AuditLog   `gorm:"embedded"`
-		ActorDisplayName *string `json:"actor_display_name,omitempty"`
-	}
-	var logs []auditLogView
-	query := s.db.WithContext(c.Request.Context()).
-		Model(&model.AuditLog{}).
-		Select("audit_logs.*, users.display_name AS actor_display_name").
-		Joins("LEFT JOIN users ON users.id = audit_logs.actor_id").
-		Order("audit_logs.created_at DESC")
-
-	if !isAll {
-		query = query.Offset((page - 1) * limit).Limit(limit)
-	}
-	if err := query.Scan(&logs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list audit logs"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": logs, "page": page, "limit": limit, "total": total})
-}
