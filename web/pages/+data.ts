@@ -74,7 +74,8 @@ export async function data(pageContext: PageContextServer) {
 		},
 		"/preservation-policy": {
 			title: "保全・再配布審査ポリシー",
-			description: "uploader.jp保全プロジェクトにおける保全・審査ポリシーです。",
+			description:
+				"uploader.jp保全プロジェクトにおける保全・審査ポリシーです。",
 		},
 	};
 

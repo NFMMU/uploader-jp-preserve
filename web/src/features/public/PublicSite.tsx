@@ -38,7 +38,7 @@ function PublicSite() {
 					<Route path="/relocation-info" element={<RelocationInfoRequest />} />
 					{/*<Route path="/participate" element={<NodeParticipationRequest />} />*/}
 					<Route path="/terms" element={<TermsPage />} />
-					<Route path="/disclaimer" element={ <DisclaimerPage/>}/>
+					<Route path="/disclaimer" element={<DisclaimerPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
 					<Route
 						path="/preservation-policy"
