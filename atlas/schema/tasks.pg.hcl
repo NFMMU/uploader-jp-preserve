@@ -39,6 +39,7 @@ table "tasks" {
   column "last_error" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "lease_until" {
     type = timestamptz

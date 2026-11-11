@@ -9,6 +9,7 @@ table "node_enrollment_requests" {
   column "name" {
     type = varchar(120)
     null = false
+    collate = collation.case_insensitive
   }
   column "node_type" {
     type = varchar(8)
@@ -22,11 +23,13 @@ table "node_enrollment_requests" {
   column "contact_email" {
     type = varchar(320)
     null = false
+    collate = collation.case_insensitive
   }
   column "message" {
     type = text
     null = false
     default = ""
+    collate = collation.case_insensitive
   }
   column "status" {
     type = varchar(32)

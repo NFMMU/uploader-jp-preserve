@@ -12,6 +12,7 @@ table "policies" {
   column "policy_type" {
     type = varchar(32)
     null = false
+    collate = collation.case_insensitive
   }
   column "evidence_url" {
     type = text
@@ -20,6 +21,7 @@ table "policies" {
   column "evidence_note" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "checked_at" {
     type = timestamptz

@@ -28,6 +28,7 @@ table "download_audit_logs" {
   column "reason" {
     type = text
     null = true
+    collate = collation.case_insensitive
   }
   column "bytes_sent" {
     type = bigint
