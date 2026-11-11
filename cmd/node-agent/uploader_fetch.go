@@ -19,9 +19,11 @@ import (
 	xhtml "golang.org/x/net/html"
 )
 
-const uploaderFetcherVersion = "2026-10-30-password-form-2"
-const maxAgentUploaderHTMLBytes = 8 << 20
-const maxAgentSourceBytes int64 = 5 << 30
+const (
+	uploaderFetcherVersion          = "2026-10-30-password-form-2"
+	maxAgentUploaderHTMLBytes       = 8 << 20
+	maxAgentSourceBytes       int64 = 5 << 30
+)
 
 type fetchedUploaderFile struct {
 	Body      io.ReadCloser
@@ -44,7 +46,7 @@ func validateAgentUploaderURL(raw string) (string, error) {
 		return "", errors.New("provide an HTTPS uploader.jp/getuploader.com URL")
 	}
 	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
-	if !(host == "uploader.jp" || strings.HasSuffix(host, ".uploader.jp") || host == "getuploader.com" || strings.HasSuffix(host, ".getuploader.com")) {
+	if host != "uploader.jp" && !strings.HasSuffix(host, ".uploader.jp") && host != "getuploader.com" && !strings.HasSuffix(host, ".getuploader.com") {
 		return "", errors.New("unsupported source host")
 	}
 	return u.String(), nil

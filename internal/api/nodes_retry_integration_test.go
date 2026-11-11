@@ -21,10 +21,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/config"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"github.com/nfmmu/uploader-archive/internal/config"
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 func retryTestDB(t *testing.T) *gorm.DB {
@@ -162,9 +163,10 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 			}
 			for _, placement := range placements {
 				wantStatus := alternativeStatus
-				if placement.NodeID == original.ID {
+				switch placement.NodeID {
+				case original.ID:
 					wantStatus = wantOriginalStatus
-				} else if placement.NodeID == wantNode {
+				case wantNode:
 					wantStatus = "queued"
 				}
 				if placement.Status != wantStatus {

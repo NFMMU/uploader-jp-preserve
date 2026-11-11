@@ -153,7 +153,7 @@ func createSurplusCleanupFixture(t *testing.T, db *gorm.DB, replicaCount int, no
 		t.Fatalf("insert file object: %v", err)
 	}
 
-	for i := 0; i < replicaCount; i++ {
+	for i := range replicaCount {
 		nodeID := uuid.NewString()
 		name := fmt.Sprintf("surplus-test-%s-%d", fileID[:8], i)
 		onlineAge := 10 * time.Minute

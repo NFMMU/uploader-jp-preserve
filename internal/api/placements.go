@@ -8,9 +8,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
 
 const (
@@ -84,7 +85,7 @@ func (s *Server) requestReplica(c *gin.Context) {
 	}
 	actor, _ := currentUser(c)
 	if scheduled {
-		s.audit(c, &actor, "file_object", fileID, "placement.replication.requested", "success", stringPtr("Scheduled a replica transfer from node "+sourceID+" to node "+targetID))
+		s.audit(c, &actor, "file_object", fileID, "placement.replication.requested", "success", new("Scheduled a replica transfer from node "+sourceID+" to node "+targetID))
 	}
 	status := http.StatusOK
 	if scheduled {
@@ -221,7 +222,7 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 		return tx.Create(&model.AuditLog{
 			ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID,
 			Action: "placement.replica.deletion_queued", Result: "success",
-			Reason: stringPtr("Queued deletion of surplus verified replica on node " + candidateToDelete.NodeName + "; retaining at most one spare beyond the required replica count"),
+			Reason: new("Queued deletion of surplus verified replica on node " + candidateToDelete.NodeName + "; retaining at most one spare beyond the required replica count"),
 		}).Error
 	})
 }
@@ -319,7 +320,7 @@ func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID
 		if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", "queued").Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&model.AuditLog{ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID, Action: "placement.replication.queued", Result: "success", Reason: stringPtr("Scheduled replica from " + source.Name + " to " + target.Name)}).Error; err != nil {
+		if err := tx.Create(&model.AuditLog{ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID, Action: "placement.replication.queued", Result: "success", Reason: new("Scheduled replica from " + source.Name + " to " + target.Name)}).Error; err != nil {
 			return err
 		}
 		taskID, sourceNodeID, targetNodeID, scheduled, reason = newTaskID, source.ID, target.ID, true, "replica task queued"

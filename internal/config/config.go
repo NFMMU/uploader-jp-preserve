@@ -39,7 +39,7 @@ type Config struct {
 func Load() (Config, error) {
 	var trustedProxies []string
 	if raw := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES")); raw != "" {
-		for _, item := range strings.Split(raw, ",") {
+		for item := range strings.SplitSeq(raw, ",") {
 			if proxy := strings.TrimSpace(item); proxy != "" {
 				trustedProxies = append(trustedProxies, proxy)
 			}
