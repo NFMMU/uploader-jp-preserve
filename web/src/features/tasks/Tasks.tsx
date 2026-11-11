@@ -1,4 +1,4 @@
-import { Clock3, RefreshCw } from "lucide-react";
+import { Clock3, DeleteIcon, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Heading } from "../../components/common/Heading";
@@ -29,6 +29,16 @@ export function Tasks({ api, refresh, notify, role }: any) {
 		`/tasks?${taskParams.toString()}`,
 		refresh + localRefresh,
 	);
+
+	const clearFailedTasks = async () => {
+		try {
+			await api("/tasks/clear-failed", { method: "POST" });
+			notify("失敗タスクのレコードをクリアしました");
+			setLocalRefresh((x) => x + 1);
+		} catch (e) {
+			notify((e as Error).message);
+		}
+	};
 
 	const nodes = useData(api, "/nodes", refresh + localRefresh);
 
@@ -64,12 +74,20 @@ export function Tasks({ api, refresh, notify, role }: any) {
 				title="タスク"
 				desc="処理状況と失敗理由"
 				actions={
-					<button
-						className="secondary"
-						onClick={() => setLocalRefresh((x) => x + 1)}
-					>
-						<RefreshCw size={16} /> 更新
-					</button>
+					<>
+						<button
+							className="secondary"
+							onClick={() => clearFailedTasks()}
+						>
+							<DeleteIcon size={16} /> 失敗レコードの削除
+						</button>
+						<button
+							className="secondary"
+							onClick={() => setLocalRefresh((x) => x + 1)}
+						>
+							<RefreshCw size={16} /> 更新
+						</button>
+					</>
 				}
 			/>
 			<div className="filter-bar">

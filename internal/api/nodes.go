@@ -526,6 +526,30 @@ func (s *Server) ingestFile(c *gin.Context) {
 
 }
 
+func (s *Server) clearFailedTasks(c *gin.Context) {
+	var affectedCount int64
+	actor, _ := currentUser(c)
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Where(model.Task{
+			Status: "failed",
+		}).Delete(nil)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("node has been aleady deleted")
+		}
+		affectedCount = result.RowsAffected
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete node"})
+		return
+	}
+	s.audit(c, &actor, "task", "", "task.failed_clear", "success", nil)
+	c.JSON(http.StatusOK, gin.H{"deleted": true, "affected_count": affectedCount})
+}
+
 // queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
 // The temporary file is removed on every exit path.
 func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
