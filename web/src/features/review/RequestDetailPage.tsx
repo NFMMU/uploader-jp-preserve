@@ -85,25 +85,12 @@ export function RequestDetailPage({
 			try {
 				let loadedFiles: Obj[];
 				let total: number;
+				const result = await api(
+					`/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
+				);
 
-				if (
-					request?.file_object_id &&
-					(request.linked_file_name || !artifactID)
-				) {
-					const result = await api(
-						`/files/${encodeURIComponent(String(request.file_object_id))}`,
-					);
-
-					loadedFiles = result.file ? [result.file] : [];
-					total = loadedFiles.length;
-				} else {
-					const result = await api(
-						`/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
-					);
-
-					loadedFiles = result.items || [];
-					total = Number(result.total || 0);
-				}
+				loadedFiles = result.items || [];
+				total = Number(result.total || 0);
 
 				if (!cancelled) {
 					setFiles(loadedFiles);
