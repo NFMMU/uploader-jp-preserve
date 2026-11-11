@@ -34,8 +34,7 @@ export default function CopyEmail({ email, label }: CopyEmailProps) {
 			onClick={copy}
 			title={email}
 		>
-			<span>{label ?? email}</span>
-			<small>{copied ? "コピーしました" : "コピー"}</small>
+			<small>{label ?? "メールアドレスを"}{copied ? "コピーしました" : "コピー"}</small>
 		</button>
 	);
 }
