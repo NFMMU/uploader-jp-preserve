@@ -538,14 +538,11 @@ func (s *Server) clearFailedTasks(c *gin.Context) {
 		if result.Error != nil {
 			return result.Error
 		}
-		if result.RowsAffected != 1 {
-			return errors.New("node has been aleady deleted")
-		}
 		affectedCount = result.RowsAffected
 		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete node"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete tasks"})
 		return
 	}
 	s.audit(c, &actor, "task", "", "task.failed_clear", "success", nil)
