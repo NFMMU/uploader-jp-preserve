@@ -20,23 +20,30 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/api"
 	"github.com/nfmmu/uploader-archive/internal/config"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/query"
 )
 
 func main() {
+	// ロガーのセットアップ
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	// 設定のロード
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("configuration error: %v", err)
 	}
 
+	// gormのログレベルを環境に応じて設定
 	gormLogLevel := gormlogger.Warn
 	if cfg.Environment == "development" {
 		gormLogLevel = gormlogger.Info
 	}
+	// データベース接続の確立
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{Logger: gormlogger.Default.LogMode(gormLogLevel), TranslateError: true})
 	if err != nil {
 		log.Fatalf("connect database: %v", err)
 	}
+	// データベース接続の設定
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("get database handle: %v", err)
@@ -51,18 +58,31 @@ func main() {
 	}
 	cancel()
 
-	if err := bootstrapAdmin(db, cfg); err != nil {
+	// queryパッケージの初期化
+	query.SetDefault(db)
+
+	// 管理者ユーザーのブートストラップ
+	if err := bootstrapAdmin(cfg); err != nil {
 		log.Fatalf("bootstrap administrator: %v", err)
 	}
 
+	// APIサーバーの起動
 	handler := api.New(db, cfg, logger)
-	srv := &http.Server{Addr: cfg.Address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Minute, WriteTimeout: 30 * time.Minute, IdleTimeout: 90 * time.Second}
+	srv := &http.Server{
+		Addr:              cfg.Address,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Minute,
+		WriteTimeout:      30 * time.Minute,
+		IdleTimeout:       90 * time.Second,
+	}
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("api_starting", "address", cfg.Address, "environment", cfg.Environment)
 		serverErr <- srv.ListenAndServe()
 	}()
 
+	// シャットダウンのシグナルを待機
 	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	select {
@@ -79,9 +99,9 @@ func main() {
 	}
 }
 
-func bootstrapAdmin(db *gorm.DB, cfg config.Config) error {
-	var count int64
-	if err := db.Model(&model.User{}).Count(&count).Error; err != nil {
+func bootstrapAdmin(cfg config.Config) error {
+	count, err := query.User.WithContext(context.Background()).Count()
+	if err != nil {
 		return err
 	}
 	if count > 0 {
@@ -95,11 +115,17 @@ func bootstrapAdmin(db *gorm.DB, cfg config.Config) error {
 		return err
 	}
 	user := model.User{Email: strings.ToLower(strings.TrimSpace(cfg.BootstrapAdminEmail)), PasswordHash: string(passwordHash), DisplayName: "Initial Administrator", Role: "admin"}
-	if err := db.Create(&user).Error; err != nil {
+	if err := query.User.WithContext(context.Background()).Create(&user); err != nil {
 		return err
 	}
-	return db.Create(&model.AuditLog{ActorID: &user.ID, ActorLabel: user.Email, TargetType: "user", TargetID: &user.ID, Action: "user.bootstrap_admin.create", Result: "success", Reason: new("Initial administrator created from environment configuration")}).Error
+	return query.AuditLog.WithContext(context.Background()).Create(
+		&model.AuditLog{
+			ActorID:    &user.ID,
+			ActorLabel: user.Email,
+			TargetType: "user",
+			TargetID:   &user.ID,
+			Action:     "user.bootstrap_admin.create",
+			Result:     "success",
+			Reason:     new("Initial administrator created from environment configuration"),
+		})
 }
-
-//go:fix inline
-func ptr(value string) *string { return new(value) }

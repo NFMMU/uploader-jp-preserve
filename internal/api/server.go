@@ -106,7 +106,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.PATCH("/admin/users/:id", s.requireRoles("admin"), s.updateUser)
 	auth.GET("/admin/audit-logs", s.requireRoles("admin"), s.listAuditLogs)
 	go s.runPlacementReconciler()
-	go s.runDownloadCleanup()
+	go s.runDownloadCleanup(nil)
 	return r
 }
 
