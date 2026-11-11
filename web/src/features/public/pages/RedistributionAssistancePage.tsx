@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
-import { PageMeta } from "../../../components/common/PageMeta";
-import { TurnstileField } from "../../../components/TurnstileField";
+import { PageMeta } from "@/components/common/PageMeta";
+import { TurnstileField } from "@/components/TurnstileField";
 
 export function RedistributionAssistancePage({
 	mode,

@@ -11,12 +11,12 @@ import {
 	Workflow,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { downloadExport } from "../../api/admin";
-import { Heading } from "../../components/common/Heading";
-import { Stat } from "../../components/common/Stat";
-import { TaskTable } from "../../components/common/TaskTable";
-import { useData } from "../../hooks/useData";
-import type { Obj } from "../../types/common";
+import { downloadExport } from "@/api/admin";
+import { Heading } from "@/components/common/Heading";
+import { Stat } from "@/components/common/Stat";
+import { TaskTable } from "@/components/common/TaskTable";
+import { useData } from "@/hooks/useData";
+import type { Obj } from "@/types/common";
 
 export function Dashboard({ api, refresh, notify, token }: any) {
 	const a = useData(api, "/artifacts", refresh),

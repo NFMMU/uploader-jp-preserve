@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { publicAPI } from "../../../api/public";
-import { PageMeta } from "../../../components/common/PageMeta";
-import { Pagination } from "../../../components/common/Pagination";
-import type { PublicArtifact } from "../../../types/public";
+import { publicAPI } from "@/api/public";
+import { PageMeta } from "@/components/common/PageMeta";
+import { Pagination } from "@/components/common/Pagination";
+import type { PublicArtifact } from "@/types/public";
 import { PublicFileRow } from "./PublicFileRow";
 
 type PublicArtifactDetailResponse = {

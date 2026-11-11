@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { publicAPI } from "../../../api/public";
-import { formatBytes } from "../../../lib/format";
-import type { PublicFile } from "../../../types/public";
+import { publicAPI } from "@/api/public";
+import { formatBytes } from "@/lib/format";
+import type { PublicFile } from "@/types/public";
 
 export function PublicFileRow({
 	file,

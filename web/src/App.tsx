@@ -23,18 +23,17 @@ import {
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
-import CopyEmail from "./CopyEmail";
-import { Audit } from "./features/audit/Audit";
-import { Dashboard } from "./features/dashboard/Dashboard";
-import { Nodes } from "./features/nodes/Nodes";
-import PublicSite from "./features/public/PublicSite";
-import { PublicRequest } from "./features/public/pages/PublicRequest";
-import { RequestDetailPage } from "./features/review/RequestDetailPage";
-import { ReviewWorkspace } from "./features/review/ReviewWorkspace";
-import { Tasks } from "./features/tasks/Tasks";
-import { URLCollector } from "./features/url-collector/URLCollector";
-import { UsersPage } from "./features/users/UsersPage";
-import type { Obj } from "./types/common";
+import CopyEmail from "components/common/CopyEmail";
+import { Audit } from "@/features/audit/Audit";
+import { Dashboard } from "@/features/dashboard/Dashboard";
+import { Nodes } from "@/features/nodes/Nodes";
+import PublicSite from "@/features/public/PublicSite";
+import { RequestDetailPage } from "@/features/review/RequestDetailPage";
+import { ReviewWorkspace } from "@/features/review/ReviewWorkspace";
+import { Tasks } from "@/features/tasks/Tasks";
+import { URLCollector } from "@/features/url-collector/URLCollector";
+import { UsersPage } from "@/features/users/UsersPage";
+import type { Obj } from "@/types/common";
 
 function readStoredItem(key: string): string | null {
 	try {

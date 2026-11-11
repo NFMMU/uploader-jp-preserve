@@ -1,12 +1,12 @@
 import { ExternalLink, Files, Pencil, SaveCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { downloadRequestIntakeFile } from "../../api/admin";
-import { Heading } from "../../components/common/Heading";
-import { Status } from "../../components/common/Status";
-import { useData } from "../../hooks/useData";
-import { bytes, date } from "../../lib/format";
-import type { Obj } from "../../types/common";
+import { downloadRequestIntakeFile } from "@/api/admin";
+import { Heading } from "@/components/common/Heading";
+import { Status } from "@/components/common/Status";
+import { useData } from "@/hooks/useData";
+import { bytes, date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 import { ConversationLinks } from "./ConversationLinks";
 
 export function RequestDetailPage({

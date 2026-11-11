@@ -1,10 +1,10 @@
-import { Download, Files } from "lucide-react";
+import {  Files } from "lucide-react";
 import React, { useState } from "react";
-import { publicAPI } from "../../api/admin";
-import { bytes, date } from "../../lib/format";
-import type { Obj } from "../../types/common";
-import { Modal } from "../common/Modal";
-import { Status } from "../common/Status";
+import { publicAPI } from "@/api/admin";
+import { bytes, date } from "@/lib/format";
+import type { Obj } from "@/types/common";
+import { Modal } from "@/components/common/Modal";
+import { Status } from "@/components/common/Status";
 
 type SaveFilePicker = (options: { suggestedName: string }) => Promise<{
 	createWritable: () => Promise<WritableStream<Uint8Array>>;

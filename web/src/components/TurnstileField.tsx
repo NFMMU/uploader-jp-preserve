@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { publicAPI } from "../api/public";
+import { publicAPI } from "@/api/public";
 
 type TurnstileOptions = {
 	sitekey: string;

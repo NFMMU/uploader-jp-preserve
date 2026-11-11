@@ -1,12 +1,12 @@
 import { AlertTriangle, ClipboardList, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Heading } from "../../components/common/Heading";
-import { Pagination } from "../../components/common/Pagination";
-import { Status } from "../../components/common/Status";
-import { useData } from "../../hooks/useData";
-import { date } from "../../lib/format";
-import type { Obj } from "../../types/common";
+import { Heading } from "@/components/common/Heading";
+import { Pagination } from "@/components/common/Pagination";
+import { Status } from "@/components/common/Status";
+import { useData } from "@/hooks/useData";
+import { date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 
 export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	const nav = useNavigate();

@@ -1,6 +1,6 @@
 import { Link, Navigate, Route, Routes } from "react-router-dom";
-import CopyEmail from "../../CopyEmail";
-import { PublicHeader } from "../../components/layout/PublicHeader";
+import CopyEmail from "components/common/CopyEmail";
+import { PublicHeader } from "@/components/layout/PublicHeader";
 import {
 	DisclaimerPage,
 	PreservationPolicyPage,

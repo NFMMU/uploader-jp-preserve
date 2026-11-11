@@ -6,14 +6,14 @@ import {
 	RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
-import CopyEmail from "../../CopyEmail";
-import { Heading } from "../../components/common/Heading";
-import { Stat } from "../../components/common/Stat";
-import { Status } from "../../components/common/Status";
-import { Table } from "../../components/common/Table";
-import { useData } from "../../hooks/useData";
-import { bytes, date } from "../../lib/format";
-import type { Obj } from "../../types/common";
+import CopyEmail from "components/common/CopyEmail";
+import { Heading } from "@/components/common/Heading";
+import { Stat } from "@/components/common/Stat";
+import { Status } from "@/components/common/Status";
+import { Table } from "@/components/common/Table";
+import { useData } from "@/hooks/useData";
+import { bytes, date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 import { NodeEnrollmentRequests } from "./NodeEnrollmentRequests";
 
 export function Nodes({ api, refresh, notify, role }: any) {

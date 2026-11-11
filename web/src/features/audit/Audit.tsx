@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Heading } from "../../components/common/Heading";
-import { Status } from "../../components/common/Status";
-import { Table } from "../../components/common/Table";
-import { useData } from "../../hooks/useData";
-import { date } from "../../lib/format";
-import type { Obj } from "../../types/common";
-import { Pagination } from "../../components/common/Pagination";
+import { Heading } from "@/components/common/Heading";
+import { Status } from "@/components/common/Status";
+import { Table } from "@/components/common/Table";
+import { useData } from "@/hooks/useData";
+import { date } from "@/lib/format";
+import type { Obj } from "@/types/common";
+import { Pagination } from "@/components/common/Pagination";
 
 export function Audit({ api, refresh }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);

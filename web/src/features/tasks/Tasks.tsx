@@ -1,13 +1,13 @@
 import { Clock3, DeleteIcon, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heading } from "../../components/common/Heading";
-import { Pagination } from "../../components/common/Pagination";
-import { Status } from "../../components/common/Status";
-import { Table } from "../../components/common/Table";
-import { useData } from "../../hooks/useData";
-import { date } from "../../lib/format";
-import type { Obj } from "../../types/common";
+import { Heading } from "@/components/common/Heading";
+import { Pagination } from "@/components/common/Pagination";
+import { Status } from "@/components/common/Status";
+import { Table } from "@/components/common/Table";
+import { useData } from "@/hooks/useData";
+import { date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 
 export function Tasks({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);

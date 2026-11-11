@@ -1,7 +1,7 @@
 import type React from "react";
 import ReactMarkdown from "react-markdown";
-import CopyEmail from "../../../CopyEmail";
-import { PageMeta } from "../../../components/common/PageMeta";
+import CopyEmail from "components/common/CopyEmail";
+import { PageMeta } from "@/components/common/PageMeta";
 
 export function LegalLayout({
 	title,

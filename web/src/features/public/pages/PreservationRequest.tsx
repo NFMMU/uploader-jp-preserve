@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
-import { publicAPI } from "../../../api/public";
-import { PageMeta } from "../../../components/common/PageMeta";
-import { TurnstileField } from "../../../components/TurnstileField";
+import { publicAPI } from "@/api/public";
+import { PageMeta } from "@/components/common/PageMeta";
+import { TurnstileField } from "@/components/TurnstileField";
 
 export function PreservationRequest() {
 	const [title, setTitle] = useState("");

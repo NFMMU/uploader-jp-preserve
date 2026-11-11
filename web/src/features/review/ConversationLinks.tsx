@@ -1,8 +1,8 @@
 import { ExternalLink } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { useData } from "../../hooks/useData";
-import type { Obj } from "../../types/common";
+import { useData } from "@/hooks/useData";
+import type { Obj } from "@/types/common";
 
 export function ConversationLinks({
 	api,

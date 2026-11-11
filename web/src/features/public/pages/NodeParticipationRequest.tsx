@@ -1,8 +1,8 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
-import { publicAPI } from "../../../api/public";
-import { PageMeta } from "../../../components/common/PageMeta";
-import { TurnstileField } from "../../../components/TurnstileField";
+import { publicAPI } from "@/api/public";
+import { PageMeta } from "@/components/common/PageMeta";
+import { TurnstileField } from "@/components/TurnstileField";
 
 export function NodeParticipationRequest() {
 	const [busy, setBusy] = useState(false);

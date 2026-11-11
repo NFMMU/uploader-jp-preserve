@@ -1,5 +1,5 @@
-import { date } from "../../lib/format";
-import type { Obj } from "../../types/common";
+import { date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 import { Status } from "./Status";
 import { Table } from "./Table";
 

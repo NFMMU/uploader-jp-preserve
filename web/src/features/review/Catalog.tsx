@@ -2,14 +2,14 @@ import { CloudUpload, Download, LockKeyhole, Plus, Search } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { downloadExport } from "../../api/admin";
-import { Heading } from "../../components/common/Heading";
-import { Modal } from "../../components/common/Modal";
-import { Pagination } from "../../components/common/Pagination";
-import { Table } from "../../components/common/Table";
-import { FileRow } from "../../components/files/FileRow";
-import { useData } from "../../hooks/useData";
-import type { Obj } from "../../types/common";
+import { downloadExport } from "@/api/admin";
+import { Heading } from "@/components/common/Heading";
+import { Modal } from "@/components/common/Modal";
+import { Pagination } from "@/components/common/Pagination";
+import { Table } from "@/components/common/Table";
+import { FileRow } from "@/components/files/FileRow";
+import { useData } from "@/hooks/useData";
+import type { Obj } from "@/types/common";
 
 export function Catalog({ api, refresh, notify, role, token }: any) {
 	const [unused, setRefreshDummy] = useState(0);

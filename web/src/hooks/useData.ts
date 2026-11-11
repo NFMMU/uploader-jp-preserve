@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Obj } from "../types/common";
+import type { Obj } from "@/types/common";
 
 export function useData(
 	api: (p: string, o?: RequestInit) => Promise<Obj>,

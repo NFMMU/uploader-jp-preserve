@@ -1,4 +1,4 @@
-import type { APIError } from "../types/common";
+import type { APIError } from "@/types/common";
 
 export async function publicAPI<T>(
 	path: string,
