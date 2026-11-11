@@ -77,9 +77,34 @@ export function PublicCatalog() {
 				</p>
 			</section>
 
+			<section
+				className="project-description"
+				aria-labelledby="project-description-title"
+			>
+				<h2 id="project-description-title">許諾について</h2>
+				<p>
+					このプロジェクトでは<b>メールにて許諾が取れているファイル</b>もしくは
+					<b>READMEに再配布を許諾する旨が記載されているファイル</b>
+					のみ公開しております。
+				</p>
+				<p>
+					万が一、お気づきの点がございましたら、
+					<Link to="https://uploaderjp.udonya.moe/requests">
+						公開停止・削除リクエスト
+					</Link>
+					もしくは
+					<a href="mailto:uploaderjp-archive@udonya.moe">
+						uploaderjp-archive@udonya.moe
+					</a>
+					までご連絡ください。
+				</p>
+			</section>
+
 			<section className="public-service-cards" aria-label="再配布支援サービス">
 				<Link to="/preservation-requests" className="public-service-card">
-					<span className="public-service-label">保全してほしいファイルがある方へ</span>
+					<span className="public-service-label">
+						保全してほしいファイルがある方へ
+					</span>
 					<b>保全リクエストを送る</b>
 					<span>URLを送信して権利確認を依頼する →</span>
 				</Link>

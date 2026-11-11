@@ -1,7 +1,12 @@
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import CopyEmail from "../../CopyEmail";
 import { PublicHeader } from "../../components/layout/PublicHeader";
-import { DisclaimerPage, PrivacyPage, TermsPage } from "./legal/LegalPages";
+import {
+	DisclaimerPage,
+	PreservationPolicyPage,
+	PrivacyPage,
+	TermsPage,
+} from "./legal/LegalPages";
 import { NodeParticipationRequest } from "./pages/NodeParticipationRequest";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
@@ -23,10 +28,10 @@ function PublicSite() {
 						path="/preservation-requests"
 						element={<PreservationRequest />}
 					/>
-					{ /*<Route
+					{/*<Route
 						path="/redistribution-support"
 						element={<RedistributionAssistancePage mode="redistribution" />}
-					/>*/ }
+					/>*/}
 					<Route
 						path="/publisher-support"
 						element={<RedistributionAssistancePage mode="publisher" />}
@@ -35,7 +40,11 @@ function PublicSite() {
 					{/*<Route path="/participate" element={<NodeParticipationRequest />} />*/}
 					<Route path="/terms" element={<TermsPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
-					<Route path="/disclaimer" element={<DisclaimerPage />} />
+					<Route
+						path="/preservation-policy"
+						element={<PreservationPolicyPage />}
+					/>
+					<Route path="/terms" element={<TermsPage />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</main>
