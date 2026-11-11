@@ -58,6 +58,7 @@ function PublicSite() {
 					<Link to="/terms">利用規約</Link>
 					<Link to="/privacy">プライバシー・ポリシー</Link>
 					<Link to="/disclaimer">免責事項</Link>
+					<Link to={"/preservation-policy"}>保全・再配布審査ポリシー</Link>
 					{/*<Link to="/participate">ストレージノード参加</Link>*/}
 					<a href="mailto:uploaderjp-archive@udonya.moe">お問い合わせ</a>
 					<CopyEmail email="uploaderjp-archive@udonya.moe" />

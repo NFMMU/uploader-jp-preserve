@@ -85,11 +85,11 @@ export function PublicCatalog() {
 				<p>
 					このプロジェクトでは<b>メールにて許諾が取れているファイル</b>もしくは
 					<b>READMEに再配布を許諾する旨が記載されているファイル</b>
-					のみ公開しております。
+					のみ公開しております。詳しくは、<Link to={"/preservation-policy"}>保全・再配布審査ポリシー</Link>もご覧ください。
 				</p>
 				<p>
 					万が一、お気づきの点がございましたら、
-					<Link to="https://uploaderjp.udonya.moe/requests">
+					<Link to="/requests">
 						公開停止・削除リクエスト
 					</Link>
 					もしくは
