@@ -97,6 +97,7 @@ function App() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
 		setUser(null);
+		document.cookie = "archive_token=; max-age=0";
 		nav("/admin/login");
 	}
 	async function getCurrentUser() {
