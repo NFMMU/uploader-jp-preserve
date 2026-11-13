@@ -99,14 +99,23 @@ function App() {
 		}
 	}
 	async function logout() {
-		localStorage.removeItem("archive_token");
-		localStorage.removeItem("archive_user");
 		try {
 			await api("/delete-cookie");
-		} finally {
-			setUser(null);
-			nav("/admin/login");
+		} catch (e) {
+			const message = e instanceof Error ? e.message : "不明なエラー";
+			notify(`ログアウトに失敗しました: ${message}`);
+			return;
 		}
+
+		try {
+			localStorage.removeItem("archive_token");
+			localStorage.removeItem("archive_user");
+		} catch {
+			notify("Cookie は削除されましたが、保存データを削除できませんでした");
+		}
+
+		setUser(null);
+		nav("/admin/login");
 	}
 	async function getCurrentUser() {
 		setLoading(true);
