@@ -8,7 +8,6 @@ export function ReviewWorkspace({
 	refresh,
 	notify,
 	role,
-	token,
 	bumpRefresh,
 	initialTab = "files",
 }: any) {
@@ -54,7 +53,6 @@ export function ReviewWorkspace({
 					refresh={refresh}
 					notify={notify}
 					role={role}
-					token={token}
 				/>
 			) : (
 				<Requests

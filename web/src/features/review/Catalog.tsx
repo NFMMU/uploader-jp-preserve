@@ -11,7 +11,7 @@ import { FileRow } from "@/components/files/FileRow";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-export function Catalog({ api, refresh, notify, role, token }: any) {
+export function Catalog({ api, refresh, notify, role }: any) {
 	const [unused, setRefreshDummy] = useState(0);
 	const loc = useLocation();
 	const nav = useNavigate();
@@ -483,7 +483,7 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 					<>
 						<button
 							className="secondary"
-							onClick={() => downloadExport("csv", token, notify)}
+							onClick={() => downloadExport("csv", notify)}
 						>
 							<Download size={16} /> CSV出力
 						</button>
@@ -700,7 +700,6 @@ export function Catalog({ api, refresh, notify, role, token }: any) {
 									setPolicy={setPolicy}
 									setPub={setPub}
 									openMetadata={openMetadata}
-									token={token}
 								/>
 							))}
 						</>

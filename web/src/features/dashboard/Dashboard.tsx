@@ -18,7 +18,7 @@ import { TaskTable } from "@/components/common/TaskTable";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-export function Dashboard({ api, refresh, notify, token }: any) {
+export function Dashboard({ api, refresh, notify }: any) {
 	const a = useData(api, "/artifacts", refresh),
 		f = useData(api, "/files?all=true", refresh),
 		n = useData(api, "/nodes", refresh),
@@ -44,7 +44,7 @@ export function Dashboard({ api, refresh, notify, token }: any) {
 					<>
 						<button
 							className="secondary"
-							onClick={() => downloadExport("json", token, notify)}
+							onClick={() => downloadExport("json", notify)}
 						>
 							<Download size={16} /> 一覧を出力
 						</button>

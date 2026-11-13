@@ -52,6 +52,7 @@ export function PublicFileRow({
 					headers: {
 						"Download-Authorization": `Bearer ${created.access_token}`,
 					},
+					credentials: "same-origin"
 				},
 			);
 			if (!response.ok) {

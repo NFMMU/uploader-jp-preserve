@@ -14,7 +14,6 @@ export function RequestDetailPage({
 	refresh,
 	notify,
 	role,
-	token,
 	bumpRefresh,
 }: any) {
 	const { id = "" } = useParams();
@@ -652,7 +651,6 @@ export function RequestDetailPage({
 									onClick={() =>
 										downloadRequestIntakeFile(
 											request.id,
-											token,
 											notify,
 											request.intake_file_name,
 										)

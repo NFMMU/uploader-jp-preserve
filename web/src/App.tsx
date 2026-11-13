@@ -55,9 +55,6 @@ function readStoredUser(): Obj | null {
 
 function App() {
 	const apiBase = "/api/v1";
-	const [token, setToken] = useState(
-		() => readStoredItem("archive_token") || "",
-	);
 	const [user, setUser] = useState<Obj | null>(readStoredUser);
 	const [toast, setToast] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -67,10 +64,9 @@ function App() {
 	const [refresh, setRefresh] = useState(0);
 	async function api(path: string, opts: RequestInit = {}) {
 		const headers = new Headers(opts.headers);
-		if (token) headers.set("Authorization", "Bearer " + token);
 		if (opts.body && !(opts.body instanceof FormData))
 			headers.set("Content-Type", "application/json");
-		const r = await fetch(apiBase + path, { ...opts, headers });
+		const r = await fetch(apiBase + path, { ...opts, headers,credentials: "same-origin", });
 		const text = await r.text();
 		let data: Obj = {};
 		try {
@@ -80,9 +76,6 @@ function App() {
 		}
 		if (!r.ok)
 			if (r.status === 401) {
-				localStorage.removeItem("archive_token");
-				localStorage.removeItem("archive_user");
-				setToken("");
 				setUser(null);
 				nav("/admin/login");
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
@@ -104,9 +97,6 @@ function App() {
 					password: f.get("password"),
 				}),
 			});
-			localStorage.setItem("archive_token", d.access_token);
-			localStorage.setItem("archive_user", JSON.stringify(d.user));
-			setToken(d.access_token);
 			setUser(d.user);
 			notify("ログインしました");
 			nav("/admin");
@@ -119,7 +109,6 @@ function App() {
 	function logout() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
-		setToken("");
 		setUser(null);
 		nav("/admin/login");
 	}
@@ -138,7 +127,7 @@ function App() {
 			: links.filter(([to]) => to !== "/admin/url-collector");
 	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
 
-	if (!token || !user)
+	if (!user)
 		return (
 			<div className="login-shell">
 				<div className="login-art">
@@ -316,7 +305,6 @@ function App() {
 									api={api}
 									refresh={refresh}
 									notify={notify}
-									token={token}
 								/>
 							}
 						/>
@@ -328,7 +316,6 @@ function App() {
 									refresh={refresh}
 									notify={notify}
 									role={user.role}
-									token={token}
 									bumpRefresh={() => setRefresh((x) => x + 1)}
 									initialTab="files"
 								/>
@@ -354,7 +341,6 @@ function App() {
 									refresh={refresh}
 									notify={notify}
 									role={user.role}
-									token={token}
 									bumpRefresh={() => setRefresh((x) => x + 1)}
 									initialTab="files"
 								/>
@@ -390,7 +376,6 @@ function App() {
 									refresh={refresh}
 									notify={notify}
 									role={user.role}
-									token={token}
 									bumpRefresh={() => setRefresh((x) => x + 1)}
 									initialTab="requests"
 								/>
@@ -404,7 +389,6 @@ function App() {
 									refresh={refresh}
 									notify={notify}
 									role={user.role}
-									token={token}
 									bumpRefresh={() => setRefresh((x) => x + 1)}
 								/>
 							}
@@ -431,7 +415,6 @@ function App() {
 									api={api}
 									refresh={refresh}
 									notify={notify}
-									token={token}
 								/>
 							}
 						/>

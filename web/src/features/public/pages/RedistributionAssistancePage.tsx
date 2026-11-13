@@ -34,6 +34,7 @@ export function RedistributionAssistancePage({
 			const response = await fetch("/api/v1/public/redistribution-assistance", {
 				method: "POST",
 				body: form,
+				credentials: "same-origin"
 			});
 			const text = await response.text();
 			let data: any = {};
