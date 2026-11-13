@@ -63,7 +63,7 @@ function App() {
 		}
 		if (!r.ok)
 			if (r.status === 401) {
-				api("/delete-cookie")
+				api("/delete-cookie");
 				setUser(null);
 				nav("/admin/login");
 				throw new Error(data.error || data.message || `HTTP ${r.status}`);
@@ -99,7 +99,7 @@ function App() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
 		setUser(null);
-		api("/delete-cookie")
+		api("/delete-cookie");
 		nav("/admin/login");
 	}
 	async function getCurrentUser() {
@@ -127,14 +127,15 @@ function App() {
 		user?.role === "admin"
 			? links
 			: links.filter(([to]) => to !== "/admin/url-collector");
-	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
 
 	useEffect(() => {
-		if (!loading) return
+		if (!loading || !loc.pathname.startsWith("/admin")) return;
 		(async () => {
 			await getCurrentUser();
 		})();
 	}, [loading]);
+
+	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
 
 	if (loading) {
 		// JavaScript to generate and animate text sequence with looping
