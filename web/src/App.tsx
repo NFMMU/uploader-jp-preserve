@@ -16,7 +16,7 @@ import {
 	X,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	NavLink,
 	Route,
@@ -126,8 +126,13 @@ function App() {
 			: links.filter(([to]) => to !== "/admin/url-collector");
 	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
 
+	useEffect(() => {
+		(async () => {
+			await getCurrentUser();
+		})();
+	}, [loading]);
+
 	if (loading) {
-		getCurrentUser();
 		// JavaScript to generate and animate text sequence with looping
 		const textLoader = document.getElementById("myTextLoader"); // Target your loader element
 		const text = "Loading..."; // The text to animate
