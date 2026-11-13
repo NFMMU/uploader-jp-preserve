@@ -48,12 +48,7 @@ export function ReviewWorkspace({
 				</button>
 			</div>
 			{tab === "files" ? (
-				<Catalog
-					api={api}
-					refresh={refresh}
-					notify={notify}
-					role={role}
-				/>
+				<Catalog api={api} refresh={refresh} notify={notify} role={role} />
 			) : (
 				<Requests
 					api={api}

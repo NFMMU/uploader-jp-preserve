@@ -1,3 +1,4 @@
+import CopyEmail from "components/common/CopyEmail";
 import {
 	AlertTriangle,
 	Archive,
@@ -6,7 +7,6 @@ import {
 	RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
-import CopyEmail from "components/common/CopyEmail";
 import { Heading } from "@/components/common/Heading";
 import { Stat } from "@/components/common/Stat";
 import { Status } from "@/components/common/Status";

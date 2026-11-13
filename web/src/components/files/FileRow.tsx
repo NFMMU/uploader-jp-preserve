@@ -1,10 +1,10 @@
-import {  Files } from "lucide-react";
+import { Files } from "lucide-react";
 import React, { useState } from "react";
 import { publicAPI } from "@/api/admin";
-import { bytes, date } from "@/lib/format";
-import type { Obj } from "@/types/common";
 import { Modal } from "@/components/common/Modal";
 import { Status } from "@/components/common/Status";
+import { bytes, date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 
 type SaveFilePicker = (options: { suggestedName: string }) => Promise<{
 	createWritable: () => Promise<WritableStream<Uint8Array>>;
@@ -95,7 +95,7 @@ export function FileRow({
 					headers: {
 						"Download-Authorization": `Bearer ${created.access_token}`,
 					},
-					credentials: "same-origin"
+					credentials: "same-origin",
 				},
 			);
 			if (!response.ok) {

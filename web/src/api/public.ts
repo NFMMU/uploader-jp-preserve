@@ -10,7 +10,7 @@ export async function publicAPI<T>(
 			...(options.body ? { "Content-Type": "application/json" } : {}),
 			...options.headers,
 		},
-		credentials: "same-origin"
+		credentials: "same-origin",
 	});
 	const text = await response.text();
 	let data: any = {};

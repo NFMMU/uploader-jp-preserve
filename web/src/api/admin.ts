@@ -12,7 +12,7 @@ export async function publicAPI<T>(
 			...(options.body ? { "Content-Type": "application/json" } : {}),
 			...options.headers,
 		},
-		credentials: "same-origin"
+		credentials: "same-origin",
 	});
 	const text = await response.text();
 	let data: any = {};
@@ -36,7 +36,7 @@ export async function downloadExport(
 ) {
 	try {
 		const r = await fetch(`${apiBase}/export?format=${format}`, {
-			credentials: "same-origin"
+			credentials: "same-origin",
 		});
 		if (!r.ok) throw new Error("エクスポートに失敗しました");
 		const blob = await r.blob();
@@ -61,7 +61,7 @@ export async function downloadRequestIntakeFile(
 		const response = await fetch(
 			`/api/v1/public-requests/${encodeURIComponent(id)}/intake-file`,
 			{
-				credentials: "same-origin"
+				credentials: "same-origin",
 			},
 		);
 		if (!response.ok) {

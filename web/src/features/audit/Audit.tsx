@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Heading } from "@/components/common/Heading";
+import { Pagination } from "@/components/common/Pagination";
 import { Status } from "@/components/common/Status";
 import { Table } from "@/components/common/Table";
 import { useData } from "@/hooks/useData";
 import { date } from "@/lib/format";
 import type { Obj } from "@/types/common";
-import { Pagination } from "@/components/common/Pagination";
 
 export function Audit({ api, refresh }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
@@ -17,7 +17,11 @@ export function Audit({ api, refresh }: any) {
 		limit: String(limit),
 	});
 
-	const d = useData(api, `/admin/audit-logs?${taskParams.toString()}`, refresh + localRefresh);
+	const d = useData(
+		api,
+		`/admin/audit-logs?${taskParams.toString()}`,
+		refresh + localRefresh,
+	);
 
 	const total = d.data.total ?? 0;
 	const totalPages = Math.ceil(total / limit);
