@@ -95,11 +95,11 @@ function App() {
 			setBusy(false);
 		}
 	}
-	function logout() {
+	async function logout() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
 		setUser(null);
-		api("/delete-cookie");
+		await api("/delete-cookie");
 		nav("/admin/login");
 	}
 	async function getCurrentUser() {
@@ -317,7 +317,7 @@ function App() {
 							<button
 								className="icon-btn"
 								title="ログアウト"
-								onClick={logout}
+								onClick={async () => await logout()}
 								type="button"
 							>
 								<LogOut size={16} />

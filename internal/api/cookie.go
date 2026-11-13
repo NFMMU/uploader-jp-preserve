@@ -24,6 +24,7 @@ func (s *Server) clearCookie(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:    "archive_token",
 		Expires: time.Now().Add(-s.cfg.JWTTTL),
+		Path:    "/",
 	})
 	c.Status(http.StatusNoContent)
 }
