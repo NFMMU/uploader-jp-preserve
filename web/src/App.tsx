@@ -129,6 +129,7 @@ function App() {
 	if (!loc.pathname.startsWith("/admin")) return <PublicSite />;
 
 	useEffect(() => {
+		if (!loading) return
 		(async () => {
 			await getCurrentUser();
 		})();
