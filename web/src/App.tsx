@@ -63,6 +63,7 @@ function App() {
 		}
 		if (!r.ok)
 			if (r.status === 401) {
+				api("/delete-cookie")
 				setUser(null);
 				nav("/admin/login");
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
@@ -97,7 +98,7 @@ function App() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
 		setUser(null);
-		document.cookie = "archive_token=; max-age=0";
+		api("/delete-cookie")
 		nav("/admin/login");
 	}
 	async function getCurrentUser() {

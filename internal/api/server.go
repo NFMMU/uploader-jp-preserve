@@ -57,6 +57,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1.POST("/nodes/:id/tasks/:taskID/result", s.authenticateNode(), s.nodeTaskResult)
 	v1.POST("/nodes/:id/tasks/:taskID/source-content", s.authenticateNode(), s.receiveSourceFetchContent)
 	v1.POST("/nodes/:id/tasks/:taskID/replica-content", s.authenticateNode(), s.replicaContent)
+	v1.GET("/delete-cookie", s.clearCookie)
 
 	auth := v1.Group("")
 	auth.Use(s.authenticate())

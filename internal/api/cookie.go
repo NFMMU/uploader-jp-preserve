@@ -19,3 +19,11 @@ func (s *Server) setAuthCookie(c *gin.Context, token string) {
 		MaxAge:   int(s.cfg.JWTTTL.Seconds()),
 	})
 }
+
+func (s *Server) clearCookie(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:    "archive_token",
+		Expires: time.Now().Add(-s.cfg.JWTTTL),
+	})
+	c.Status(http.StatusNoContent)
+}
