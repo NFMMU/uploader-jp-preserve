@@ -63,10 +63,13 @@ function App() {
 		}
 		if (!r.ok)
 			if (r.status === 401) {
-				await api("/delete-cookie");
-				setUser(null);
-				nav("/admin/login");
-				throw new Error(data.error || data.message || `HTTP ${r.status}`);
+				try {
+					await api("/delete-cookie");
+				} finally {
+					setUser(null);
+					nav("/admin/login");
+					throw new Error(data.error || data.message || `HTTP ${r.status}`);
+				}
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
 		return data;
 	}
