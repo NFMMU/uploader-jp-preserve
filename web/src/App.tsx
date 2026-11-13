@@ -101,9 +101,12 @@ function App() {
 	async function logout() {
 		localStorage.removeItem("archive_token");
 		localStorage.removeItem("archive_user");
-		setUser(null);
-		await api("/delete-cookie");
-		nav("/admin/login");
+		try {
+			await api("/delete-cookie");
+		} finally {
+			setUser(null);
+			nav("/admin/login");
+		}
 	}
 	async function getCurrentUser() {
 		setLoading(true);
