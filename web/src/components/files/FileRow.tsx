@@ -1,10 +1,10 @@
-import {  Files } from "lucide-react";
+import { Files } from "lucide-react";
 import React, { useState } from "react";
 import { publicAPI } from "@/api/admin";
-import { bytes, date } from "@/lib/format";
-import type { Obj } from "@/types/common";
 import { Modal } from "@/components/common/Modal";
 import { Status } from "@/components/common/Status";
+import { bytes, date } from "@/lib/format";
+import type { Obj } from "@/types/common";
 
 type SaveFilePicker = (options: { suggestedName: string }) => Promise<{
 	createWritable: () => Promise<WritableStream<Uint8Array>>;
@@ -14,7 +14,6 @@ export function FileRow({
 	x,
 	role,
 	isSelected,
-	token,
 	toggleSelected,
 	setDetail,
 	setPolicy,
@@ -25,7 +24,6 @@ export function FileRow({
 	x: Obj;
 	role: string;
 	isSelected: boolean;
-	token: string;
 	toggleSelected: (id: string, checked: boolean) => void;
 	setDetail: React.Dispatch<React.SetStateAction<Obj | null>>;
 	setPolicy: React.Dispatch<React.SetStateAction<string>>;
@@ -64,13 +62,12 @@ export function FileRow({
 			const created = await publicAPI<{
 				job: { id: string };
 				access_token: string;
-			}>(`/files/${x.id}/downloads`, token, { method: "POST" });
+			}>(`/files/${x.id}/downloads`, { method: "POST" });
 			let ready = false;
 			for (let attempt = 0; attempt < 90; attempt += 1) {
 				await new Promise((resolve) => window.setTimeout(resolve, 2000));
 				const status = await publicAPI<{ status: string; last_error?: string }>(
 					`/downloads/${created.job.id}`,
-					token,
 					{
 						headers: {
 							"Download-Authorization": `Bearer ${created.access_token}`,
@@ -96,9 +93,9 @@ export function FileRow({
 				`/api/v1/downloads/${created.job.id}/content`,
 				{
 					headers: {
-						Authorization: `Bearer ${token}`,
 						"Download-Authorization": `Bearer ${created.access_token}`,
 					},
+					credentials: "same-origin",
 				},
 			);
 			if (!response.ok) {
@@ -177,7 +174,7 @@ export function FileRow({
 				};
 				status: string;
 				message?: string;
-			}>(`/files/${encodeURIComponent(x.id)}/ingest-source`, token, {
+			}>(`/files/${encodeURIComponent(x.id)}/ingest-source`, {
 				method: "POST",
 				body: JSON.stringify(body),
 			});

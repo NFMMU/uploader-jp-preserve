@@ -49,6 +49,7 @@ async function getArtifactIds(): Promise<string[]> {
 		const response = await fetch(url, {
 			headers: { Accept: "application/json" },
 			signal: AbortSignal.timeout(10_000),
+			credentials: "same-origin",
 		});
 
 		if (!response.ok) {

@@ -4,16 +4,15 @@ const apiBase = "/api/v1";
 
 export async function publicAPI<T>(
 	path: string,
-	token: string,
 	options: RequestInit = {},
 ): Promise<T> {
 	const response = await fetch(`${apiBase}${path}`, {
 		...options,
 		headers: {
-			Authorization: "Bearer " + token,
 			...(options.body ? { "Content-Type": "application/json" } : {}),
 			...options.headers,
 		},
+		credentials: "same-origin",
 	});
 	const text = await response.text();
 	let data: any = {};
@@ -33,12 +32,11 @@ export async function publicAPI<T>(
 
 export async function downloadExport(
 	format: string,
-	token: string,
 	notify: (s: string) => void,
 ) {
 	try {
 		const r = await fetch(`${apiBase}/export?format=${format}`, {
-			headers: { Authorization: `Bearer ${token}` },
+			credentials: "same-origin",
 		});
 		if (!r.ok) throw new Error("エクスポートに失敗しました");
 		const blob = await r.blob();
@@ -56,14 +54,15 @@ export async function downloadExport(
 
 export async function downloadRequestIntakeFile(
 	id: string,
-	token: string,
 	notify: (s: string) => void,
 	filename: string,
 ) {
 	try {
 		const response = await fetch(
 			`/api/v1/public-requests/${encodeURIComponent(id)}/intake-file`,
-			{ headers: { Authorization: `Bearer ${token}` } },
+			{
+				credentials: "same-origin",
+			},
 		);
 		if (!response.ok) {
 			let detail = "";

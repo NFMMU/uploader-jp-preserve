@@ -8,7 +8,6 @@ export function ReviewWorkspace({
 	refresh,
 	notify,
 	role,
-	token,
 	bumpRefresh,
 	initialTab = "files",
 }: any) {
@@ -49,13 +48,7 @@ export function ReviewWorkspace({
 				</button>
 			</div>
 			{tab === "files" ? (
-				<Catalog
-					api={api}
-					refresh={refresh}
-					notify={notify}
-					role={role}
-					token={token}
-				/>
+				<Catalog api={api} refresh={refresh} notify={notify} role={role} />
 			) : (
 				<Requests
 					api={api}

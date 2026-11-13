@@ -99,6 +99,7 @@ export async function data(pageContext: PageContextServer) {
 				{
 					headers: { Accept: "application/json" },
 					signal: AbortSignal.timeout(5000),
+					credentials: "same-origin",
 				},
 			);
 			if (response.ok) {

@@ -1,6 +1,6 @@
+import CopyEmail from "components/common/CopyEmail";
 import { LockKeyhole, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import CopyEmail from "components/common/CopyEmail";
 import { Modal } from "@/components/common/Modal";
 import { Status } from "@/components/common/Status";
 import { Table } from "@/components/common/Table";

@@ -57,6 +57,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1.POST("/nodes/:id/tasks/:taskID/result", s.authenticateNode(), s.nodeTaskResult)
 	v1.POST("/nodes/:id/tasks/:taskID/source-content", s.authenticateNode(), s.receiveSourceFetchContent)
 	v1.POST("/nodes/:id/tasks/:taskID/replica-content", s.authenticateNode(), s.replicaContent)
+	v1.GET("/delete-cookie", s.clearCookie)
 
 	auth := v1.Group("")
 	auth.Use(s.authenticate())
@@ -140,21 +141,35 @@ func (s *Server) login(c *gin.Context) {
 		return
 	}
 	s.audit(c, &user, "user", user.ID, "auth.login", "success", nil)
+	s.setAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{"access_token": token, "token_type": "Bearer", "expires_in": int(s.cfg.JWTTTL.Seconds()), "user": gin.H{"id": user.ID, "email": user.Email, "display_name": user.DisplayName, "role": user.Role}})
 }
 
 func (s *Server) authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		header := c.GetHeader("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bearer token required"})
+		token := ""
+
+		if cookie, err := c.Cookie("archive_token"); err == nil {
+			token = cookie
+		}
+		if token == "" {
+			header := c.GetHeader("Authorization")
+			if after, ok := strings.CutPrefix(header, "Bearer "); ok {
+				token = strings.TrimSpace(after)
+			}
+		}
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "authentication required",
+			})
 			return
 		}
-		claims, err := security.Parse(s.cfg.JWTSecret, strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")))
+		claims, err := security.Parse(s.cfg.JWTSecret, token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
+
 		var user model.User
 		err = s.db.WithContext(c.Request.Context()).Where("id = ?", claims.UserID).First(&user).Error
 		if err != nil || user.DisabledAt != nil {
