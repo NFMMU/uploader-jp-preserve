@@ -63,7 +63,7 @@ function App() {
 		}
 		if (!r.ok)
 			if (r.status === 401) {
-				api("/delete-cookie");
+				await api("/delete-cookie");
 				setUser(null);
 				nav("/admin/login");
 				throw new Error(data.error || data.message || `HTTP ${r.status}`);
