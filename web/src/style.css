@@ -2726,10 +2726,9 @@ footer > span {
 	animation-delay: 0.9s;
 }
 
-/* Define @keyframes text-appear-animation if not already defined or if it needs to be static in CSS output */
-/* @keyframes text-appear-animation {
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1) rotate(0deg);
-    }
-} */
+@keyframes text-appear-animation {
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1) rotate(0deg);
+	}
+}
