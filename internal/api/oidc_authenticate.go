@@ -24,8 +24,9 @@ func (s *Server) oidcAuthenticate(c *gin.Context) {
 	// get user
 	userQuery := query.User
 	user, err := userQuery.WithContext(c.Request.Context()).Where(userQuery.ID.Eq(data.UserID)).First()
-	if err != nil || user != nil || user.ID != data.UserID {
+	if err != nil || user == nil || user.ID != data.UserID {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
+		return
 	}
 
 	// gen token
