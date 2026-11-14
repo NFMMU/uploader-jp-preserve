@@ -1,4 +1,4 @@
-import CopyEmail from "@/components/common/CopyEmail";
+import OidcLoginCard from "features/oidc/LoginCard";
 import {
 	Archive,
 	ClipboardList,
@@ -25,9 +25,11 @@ import {
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
+import CopyEmail from "@/components/common/CopyEmail";
 import { Audit } from "@/features/audit/Audit";
 import { Dashboard } from "@/features/dashboard/Dashboard";
 import { Nodes } from "@/features/nodes/Nodes";
+import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 import PublicSite from "@/features/public/PublicSite";
 import { RequestDetailPage } from "@/features/review/RequestDetailPage";
 import { ReviewWorkspace } from "@/features/review/ReviewWorkspace";
@@ -35,7 +37,6 @@ import { Tasks } from "@/features/tasks/Tasks";
 import { URLCollector } from "@/features/url-collector/URLCollector";
 import { UsersPage } from "@/features/users/UsersPage";
 import type { Obj } from "@/types/common";
-import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 
 function App() {
 	const apiBase = "/api/v1";
@@ -197,7 +198,6 @@ function App() {
 					</div>
 					<div className="login-form-wrap">
 						<form className="login-form" onSubmit={login}>
-							<span className="eyebrow"></span>
 							<h2>ログイン</h2>
 							<p>アカウント情報を入力してください。</p>
 							<label>
@@ -227,6 +227,14 @@ function App() {
 								<LockKeyhole size={15} /> 通信は暗号化されます
 							</div>
 						</form>
+						<div className="divider">または</div>
+						<OidcLoginCard
+							api={api}
+							notify={notify}
+							refresh={refresh}
+							busy={busy}
+							setBusy={setBusy}
+						/>
 					</div>
 					{toast && <div className="toast error">{toast}</div>}
 				</div>
