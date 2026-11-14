@@ -291,6 +291,7 @@ function App() {
 							</div>
 							<div className="user-meta">
 								<b>{user.display_name || user.email}</b>
+								<NavLink to="/admin/preference">個人設定</NavLink>
 								<small>
 									{user.role === "admin"
 										? "管理者"

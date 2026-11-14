@@ -1,8 +1,10 @@
 package oidc
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
@@ -54,7 +56,9 @@ func AuthorizationRequest(c *gin.Context, baseURL string) {
 		return
 	}
 
-	provider, err := oidc.NewProvider(ctx, providerData.Issuer)
+	discoveryCtx, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
+	provider, err := oidc.NewProvider(discoveryCtx, providerData.Issuer)
+	cancelDiscovery()
 	if err != nil || provider == nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return

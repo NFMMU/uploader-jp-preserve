@@ -47,7 +47,9 @@ table "oidc_providers" {
   primary_key {
     columns = [column.id]
   }
-  unique "uq_client_id_discovery_endpoint" {
+  index "uq_client_id_discovery_endpoint" {
+    unique = true
+    where = "deleted_at IS NULL"
     columns = [ column.client_id, column.discovery_endpoint ]
   }
   index "idx_is_enabled" {

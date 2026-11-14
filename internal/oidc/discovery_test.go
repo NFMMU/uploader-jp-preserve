@@ -60,3 +60,23 @@ func TestDiscoveryHasDefaultDeadline(t *testing.T) {
 		t.Fatal("discovery exceeded deadline")
 	}
 }
+
+func TestDiscoveryStatus(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusCreated, http.StatusBadRequest, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				w.Write([]byte(`{"issuer":"https://issuer.example"}`))
+			}))
+			defer server.Close()
+			data, err := OidcDiscovery(context.Background(), server.URL)
+			if status >= 200 && status < 300 {
+				if err != nil || data == nil || data.Issuer != "https://issuer.example" {
+					t.Fatalf("unexpected discovery: %v, %v", data, err)
+				}
+			} else if err == nil || data != nil {
+				t.Fatalf("expected rejection for HTTP %d", status)
+			}
+		})
+	}
+}

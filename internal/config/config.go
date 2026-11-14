@@ -47,7 +47,7 @@ func Load() (Config, error) {
 		}
 	}
 	cfg := Config{
-		FrontendURL:                      env("FRONTEND_URL", "https://uploaderjp.udonya.moe"),
+		FrontendURL:                      env("FRONTEND_URL", "http://localhost:3000"),
 		TrustedProxies:                   trustedProxies,
 		Environment:                      env("APP_ENV", "production"),
 		Address:                          env("APP_ADDR", ":8080"),

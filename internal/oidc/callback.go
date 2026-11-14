@@ -1,8 +1,10 @@
 package oidc
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
@@ -64,7 +66,9 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 	}
 
 	// プロバイダ作成
-	provider, err := oidc.NewProvider(ctx, providerData.Issuer)
+	discoveryCtx, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
+	provider, err := oidc.NewProvider(discoveryCtx, providerData.Issuer)
+	cancelDiscovery()
 	if err != nil || provider == nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
@@ -192,6 +196,7 @@ func getOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, front
 	oidcIdentityQuery := query.OidcIdentity
 	resp, err := oidcIdentityQuery.WithContext(c.Request.Context()).Where(
 		oidcIdentityQuery.ProviderID.Eq(providerID),
+		oidcIdentityQuery.Issuer.Eq(data.Issuer),
 		oidcIdentityQuery.Subject.Eq(data.Subject),
 	).First()
 	if err != nil {

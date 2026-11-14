@@ -18,11 +18,11 @@ table "oidc_identities" {
     null = false
   }
   column "preferred_username" {
-    type = varchar(255)
+    type = text
     null = true
   }
   column "picture" {
-    type = varchar(255)
+    type = text
     null = true
   }
   column "provider_id" {

@@ -23,8 +23,8 @@ type OidcIdentity struct {
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at;type:timestamp with time zone;not null;default:now()" json:"updated_at"`
 	DeletedAt         gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp with time zone" json:"deleted_at"`
-	PreferredUsername *string        `gorm:"column:preferred_username;type:character varying(255)" json:"preferred_username"`
-	Picture           *string        `gorm:"column:picture;type:character varying(255)" json:"picture"`
+	PreferredUsername *string        `gorm:"column:preferred_username;type:text" json:"preferred_username"`
+	Picture           *string        `gorm:"column:picture;type:text" json:"picture"`
 }
 
 // TableName OidcIdentity's table name

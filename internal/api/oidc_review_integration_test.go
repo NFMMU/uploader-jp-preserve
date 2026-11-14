@@ -195,3 +195,22 @@ func TestOidcProviderCreateEncryptsSecretAndHidesIt(t *testing.T) {
 		}
 	}
 }
+
+func TestOidcMissingProviderResponses(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.OidcProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	query.SetDefault(db)
+	s := &Server{db: db, logger: slog.Default()}
+	router := gin.New()
+	router.GET("/:id", s.getOidcProvider)
+	router.DELETE("/:id", s.deleteOidcProvider)
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(method, "/"+uuid.NewString(), nil))
+		if rec.Code != http.StatusNotFound || rec.Body.String() != `{"error":"provider not found"}` {
+			t.Fatalf("%s: %d %s", method, rec.Code, rec.Body.String())
+		}
+	}
+}

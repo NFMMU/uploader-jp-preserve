@@ -24,6 +24,7 @@ export function ProvidersPage({
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/admin/oidc_providers", refresh + localRefresh);
 	const [modal, setModal] = useState(false);
+	const [submitting, setSubmitting] = useState(false);
 	const [form, setForm] = useState({
 		display_name: "",
 		service_icon: "",
@@ -33,6 +34,8 @@ export function ProvidersPage({
 	});
 	async function create(e: React.FormEvent) {
 		e.preventDefault();
+		if (submitting) return;
+		setSubmitting(true);
 		try {
 			await api("/admin/oidc_providers", {
 				method: "POST",
@@ -50,6 +53,8 @@ export function ProvidersPage({
 			setModal(false);
 		} catch (e) {
 			notify((e as Error).message);
+		} finally {
+			setSubmitting(false);
 		}
 	}
 
@@ -61,7 +66,11 @@ export function ProvidersPage({
 				desc="OIDCプロバイダー構成の管理"
 				actions={
 					role === "admin" && (
-						<button className="primary" onClick={() => setModal(true)}>
+						<button
+							type="button"
+							className="primary"
+							onClick={() => setModal(true)}
+						>
 							<Plus size={16} /> OIDCプロバイダーをセットアップ
 						</button>
 					)
@@ -126,12 +135,15 @@ export function ProvidersPage({
 			{modal && (
 				<Modal
 					title="OIDCプロバイダーをセットアップ"
-					close={() => setModal(false)}
+					close={() => {
+						if (!submitting) setModal(false);
+					}}
 				>
 					<form className="form-stack" onSubmit={create}>
 						<label>
 							表示名
 							<input
+								disabled={submitting}
 								required
 								value={form.display_name}
 								onChange={(e) =>
@@ -142,6 +154,7 @@ export function ProvidersPage({
 						<label>
 							アイコンURL
 							<input
+								disabled={submitting}
 								type="url"
 								value={form.service_icon}
 								onChange={(e) =>
@@ -152,6 +165,7 @@ export function ProvidersPage({
 						<label>
 							OIDC Discovery Endpoint
 							<input
+								disabled={submitting}
 								required
 								type={"url"}
 								value={form.discovery_endpoint}
@@ -163,6 +177,7 @@ export function ProvidersPage({
 						<label>
 							Client ID
 							<input
+								disabled={submitting}
 								required
 								value={form.client_id}
 								onChange={(e) =>
@@ -173,6 +188,7 @@ export function ProvidersPage({
 						<label>
 							Client Secret
 							<input
+								disabled={submitting}
 								required
 								type="password"
 								value={form.client_secret}
@@ -185,11 +201,14 @@ export function ProvidersPage({
 							<button
 								type="button"
 								className="secondary"
+								disabled={submitting}
 								onClick={() => setModal(false)}
 							>
 								キャンセル
 							</button>
-							<button className="primary">作成</button>
+							<button type="submit" className="primary" disabled={submitting}>
+								{submitting ? "送信中…" : "作成"}
+							</button>
 						</div>
 					</form>
 				</Modal>

@@ -77,6 +77,7 @@ func (s *Server) getOidcProvider(c *gin.Context) {
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -120,7 +121,7 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 		return
 	}
 	data, err := oidcProviderQuery.WithContext(c.Request.Context()).
-		Where(oidcProviderQuery.ClientID.Eq(req.ClientID), oidcProviderQuery.DiscoveryEndpoint.Eq(req.DiscoveryEndpoint)).
+		Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ClientID.Eq(req.ClientID), oidcProviderQuery.DiscoveryEndpoint.Eq(req.DiscoveryEndpoint)).
 		Select(
 			oidcProviderQuery.ID,
 			oidcProviderQuery.DisplayName,
@@ -235,19 +236,17 @@ func (s *Server) deleteOidcProvider(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	oidcProviderQuery := query.OidcProvider
-	result, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.Null(), oidcProviderQuery.ID.Eq(id)).Delete(nil)
+	result, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ID.Eq(id)).Delete()
 	if err != nil || result.Error != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	if result.RowsAffected < 1 {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		return
 	}
 	s.audit(c, &actor, "auth.oidc_provider", id, "delete", "success", nil)

@@ -3,6 +3,7 @@ package oidc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -31,6 +32,9 @@ func OidcDiscovery(ctx context.Context, url string) (*OidcDiscoveryData, error) 
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("OIDC discovery returned HTTP %d", resp.StatusCode)
+	}
 
 	var data OidcDiscoveryData
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {

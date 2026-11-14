@@ -10,9 +10,10 @@ CREATE TABLE
     "created_at" timestamptz NOT NULL DEFAULT now (),
     "updated_at" timestamptz NOT NULL DEFAULT now (),
     "deleted_at" timestamptz NULL,
-    PRIMARY KEY ("id"),
-    CONSTRAINT "uq_client_id_discovery_endpoint" UNIQUE ("client_id", "discovery_endpoint")
+    PRIMARY KEY ("id")
   );
+
+CREATE UNIQUE INDEX "uq_client_id_discovery_endpoint" ON "public"."oidc_providers" ("client_id", "discovery_endpoint") WHERE "deleted_at" IS NULL;
 
 -- Create index "idx_is_enabled" to table: "oidc_providers"
 CREATE INDEX "idx_is_enabled" ON "public"."oidc_providers" ("is_enabled");
