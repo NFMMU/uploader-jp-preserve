@@ -15,7 +15,7 @@ const TableNameOidcProvider = "oidc_providers"
 // OidcProvider mapped from table <oidc_providers>
 type OidcProvider struct {
 	ID                string         `gorm:"column:id;type:uuid;primaryKey;default:uuidv7()" json:"id"`
-	DisplayName       string         `gorm:"column:display_name;type:character varying(31);not null" json:"display_name"`
+	DisplayName       string         `gorm:"column:display_name;type:character varying(255);not null" json:"display_name"`
 	DiscoveryEndpoint string         `gorm:"column:discovery_endpoint;type:character varying(255);not null" json:"discovery_endpoint"`
 	ClientID          string         `gorm:"column:client_id;type:character varying(255);not null" json:"client_id"`
 	ClientSecret      string         `gorm:"column:client_secret;type:character varying(255);not null" json:"client_secret"`

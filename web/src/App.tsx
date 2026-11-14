@@ -30,6 +30,7 @@ import { Audit } from "@/features/audit/Audit";
 import { Dashboard } from "@/features/dashboard/Dashboard";
 import { Nodes } from "@/features/nodes/Nodes";
 import { ProvidersPage } from "@/features/oidc/ProvidersPage";
+import { PreferencePage } from "@/features/preference/PreferencePage";
 import PublicSite from "@/features/public/PublicSite";
 import { RequestDetailPage } from "@/features/review/RequestDetailPage";
 import { ReviewWorkspace } from "@/features/review/ReviewWorkspace";
@@ -459,6 +460,17 @@ function App() {
 							<Route
 								path="/admin/audit"
 								element={<Audit api={api} refresh={refresh} />}
+							/>
+							<Route
+								path="/admin/preference"
+								element={
+									<PreferencePage
+										api={api}
+										refresh={refresh}
+										notify={notify}
+										role={user.role}
+									/>
+								}
 							/>
 							<Route
 								path="*"

@@ -53,7 +53,6 @@ export function ProvidersPage({
 		}
 	}
 
-	const hostname = window.location.hostname;
 	return (
 		<>
 			<Heading
@@ -107,13 +106,8 @@ export function ProvidersPage({
 										</div>
 									</td>
 									<td>
-										<span>
-											https://{hostname}/api/v1/auth/oidc/callback/{x.id}
-										</span>
-										<CopyEmail
-											label="URLを"
-											email={`https://${hostname}/auth/oidc/callback/${x.id}`}
-										/>
+										<span>{x.callback_url}</span>
+										<CopyEmail label="URLを" email={x.callback_url} />
 									</td>
 									<td>
 										{x.is_enabled ? (
@@ -148,7 +142,6 @@ export function ProvidersPage({
 						<label>
 							アイコンURL
 							<input
-								required
 								type="url"
 								value={form.service_icon}
 								onChange={(e) =>

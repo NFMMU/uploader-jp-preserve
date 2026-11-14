@@ -2,7 +2,7 @@
 CREATE TABLE
   "public"."oidc_providers" (
     "id" uuid NOT NULL DEFAULT uuidv7 (),
-    "name" CHARACTER VARYING(31) NOT NULL,
+    "name" CHARACTER VARYING(255) NOT NULL,
     "discovery_endpoint" CHARACTER VARYING(255) NOT NULL,
     "client_id" CHARACTER VARYING(255) NOT NULL,
     "client_secret" CHARACTER VARYING(255) NOT NULL,
@@ -30,8 +30,9 @@ CREATE TABLE
     "updated_at" timestamptz NOT NULL DEFAULT now (),
     "deleted_at" timestamptz NULL,
     PRIMARY KEY ("id"),
-    CONSTRAINT "uq_provider_subject" UNIQUE ("provider_id", "subject"),
-    CONSTRAINT "uq_provider_user" UNIQUE ("provider_id", "user_id"),
     CONSTRAINT "fk_provider_id" FOREIGN KEY ("provider_id") REFERENCES "public"."oidc_providers" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
     CONSTRAINT "fk_user_id" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
   );
+
+CREATE UNIQUE INDEX "uq_provider_subject" ON "public"."oidc_identities" ("provider_id", "subject") WHERE "deleted_at" IS NULL;
+CREATE UNIQUE INDEX "uq_provider_user" ON "public"."oidc_identities" ("provider_id", "user_id") WHERE "deleted_at" IS NULL;

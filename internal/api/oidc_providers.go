@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -42,7 +43,17 @@ func (s *Server) listOidcProviders(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": data})
+	items := make([]gin.H, 0, len(data))
+	for _, provider := range data {
+		items = append(items, gin.H{
+			"id": provider.ID, "display_name": provider.DisplayName,
+			"discovery_endpoint": provider.DiscoveryEndpoint, "client_id": provider.ClientID,
+			"service_icon": provider.ServiceIcon, "is_enabled": provider.IsEnabled,
+			"created_at": provider.CreatedAt, "updated_at": provider.UpdatedAt,
+			"callback_url": fmt.Sprintf("%s/api/v1/auth/oidc/callback/%s", s.cfg.FrontendURL, provider.ID),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (s *Server) getOidcProvider(c *gin.Context) {
@@ -156,28 +167,34 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	clientSecret := data.ClientSecret
-	if req.ClientSecret != nil {
-		clientSecret = *req.ClientSecret
+	updates := map[string]any{
+		"display_name":       req.DisplayName,
+		"discovery_endpoint": req.DiscoveryEndpoint,
+		"client_id":          req.ClientID,
+		"service_icon":       req.ServiceIcon,
+		"updated_at":         time.Now(),
 	}
-	err = oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.ID.Eq(id)).Save(&model.OidcProvider{
-		DisplayName:       req.DisplayName,
-		DiscoveryEndpoint: req.DiscoveryEndpoint,
-		ClientID:          req.ClientID,
-		ClientSecret:      clientSecret,
-		ServiceIcon:       req.ServiceIcon,
-		UpdatedAt:         time.Now(),
-	})
+	if req.ClientSecret != nil {
+		updates["client_secret"] = *req.ClientSecret
+	}
+	result, err := oidcProviderQuery.WithContext(c.Request.Context()).
+		Where(oidcProviderQuery.ID.Eq(id), oidcProviderQuery.DeletedAt.IsNull()).Updates(updates)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+		return
+	}
+
 	data, err = oidcProviderQuery.WithContext(c.Request.Context()).
-		Where(oidcProviderQuery.ClientID.Eq(req.ClientID), oidcProviderQuery.DiscoveryEndpoint.Eq(req.DiscoveryEndpoint)).
+		Where(oidcProviderQuery.ID.Eq(id), oidcProviderQuery.DeletedAt.IsNull()).
 		Select(
 			oidcProviderQuery.ID,
 			oidcProviderQuery.DisplayName,

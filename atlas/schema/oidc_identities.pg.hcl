@@ -58,10 +58,14 @@ table "oidc_identities" {
     columns = [ column.user_id ]
     ref_columns = [ table.users.column.id ]
   }
-  unique "uq_provider_user" {
+  index "uq_provider_user" {
+    unique = true
+    where = "deleted_at IS NULL"
     columns = [ column.provider_id, column.user_id ]
   }
-  unique "uq_provider_subject" {
+  index "uq_provider_subject" {
+    unique = true
+    where = "deleted_at IS NULL"
     columns = [ column.provider_id, column.subject ]
   }
 }

@@ -356,13 +356,16 @@ func (s *Server) updatePassword(c *gin.Context) {
 	}
 
 	// パスワードを更新する。
-	result := s.db.WithContext(c.Request.Context()).
+	update := s.db.WithContext(c.Request.Context()).
 		Model(&model.User{}).
-		Where("id = ?", target.ID).
-		Updates(map[string]any{
-			"password_hash": string(hash),
-			"updated_at":    time.Now().UTC(),
-		})
+		Where("id = ?", target.ID)
+	if isSelf {
+		update = update.Where("password_hash = ?", target.PasswordHash)
+	}
+	result := update.Updates(map[string]any{
+		"password_hash": string(hash),
+		"updated_at":    time.Now().UTC(),
+	})
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -372,6 +375,10 @@ func (s *Server) updatePassword(c *gin.Context) {
 	}
 
 	if result.RowsAffected == 0 {
+		if isSelf {
+			c.JSON(http.StatusConflict, gin.H{"error": "password changed; please recheck your current password"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "user not found",
 		})

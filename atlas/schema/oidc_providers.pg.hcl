@@ -6,7 +6,7 @@ table "oidc_providers" {
     default = sql("uuidv7()")
   }
   column "display_name" {
-    type = varchar(31)
+    type = varchar(255)
     null = false
   }
   column "service_icon" {
