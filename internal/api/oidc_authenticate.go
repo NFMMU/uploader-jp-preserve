@@ -12,11 +12,11 @@ import (
 )
 
 func (s *Server) oidcAuthenticate(c *gin.Context) {
-	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
+	baseURL := s.cfg.FrontendURL
 	frontPath := "login"
 
 	// oidc parse
-	data := oidc.Callback(c, "authenticate")
+	data := oidc.Callback(c, s.cfg.FrontendURL, "authenticate")
 	if data == nil {
 		return
 	}

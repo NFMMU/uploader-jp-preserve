@@ -22,11 +22,9 @@ type OidcClaims struct {
 	PreferredUsername *string `json:"preferred_username" binding:"omitempty"`
 }
 
-func Callback(c *gin.Context, mode string) *model.OidcIdentity {
+func Callback(c *gin.Context, baseURL, mode string) *model.OidcIdentity {
 	ctx := c.Request.Context()
 	r := c.Request
-
-	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
 
 	// モード検証
 	var frontPath string

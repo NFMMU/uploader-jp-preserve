@@ -13,7 +13,6 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/config"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
-	"github.com/nfmmu/uploader-archive/internal/oidc"
 	"github.com/nfmmu/uploader-archive/internal/security"
 )
 
@@ -41,7 +40,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/login", s.login)
 	v1.GET("/auth/oidc/providers", s.listOidcProvidersPublic)
-	v1.GET("/auth/oidc/:id", oidc.AuthorizationRequest)
+	v1.GET("/auth/oidc/:id", s.oidcAuthorizationRequest)
 	v1.GET("/auth/oidc/callback/:id", s.oidcCallback)
 	v1.GET("/auth/oidc/authenticate/:id", s.oidcAuthenticate)
 	v1.GET("/public/config", s.publicConfig)

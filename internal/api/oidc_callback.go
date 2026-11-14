@@ -9,7 +9,7 @@ import (
 
 func (s *Server) oidcCallback(c *gin.Context) {
 	mode, err := c.Request.Cookie("oidc_mode")
-	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
+	baseURL := s.cfg.FrontendURL
 	if err != nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, "login"))
 		return

@@ -10,10 +10,10 @@ import (
 )
 
 func (s *Server) oidcLink(c *gin.Context) {
-	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
+	baseURL := s.cfg.FrontendURL
 
 	// oidc parse
-	data := oidc.Callback(c, "link")
+	data := oidc.Callback(c, s.cfg.FrontendURL, "link")
 	if data == nil {
 		return
 	}

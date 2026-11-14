@@ -13,9 +13,8 @@ import (
 
 type OidcRequestMode string
 
-func AuthorizationRequest(c *gin.Context) {
+func AuthorizationRequest(c *gin.Context, baseURL string) {
 	ctx := c.Request.Context()
-	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
 
 	mode := c.Query("mode")
 
