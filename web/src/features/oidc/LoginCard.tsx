@@ -17,7 +17,7 @@ export default function OidcLoginCard({
 	const d = useData(api, "/auth/oidc/providers", refresh);
 	const onLoginClick = (id: string) => {
 		setBusy(true);
-		const baseURL = `${window.location.protocol}://${window.location.host}`;
+		const baseURL = `${window.location.protocol}//${window.location.host}`;
 		window.location.href = `${baseURL}/api/v1/auth/oidc/${id}?mode=authenticate`;
 	};
 	return (
