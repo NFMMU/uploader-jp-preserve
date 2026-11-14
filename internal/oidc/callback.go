@@ -14,8 +14,8 @@ import (
 )
 
 type OidcClaims struct {
-	Issuer            string  `json:"issuer"`
-	Subject           string  `json:"subject"`
+	Issuer            string  `json:"iss"`
+	Subject           string  `json:"sub"`
 	Email             string  `json:"email"`
 	EmailVerified     bool    `json:"email_verified"`
 	Picture           *string `json:"picture" binding:"omitempty"`
@@ -142,6 +142,7 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 
 	if !idTokenData.EmailVerified {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
+		return nil
 	}
 
 	// モードに合わせた処理

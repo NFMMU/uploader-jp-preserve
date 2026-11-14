@@ -38,7 +38,7 @@ func AuthorizationRequest(c *gin.Context, baseURL string) {
 	}
 
 	providerQuery := query.OidcProvider
-	providerDbData, err := providerQuery.WithContext(ctx).Where(providerQuery.ID.Eq(providerID)).First()
+	providerDbData, err := providerQuery.WithContext(ctx).Where(providerQuery.ID.Eq(providerID), providerQuery.IsEnabled.Eq(true)).First()
 	if err != nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return
