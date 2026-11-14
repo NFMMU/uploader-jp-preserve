@@ -33,7 +33,7 @@ func AuthorizationRequest(c *gin.Context) {
 	}
 
 	providerID := c.Param("id")
-	if providerID != "" {
+	if providerID == "" {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return
 	}
