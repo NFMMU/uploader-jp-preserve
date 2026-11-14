@@ -13,6 +13,8 @@ import (
 
 	"github.com/nfmmu/uploader-archive/internal/config"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
+	"github.com/nfmmu/uploader-archive/internal/oidc"
 	"github.com/nfmmu/uploader-archive/internal/security"
 )
 
@@ -40,8 +42,9 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/login", s.login)
 	//v1.GET("/auth/oidc/providers", s.requireRoles("admin"), s.listOidcProvidersPublic)
-	//v1.GET("/auth/oidc/login/:id", s.oidcLogin)
-	//v1.GET("/auth/oidc/callback/:id", s.oidcCallback)
+	v1.GET("/auth/oidc/:id", oidc.AuthorizationRequest)
+	v1.GET("/auth/oidc/callback/:id", s.oidcCallback)
+	v1.GET("/auth/oidc/authenticate/:id", s.oidcAuthenticate)
 	v1.GET("/public/config", s.publicConfig)
 	v1.GET("/public/artifacts", s.listPublicArtifacts)
 	v1.GET("/public/artifacts/:id", s.getPublicArtifact)
@@ -64,6 +67,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 
 	auth := v1.Group("")
 	auth.Use(s.authenticate())
+	auth.GET("/auth/oidc/link/:id", s.oidcLink)
 	auth.GET("/me", s.me)
 	auth.GET("/artifacts", s.listArtifacts)
 	auth.POST("/artifacts", s.requireRoles("admin"), s.createArtifact)
@@ -195,7 +199,7 @@ func (s *Server) requireRoles(roles ...string) gin.HandlerFunc {
 		allowed[role] = struct{}{}
 	}
 	return func(c *gin.Context) {
-		user, ok := currentUser(c)
+		user, ok := hooks.CurrentUser(c)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
@@ -209,7 +213,7 @@ func (s *Server) requireRoles(roles ...string) gin.HandlerFunc {
 }
 
 func (s *Server) me(c *gin.Context) {
-	user, _ := currentUser(c)
+	user, _ := hooks.CurrentUser(c)
 	c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email, "display_name": user.DisplayName, "role": user.Role, "created_at": user.CreatedAt})
 }
 
@@ -224,7 +228,7 @@ func (s *Server) createUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), and valid role are required"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})

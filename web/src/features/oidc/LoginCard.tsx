@@ -16,7 +16,8 @@ export default function OidcLoginCard({
 }) {
 	const d = useData(api, "/auth/providers", refresh);
 	const onLoginClick = (id: string) => {
-		setBusy(true);
+    setBusy(true);
+    // modeはauthenticate
 	};
 	return (
 		<div>
