@@ -177,7 +177,17 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		return
 	}
 	data, err = oidcProviderQuery.WithContext(c.Request.Context()).
-		Where(oidcProviderQuery.ClientID.Eq(req.ClientID), oidcProviderQuery.DiscoveryEndpoint.Eq(req.DiscoveryEndpoint)).First()
+		Where(oidcProviderQuery.ClientID.Eq(req.ClientID), oidcProviderQuery.DiscoveryEndpoint.Eq(req.DiscoveryEndpoint)).
+		Select(
+			oidcProviderQuery.ID,
+			oidcProviderQuery.DisplayName,
+			oidcProviderQuery.DiscoveryEndpoint,
+			oidcProviderQuery.ClientID,
+			oidcProviderQuery.ServiceIcon,
+			oidcProviderQuery.IsEnabled,
+			oidcProviderQuery.CreatedAt,
+			oidcProviderQuery.UpdatedAt,
+		).First()
 	if data == nil || err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
