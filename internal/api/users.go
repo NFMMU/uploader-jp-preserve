@@ -107,7 +107,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 
 	// 自分自身の管理者権限剥奪・無効化を禁止
-	if target.ID == user.ID && (req.Role != "admin" || *req.Disabled) {
+	if target.ID == user.ID && user.Role == "admin" && (req.Role != "admin" || *req.Disabled) {
 		c.JSON(http.StatusConflict, gin.H{"error": "cannot remove administrator access from or disable the current account"})
 		return
 	}
