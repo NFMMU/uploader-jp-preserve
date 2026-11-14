@@ -17,7 +17,7 @@ type OidcIdentity struct {
 	ID                string         `gorm:"column:id;type:uuid;primaryKey;default:uuidv7()" json:"id"`
 	Issuer            string         `gorm:"column:issuer;type:character varying(255);not null" json:"issuer"`
 	Subject           string         `gorm:"column:subject;type:character varying(255);not null" json:"subject"`
-	Email             string         `gorm:"column:email;type:uuid;not null" json:"email"`
+	Email             string         `gorm:"column:email;type:character varying(255);not null" json:"email"`
 	ProviderID        string         `gorm:"column:provider_id;type:uuid;not null" json:"provider_id"`
 	UserID            string         `gorm:"column:user_id;type:uuid;not null" json:"user_id"`
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
