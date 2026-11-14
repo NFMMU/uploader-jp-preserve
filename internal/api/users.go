@@ -100,6 +100,10 @@ func (s *Server) updateUser(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "only administrators can change role or disabled status"})
 			return
 		}
+		if target.ID != user.ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "only administrators can edit other user"})
+			return
+		}
 	}
 
 	// 自分自身の管理者権限剥奪・無効化を禁止
