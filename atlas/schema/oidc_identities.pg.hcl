@@ -14,7 +14,7 @@ table "oidc_identities" {
     null = false
   }
   column "email" {
-    type = uuid
+    type = varchar(255)
     null = false
   }
   column "preferred_username" {
