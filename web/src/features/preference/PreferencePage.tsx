@@ -353,7 +353,7 @@ export function PreferencePage({
 							<p>読み込み中...</p>
 						) : identities.error ? (
 							<p>連携アカウントの取得に失敗しました。</p>
-						) : identities.data?.data?.length ? (
+						) : identities.data?.items?.length ? (
 							identities.data.items.map(
 								(identity: {
 									id: string;
