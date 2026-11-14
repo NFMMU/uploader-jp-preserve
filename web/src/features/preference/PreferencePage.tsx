@@ -420,7 +420,7 @@ export function PreferencePage({
 										連携先を選択
 									</option>
 									{(
-										(d.data?.data ?? []) as {
+										(d.data?.items ?? []) as {
 											id: string;
 											service_icon?: string;
 											display_name: string;
