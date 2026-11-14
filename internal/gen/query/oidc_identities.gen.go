@@ -37,6 +37,8 @@ func newOidcIdentity(db *gorm.DB, opts ...gen.DOOption) oidcIdentity {
 	_oidcIdentity.CreatedAt = field.NewTime(tableName, "created_at")
 	_oidcIdentity.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_oidcIdentity.DeletedAt = field.NewField(tableName, "deleted_at")
+	_oidcIdentity.PreferredUsername = field.NewString(tableName, "preferred_username")
+	_oidcIdentity.Picture = field.NewString(tableName, "picture")
 
 	_oidcIdentity.fillFieldMap()
 
@@ -46,16 +48,18 @@ func newOidcIdentity(db *gorm.DB, opts ...gen.DOOption) oidcIdentity {
 type oidcIdentity struct {
 	oidcIdentityDo oidcIdentityDo
 
-	ALL        field.Asterisk
-	ID         field.String
-	Issuer     field.String
-	Subject    field.String
-	Email      field.String
-	ProviderID field.String
-	UserID     field.String
-	CreatedAt  field.Time
-	UpdatedAt  field.Time
-	DeletedAt  field.Field
+	ALL               field.Asterisk
+	ID                field.String
+	Issuer            field.String
+	Subject           field.String
+	Email             field.String
+	ProviderID        field.String
+	UserID            field.String
+	CreatedAt         field.Time
+	UpdatedAt         field.Time
+	DeletedAt         field.Field
+	PreferredUsername field.String
+	Picture           field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -81,6 +85,8 @@ func (o *oidcIdentity) updateTableName(table string) *oidcIdentity {
 	o.CreatedAt = field.NewTime(table, "created_at")
 	o.UpdatedAt = field.NewTime(table, "updated_at")
 	o.DeletedAt = field.NewField(table, "deleted_at")
+	o.PreferredUsername = field.NewString(table, "preferred_username")
+	o.Picture = field.NewString(table, "picture")
 
 	o.fillFieldMap()
 
@@ -109,7 +115,7 @@ func (o *oidcIdentity) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (o *oidcIdentity) fillFieldMap() {
-	o.fieldMap = make(map[string]field.Expr, 9)
+	o.fieldMap = make(map[string]field.Expr, 11)
 	o.fieldMap["id"] = o.ID
 	o.fieldMap["issuer"] = o.Issuer
 	o.fieldMap["subject"] = o.Subject
@@ -119,6 +125,8 @@ func (o *oidcIdentity) fillFieldMap() {
 	o.fieldMap["created_at"] = o.CreatedAt
 	o.fieldMap["updated_at"] = o.UpdatedAt
 	o.fieldMap["deleted_at"] = o.DeletedAt
+	o.fieldMap["preferred_username"] = o.PreferredUsername
+	o.fieldMap["picture"] = o.Picture
 }
 
 func (o oidcIdentity) clone(db *gorm.DB) oidcIdentity {
