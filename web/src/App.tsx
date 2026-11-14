@@ -166,34 +166,6 @@ function App() {
 		if (!user)
 			return (
 				<div className="login-shell">
-					<div className="login-art">
-						<div className="brand">
-							<div className="brand-icon">
-								<Archive />
-							</div>
-							<div>
-								<b>uploader.jp保全プロジェクト</b>
-								<small>アーカイブ管理</small>
-							</div>
-						</div>
-						<div className="hero">
-							<span className="eyebrow"></span>
-							<h1>uploader.jp保全プロジェクト</h1>
-							<p>作品情報とファイルを保全します。</p>
-							<div className="hero-stats">
-								<span>
-									<ShieldCheck /> ファイル検証
-								</span>
-								<span>
-									<HardDrive /> 分散保存
-								</span>
-								<span>
-									<LockKeyhole /> 権限管理
-								</span>
-							</div>
-						</div>
-						<div className="login-foot"></div>
-					</div>
 					<div className="login-form-wrap">
 						<form className="login-form" onSubmit={login}>
 							<span className="eyebrow"></span>
