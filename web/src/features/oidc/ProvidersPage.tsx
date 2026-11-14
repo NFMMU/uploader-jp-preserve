@@ -10,7 +10,12 @@ import { useData } from "@/hooks/useData";
 import { date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 
-export function ProvidersPage({ api, refresh, notify, role }: any) {
+export function ProvidersPage({ api, refresh, notify, role }: {
+	api: (path: string, opts?: RequestInit) => Promise<Obj>
+	refresh: number
+	notify: (s: string) => void
+	role: any
+}) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/admin/oidc_providers", refresh + localRefresh);
 	const [modal, setModal] = useState(false);

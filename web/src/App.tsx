@@ -1,4 +1,4 @@
-import CopyEmail from "components/common/CopyEmail";
+import CopyEmail from "@/components/common/CopyEmail";
 import {
 	Archive,
 	ClipboardList,
@@ -35,6 +35,7 @@ import { Tasks } from "@/features/tasks/Tasks";
 import { URLCollector } from "@/features/url-collector/URLCollector";
 import { UsersPage } from "@/features/users/UsersPage";
 import type { Obj } from "@/types/common";
+import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 
 function App() {
 	const apiBase = "/api/v1";
@@ -429,6 +430,17 @@ function App() {
 								path="/admin/users"
 								element={
 									<UsersPage
+										api={api}
+										refresh={refresh}
+										notify={notify}
+										role={user.role}
+									/>
+								}
+							/>
+							<Route
+								path="/admin/oidc_providers"
+								element={
+									<ProvidersPage
 										api={api}
 										refresh={refresh}
 										notify={notify}
