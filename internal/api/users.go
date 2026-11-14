@@ -15,6 +15,12 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
+var (
+	errLastActiveAdmin    = errors.New("last active administrator cannot be demoted or disabled")
+	errTargetStateChanged = errors.New("target user state changed during update")
+	errSelfAdminNotActive = errors.New("current administrator is no longer active")
+)
+
 func (s *Server) listUsers(c *gin.Context) {
 	var users []model.User
 	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
@@ -113,7 +119,33 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if target.Role == "admin" && (req.Role != "admin" || *req.Disabled) {
+		// 対象ユーザーを更新ロック付きで再取得する。
+		var lockedTarget model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&lockedTarget, "id = ?", target.ID).Error; err != nil {
+			return err
+		}
+
+		// 事前取得後に Role または DisabledAt が変更されていないか確認する。
+		sameDisabledAt :=
+			(target.DisabledAt == nil && lockedTarget.DisabledAt == nil) ||
+				(target.DisabledAt != nil &&
+					lockedTarget.DisabledAt != nil &&
+					target.DisabledAt.Equal(*lockedTarget.DisabledAt))
+
+		if target.Role != lockedTarget.Role || !sameDisabledAt {
+			return errTargetStateChanged
+		}
+
+		// 管理者本人の自己更新では、ロック取得後も有効な管理者であることを確認する。
+		if target.ID == user.ID && user.Role == "admin" {
+			if lockedTarget.Role != "admin" || lockedTarget.DisabledAt != nil {
+				return errSelfAdminNotActive
+			}
+		}
+
+		// 最終管理者の保護も、ロック取得後の状態を基準に判定する。
+		if lockedTarget.Role == "admin" && (req.Role != "admin" || *req.Disabled) {
 			var activeAdmins []model.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Select("id").
@@ -141,16 +173,31 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 
 		return tx.Model(&model.User{}).
-			Where("id = ?", target.ID).
+			Where("id = ?", lockedTarget.ID).
 			Updates(updates).Error
 	})
-	if err != nil {
-		if errors.Is(err, errLastActiveAdmin) {
-			c.JSON(http.StatusConflict, gin.H{"error": "cannot disable or demote the last active administrator"})
-			return
-		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update user"})
+	if err != nil {
+		switch {
+		case errors.Is(err, errLastActiveAdmin):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "cannot disable or demote the last active administrator",
+			})
+		case errors.Is(err, errTargetStateChanged):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "user role or disabled status changed; reload and retry",
+			})
+		case errors.Is(err, errSelfAdminNotActive):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "current account is no longer an active administrator",
+			})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not update user",
+			})
+		}
 		return
 	}
 
@@ -336,8 +383,6 @@ func (s *Server) updatePassword(c *gin.Context) {
 		"message": "password updated successfully",
 	})
 }
-
-var errLastActiveAdmin = errors.New("last active administrator cannot be demoted or disabled")
 
 func (s *Server) listUserOidcIdentities(c *gin.Context) {
 	actor, ok := hooks.CurrentUser(c)
