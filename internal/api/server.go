@@ -39,6 +39,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	r.GET("/healthz", s.health)
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/login", s.login)
+	//v1.GET("/auth/oidc/providers", s.requireRoles("admin"), s.listOidcProvidersPublic)
 	//v1.GET("/auth/oidc/login/:id", s.oidcLogin)
 	//v1.GET("/auth/oidc/callback/:id", s.oidcCallback)
 	v1.GET("/public/config", s.publicConfig)
