@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 const (
@@ -135,7 +137,7 @@ func (s *Server) reviewNodeEnrollmentRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status must be approved or rejected"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	var existing struct {
 		Status string
 		Name   string

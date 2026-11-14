@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	FrontendURL                      string
 	Environment                      string
 	Address                          string
 	DatabaseURL                      string
@@ -46,6 +47,7 @@ func Load() (Config, error) {
 		}
 	}
 	cfg := Config{
+		FrontendURL:                      env("FRONTEND_URL", "https://uploaderjp.udonya.moe"),
 		TrustedProxies:                   trustedProxies,
 		Environment:                      env("APP_ENV", "production"),
 		Address:                          env("APP_ADDR", ":8080"),

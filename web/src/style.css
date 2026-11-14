@@ -966,12 +966,12 @@ footer > span {
 	width: 100%;
 	max-width: 360px;
 	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
 }
 .login-form {
 	width: 100%;
-}
-.login-form .eyebrow {
-	display: none;
 }
 .login-form h2 {
 	font-size: 20px;
@@ -2727,5 +2727,114 @@ footer > span {
 	to {
 		opacity: 1;
 		transform: translateY(0) scale(1) rotate(0deg);
+	}
+}
+
+.divider {
+	display: flex;
+	align-items: center;
+	color: #666;
+}
+.divider::before,
+.divider::after {
+	content: "";
+	flex: 1;
+	border-top: 1px solid #ccc;
+}
+.divider::before {
+	margin-right: 15px;
+}
+.divider::after {
+	margin-left: 15px;
+}
+
+/* Account preferences */
+.preference-section {
+	margin-bottom: 30px;
+}
+
+.preference-section > .page-heading {
+	margin-bottom: 16px;
+}
+
+.preference-form {
+	max-width: 560px;
+}
+
+.preference-description {
+	font-size: 11px;
+	color: #777;
+	line-height: 1.7;
+	margin: 0 0 14px;
+}
+
+.preference-provider-list {
+	border-top: 1px solid #e5e5e5;
+	margin-top: 14px;
+}
+
+.preference-provider {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 13px 0;
+	border-bottom: 1px solid #eee;
+}
+
+.preference-provider-icon {
+	width: 34px;
+	height: 34px;
+	display: grid;
+	place-items: center;
+	border: 1px solid #e5e5e5;
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+
+.preference-provider-main {
+	flex: 1;
+	min-width: 0;
+}
+
+.preference-provider-main b {
+	display: block;
+	font-size: 12px;
+	font-weight: 550;
+}
+
+.preference-provider-main small {
+	display: block;
+	font-size: 10px;
+	color: #777;
+	margin-top: 4px;
+	overflow-wrap: anywhere;
+}
+
+.preference-provider-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.preference-empty {
+	padding: 20px 0;
+	color: #777;
+	font-size: 11px;
+	border-bottom: 1px solid #eee;
+}
+
+.preference-form .modal-actions {
+	justify-content: flex-start;
+}
+
+@media (max-width: 600px) {
+	.preference-provider {
+		align-items: flex-start;
+		flex-wrap: wrap;
+	}
+
+	.preference-provider-actions {
+		width: 100%;
+		padding-left: 46px;
 	}
 }

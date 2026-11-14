@@ -1,4 +1,4 @@
-import CopyEmail from "components/common/CopyEmail";
+import OidcLoginCard from "features/oidc/LoginCard";
 import {
 	Archive,
 	ClipboardList,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { FaOpenid } from "react-icons/fa";
 import {
 	NavLink,
 	Route,
@@ -24,9 +25,12 @@ import {
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
+import CopyEmail from "@/components/common/CopyEmail";
 import { Audit } from "@/features/audit/Audit";
 import { Dashboard } from "@/features/dashboard/Dashboard";
 import { Nodes } from "@/features/nodes/Nodes";
+import { ProvidersPage } from "@/features/oidc/ProvidersPage";
+import { PreferencePage } from "@/features/preference/PreferencePage";
 import PublicSite from "@/features/public/PublicSite";
 import { RequestDetailPage } from "@/features/review/RequestDetailPage";
 import { ReviewWorkspace } from "@/features/review/ReviewWorkspace";
@@ -138,6 +142,7 @@ function App() {
 		["/admin/nodes", "保存ノード", HardDrive],
 		["/admin/tasks", "タスク", Workflow],
 		["/admin/users", "ユーザー管理", Users],
+		["/admin/oidc_providers", "OIDC設定", FaOpenid],
 		["/admin/audit", "操作履歴", ScrollText],
 	] as const;
 	const visibleLinks =
@@ -168,7 +173,6 @@ function App() {
 				<div className="login-shell">
 					<div className="login-form-wrap">
 						<form className="login-form" onSubmit={login}>
-							<span className="eyebrow"></span>
 							<h2>ログイン</h2>
 							<p>アカウント情報を入力してください。</p>
 							<label>
@@ -198,6 +202,14 @@ function App() {
 								<LockKeyhole size={15} /> 通信は暗号化されます
 							</div>
 						</form>
+						<div className="divider">または</div>
+						<OidcLoginCard
+							api={api}
+							notify={notify}
+							refresh={refresh}
+							busy={busy}
+							setBusy={setBusy}
+						/>
 					</div>
 					{toast && <div className="toast error">{toast}</div>}
 				</div>
@@ -409,8 +421,30 @@ function App() {
 								}
 							/>
 							<Route
+								path="/admin/oidc_providers"
+								element={
+									<ProvidersPage
+										api={api}
+										refresh={refresh}
+										notify={notify}
+										role={user.role}
+									/>
+								}
+							/>
+							<Route
 								path="/admin/audit"
 								element={<Audit api={api} refresh={refresh} />}
+							/>
+							<Route
+								path="/admin/preference"
+								element={
+									<PreferencePage
+										api={api}
+										refresh={refresh}
+										notify={notify}
+										role={user.role}
+									/>
+								}
 							/>
 							<Route
 								path="*"
