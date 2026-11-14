@@ -22,7 +22,7 @@ func (s *Server) listOidcProvidersPublic(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": data})
+	c.JSON(http.StatusOK, gin.H{"items": data})
 }
 
 func (s *Server) listOidcProviders(c *gin.Context) {
@@ -32,7 +32,7 @@ func (s *Server) listOidcProviders(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": data})
+	c.JSON(http.StatusOK, gin.H{"items": data})
 }
 
 func (s *Server) getOidcProvider(c *gin.Context) {

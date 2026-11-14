@@ -358,7 +358,7 @@ const identities = useData(
 	) : identities.error ? (
 		<p>連携アカウントの取得に失敗しました。</p>
 	) : identities.data?.data?.length ? (
-		identities.data.data.map((identity: {
+		identities.data.items.map((identity: {
 			id: string;
 			provider_id: string;
 			email: string;

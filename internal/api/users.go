@@ -406,7 +406,7 @@ func (s *Server) listUserOidcIdentities(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": identities,
+		"items": identities,
 	})
 }
 
