@@ -11,7 +11,6 @@ type CurrentUser = {
 	email: string;
 	display_name: string;
 	role: "admin" | "reviewer" | "viewer";
-	disabled: boolean;
 };
 
 export function PreferencePage({

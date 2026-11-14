@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -24,7 +25,7 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	query.SetDefault(db)
-	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{FrontendURL: "http://canonical.example:8080"}}
+	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{FrontendURL: "http://canonical.example:8080", SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
 	id, other := uuid.NewString(), uuid.NewString()
 	for _, row := range []model.OidcProvider{
 		{ID: id, DisplayName: "original", DiscoveryEndpoint: "https://issuer.example", ClientID: "client", ClientSecret: "keep-secret"},
@@ -54,7 +55,15 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 		if secret != "" {
 			expected = "replacement"
 		}
-		if row.ClientSecret != expected || row.DisplayName != "updated" {
+		stored := row.ClientSecret
+		if secret != "" {
+			var err error
+			stored, err = s.decryptSourcePassword(&row.ClientSecret)
+			if err != nil || row.ClientSecret == expected {
+				t.Fatal("secret was not encrypted")
+			}
+		}
+		if stored != expected || row.DisplayName != "updated" {
 			t.Fatalf("unexpected provider: %s", row.ID)
 		}
 	}
@@ -121,5 +130,68 @@ func TestSelfPasswordChangeRejectsConcurrentReset(t *testing.T) {
 	db.First(&current, "id = ?", user.ID)
 	if current.PasswordHash != string(resetHash) {
 		t.Fatal("concurrent password reset overwritten")
+	}
+}
+
+func TestSelfProfileUpdatePreservesAdministrativeFields(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{db: db, logger: slog.Default()}
+	for _, role := range []string{"admin", "reviewer", "viewer"} {
+		user := model.User{ID: uuid.NewString(), Email: role + "@example.test", DisplayName: "before", Role: role, PasswordHash: "unused"}
+		if err := db.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+		router := gin.New()
+		router.PUT("/:id", func(c *gin.Context) { c.Set("currentUser", user); s.updateUser(c) })
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/"+user.ID, strings.NewReader(`{"display_name":"after"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s profile update: %d %s", role, rec.Code, rec.Body.String())
+		}
+		var stored model.User
+		if err := db.First(&stored, "id = ?", user.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if stored.DisplayName != "after" || stored.Role != role || stored.DisabledAt != nil {
+			t.Fatal("profile update changed administrative fields")
+		}
+	}
+}
+
+func TestOidcProviderCreateEncryptsSecretAndHidesIt(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.OidcProvider{}, &model.AuditLog{}); err != nil {
+		t.Fatal(err)
+	}
+	query.SetDefault(db)
+	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
+	router := gin.New()
+	router.POST("/", func(c *gin.Context) { c.Set("currentUser", model.User{ID: uuid.NewString()}); s.createOidcProvider(c) })
+	router.GET("/:id", s.getOidcProvider)
+	router.GET("/", s.listOidcProviders)
+	secret := strings.Repeat("s", 255)
+	body, _ := json.Marshal(map[string]string{"display_name": "test", "discovery_endpoint": "https://issuer.example", "client_id": "test", "client_secret": secret})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body))))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var row model.OidcProvider
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	plain, err := s.decryptSourcePassword(&row.ClientSecret)
+	if err != nil || plain != secret || row.ClientSecret == secret {
+		t.Fatal("stored secret did not round trip through encryption")
+	}
+	for _, path := range []string{"/", "/" + row.ID} {
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "client_secret") || strings.Contains(rec.Body.String(), row.ClientSecret) {
+			t.Fatalf("unsafe provider response: %d", rec.Code)
+		}
 	}
 }

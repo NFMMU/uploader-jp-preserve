@@ -16,7 +16,7 @@ func (s *Server) oidcAuthenticate(c *gin.Context) {
 	frontPath := "login"
 
 	// oidc parse
-	data := oidc.Callback(c, s.cfg.FrontendURL, "authenticate")
+	data := oidc.Callback(c, s.cfg.FrontendURL, "authenticate", s.decryptSourcePassword)
 	if data == nil {
 		return
 	}

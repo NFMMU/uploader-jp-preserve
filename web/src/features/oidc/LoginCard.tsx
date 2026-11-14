@@ -15,6 +15,7 @@ export default function OidcLoginCard({
 	setBusy: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
 	const d = useData(api, "/auth/oidc/providers", refresh);
+	const providers = Array.isArray(d.data.items) ? d.data.items : [];
 	const onLoginClick = (id: string) => {
 		setBusy(true);
 		const baseURL = `${window.location.protocol}//${window.location.host}`;
@@ -26,14 +27,9 @@ export default function OidcLoginCard({
 			{d.error && <span>SSOの処理中にエラーが発生しました。</span>}
 			{d.data && (
 				<>
-					{(
-						d.data as {
-							id: string;
-							display_name: string;
-							service_icon: string;
-						}[]
-					).map((p) => (
+					{providers.map((p) => (
 						<button
+							key={p.id}
 							className="secondary wide"
 							disabled={busy}
 							onClick={() => onLoginClick(p.id)}

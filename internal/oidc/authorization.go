@@ -48,7 +48,7 @@ func AuthorizationRequest(c *gin.Context, baseURL string) {
 		return
 	}
 
-	providerData, err := OidcDiscovery(providerDbData.DiscoveryEndpoint)
+	providerData, err := OidcDiscovery(ctx, providerDbData.DiscoveryEndpoint)
 	if err != nil || providerData == nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return
@@ -61,11 +61,10 @@ func AuthorizationRequest(c *gin.Context, baseURL string) {
 	}
 
 	config := oauth2.Config{
-		ClientID:     providerDbData.ClientID,
-		ClientSecret: providerDbData.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  fmt.Sprintf("%s/api/v1/auth/oidc/callback/%s", baseURL, providerID),
-		Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
+		ClientID:    providerDbData.ClientID,
+		Endpoint:    provider.Endpoint(),
+		RedirectURL: fmt.Sprintf("%s/api/v1/auth/oidc/callback/%s", baseURL, providerID),
+		Scopes:      []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
 	}
 
 	state, err := randString(16)

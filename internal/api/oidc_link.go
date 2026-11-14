@@ -13,7 +13,7 @@ func (s *Server) oidcLink(c *gin.Context) {
 	baseURL := s.cfg.FrontendURL
 
 	// oidc parse
-	data := oidc.Callback(c, s.cfg.FrontendURL, "link")
+	data := oidc.Callback(c, s.cfg.FrontendURL, "link", s.decryptSourcePassword)
 	if data == nil {
 		return
 	}

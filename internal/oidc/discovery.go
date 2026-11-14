@@ -1,8 +1,10 @@
 package oidc
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 type OidcDiscoveryData struct {
@@ -17,8 +19,14 @@ type OidcDiscoveryData struct {
 	IdTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported" binding:"required"`
 }
 
-func OidcDiscovery(url string) (*OidcDiscoveryData, error) {
-	resp, err := http.Get(url)
+func OidcDiscovery(ctx context.Context, url string) (*OidcDiscoveryData, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

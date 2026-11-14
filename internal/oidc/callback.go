@@ -22,7 +22,7 @@ type OidcClaims struct {
 	PreferredUsername *string `json:"preferred_username" binding:"omitempty"`
 }
 
-func Callback(c *gin.Context, baseURL, mode string) *model.OidcIdentity {
+func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) (string, error)) *model.OidcIdentity {
 	ctx := c.Request.Context()
 	r := c.Request
 
@@ -57,7 +57,7 @@ func Callback(c *gin.Context, baseURL, mode string) *model.OidcIdentity {
 	}
 
 	// OIDCディスカバリ
-	providerData, err := OidcDiscovery(providerDbData.DiscoveryEndpoint)
+	providerData, err := OidcDiscovery(ctx, providerDbData.DiscoveryEndpoint)
 	if err != nil || providerData == nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
@@ -77,11 +77,10 @@ func Callback(c *gin.Context, baseURL, mode string) *model.OidcIdentity {
 	verifier := provider.Verifier(oidcConfig)
 
 	config := oauth2.Config{
-		ClientID:     providerDbData.ClientID,
-		ClientSecret: providerDbData.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  fmt.Sprintf("%s/api/v1/auth/oidc/callback/%s", baseURL, providerID),
-		Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
+		ClientID:    providerDbData.ClientID,
+		Endpoint:    provider.Endpoint(),
+		RedirectURL: fmt.Sprintf("%s/api/v1/auth/oidc/callback/%s", baseURL, providerID),
+		Scopes:      []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
 	}
 
 	// state検証
@@ -94,6 +93,13 @@ func Callback(c *gin.Context, baseURL, mode string) *model.OidcIdentity {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
 	}
+
+	clientSecret, err := decryptSecret(&providerDbData.ClientSecret)
+	if err != nil {
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
+		return nil
+	}
+	config.ClientSecret = clientSecret
 
 	// token取得
 	oauth2Token, err := config.Exchange(ctx, c.Query("code"))

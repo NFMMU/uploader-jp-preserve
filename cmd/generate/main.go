@@ -29,7 +29,7 @@ func main() {
 		FieldWithIndexTag: true,
 	})
 	generator.UseDB(db)
-	allModels := generator.GenerateAllTable()
+	allModels := generator.GenerateAllTable(gen.FieldJSONTag("client_secret", "-"))
 	generator.ApplyBasic(allModels...)
 	generator.Execute()
 	log.Println("GORM models and query code regenerated")

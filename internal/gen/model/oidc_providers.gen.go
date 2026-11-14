@@ -18,7 +18,7 @@ type OidcProvider struct {
 	DisplayName       string         `gorm:"column:display_name;type:character varying(255);not null" json:"display_name"`
 	DiscoveryEndpoint string         `gorm:"column:discovery_endpoint;type:character varying(255);not null" json:"discovery_endpoint"`
 	ClientID          string         `gorm:"column:client_id;type:character varying(255);not null" json:"client_id"`
-	ClientSecret      string         `gorm:"column:client_secret;type:character varying(255);not null" json:"client_secret"`
+	ClientSecret      string         `gorm:"column:client_secret;type:text;not null" json:"-"`
 	IsEnabled         bool           `gorm:"column:is_enabled;type:boolean;not null;index:idx_is_enabled,priority:1;default:true" json:"is_enabled"`
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at;type:timestamp with time zone;not null;default:now()" json:"updated_at"`

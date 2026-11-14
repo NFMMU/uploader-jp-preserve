@@ -22,7 +22,7 @@ table "oidc_providers" {
     null = false
   }
   column "client_secret" {
-    type = varchar(255)
+    type = text
     null = false
   }
   column "is_enabled" {

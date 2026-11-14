@@ -98,11 +98,16 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	oidcProviderQuery := query.OidcProvider
-	err := oidcProviderQuery.WithContext(c.Request.Context()).Create(&model.OidcProvider{
+	encrypted, err := s.encryptSourcePassword(req.ClientSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encrypt client secret"})
+		return
+	}
+	err = oidcProviderQuery.WithContext(c.Request.Context()).Create(&model.OidcProvider{
 		DisplayName:       req.DisplayName,
 		DiscoveryEndpoint: req.DiscoveryEndpoint,
 		ClientID:          req.ClientID,
-		ClientSecret:      req.ClientSecret,
+		ClientSecret:      *encrypted,
 		ServiceIcon:       req.ServiceIcon,
 		UpdatedAt:         time.Now(),
 	})
@@ -180,7 +185,16 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		"updated_at":         time.Now(),
 	}
 	if req.ClientSecret != nil {
-		updates["client_secret"] = *req.ClientSecret
+		encrypted, err := s.encryptSourcePassword(*req.ClientSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encrypt client secret"})
+			return
+		}
+		if encrypted == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "client_secret cannot be empty"})
+			return
+		}
+		updates["client_secret"] = *encrypted
 	}
 	result, err := oidcProviderQuery.WithContext(c.Request.Context()).
 		Where(oidcProviderQuery.ID.Eq(id), oidcProviderQuery.DeletedAt.IsNull()).Updates(updates)

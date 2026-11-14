@@ -119,7 +119,7 @@ func (s *Server) updateUser(c *gin.Context) {
 
 	// Role と Disabled の変更は admin のみ許可
 	if user.Role != "admin" {
-		if (req.Role != nil && *req.Role != target.Role) || *req.Disabled != (target.DisabledAt != nil) {
+		if (req.Role != nil && *req.Role != target.Role) || (req.Disabled != nil && *req.Disabled != (target.DisabledAt != nil)) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "only administrators can change role or disabled status"})
 			return
 		}
@@ -130,7 +130,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 
 	// 自分自身の管理者権限剥奪・無効化を禁止
-	if target.ID == user.ID && user.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || *req.Disabled) {
+	if target.ID == user.ID && user.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || (req.Disabled != nil && *req.Disabled)) {
 		c.JSON(http.StatusConflict, gin.H{"error": "cannot remove administrator access from or disable the current account"})
 		return
 	}
@@ -162,7 +162,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 
 		// 最終管理者の保護も、ロック取得後の状態を基準に判定する。
-		if lockedTarget.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || *req.Disabled) {
+		if lockedTarget.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || (req.Disabled != nil && *req.Disabled)) {
 			var activeAdmins []model.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Select("id").
@@ -179,14 +179,18 @@ func (s *Server) updateUser(c *gin.Context) {
 
 		now := time.Now().UTC()
 		updates := map[string]any{
-			"role":         req.Role,
 			"display_name": displayName,
-			"disabled_at":  nil,
 			"updated_at":   now,
 		}
 
-		if *req.Disabled {
-			updates["disabled_at"] = now
+		if req.Role != nil {
+			updates["role"] = *req.Role
+		}
+		if req.Disabled != nil {
+			updates["disabled_at"] = nil
+			if *req.Disabled {
+				updates["disabled_at"] = now
+			}
 		}
 
 		return tx.Model(&model.User{}).
@@ -222,10 +226,12 @@ func (s *Server) updateUser(c *gin.Context) {
 		target.Role = *req.Role
 	}
 	target.DisplayName = displayName
-	target.DisabledAt = nil
-	if *req.Disabled {
-		now := time.Now().UTC()
-		target.DisabledAt = &now
+	if req.Disabled != nil {
+		target.DisabledAt = nil
+		if *req.Disabled {
+			now := time.Now().UTC()
+			target.DisabledAt = &now
+		}
 	}
 
 	s.audit(c, &user, "user", target.ID, "user.update", "success", req.Reason)
