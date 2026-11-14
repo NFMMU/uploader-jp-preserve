@@ -14,7 +14,7 @@ type OidcDiscoveryData struct {
 	JwksURI                          string   `json:"jwks_uri" binding:"required"`
 	ResponseTypesSupported           []string `json:"response_types_supported" binding:"required"`
 	SubjectTypesSupported            []string `json:"subject_types_supported" binding:"required"`
-	IdTokenSigningAlgValuesSupported string   `json:"id_token_signing_alg_values_supported" binding:"required"`
+	IdTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported" binding:"required"`
 }
 
 func OidcDiscovery(url string) (*OidcDiscoveryData, error) {
