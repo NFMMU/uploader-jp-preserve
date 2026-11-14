@@ -27,7 +27,17 @@ func (s *Server) listOidcProvidersPublic(c *gin.Context) {
 
 func (s *Server) listOidcProviders(c *gin.Context) {
 	oidcProviderQuery := query.OidcProvider
-	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull()).Find()
+	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull()).
+		Select(
+			oidcProviderQuery.ID,
+			oidcProviderQuery.DisplayName,
+			oidcProviderQuery.DiscoveryEndpoint,
+			oidcProviderQuery.ClientID,
+			oidcProviderQuery.ServiceIcon,
+			oidcProviderQuery.IsEnabled,
+			oidcProviderQuery.CreatedAt,
+			oidcProviderQuery.UpdatedAt,
+		).Find()
 	if err != nil || data == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -42,7 +52,17 @@ func (s *Server) getOidcProvider(c *gin.Context) {
 		return
 	}
 	oidcProviderQuery := query.OidcProvider
-	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ID.Eq(id)).First()
+	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ID.Eq(id)).
+		Select(
+			oidcProviderQuery.ID,
+			oidcProviderQuery.DisplayName,
+			oidcProviderQuery.DiscoveryEndpoint,
+			oidcProviderQuery.ClientID,
+			oidcProviderQuery.ServiceIcon,
+			oidcProviderQuery.IsEnabled,
+			oidcProviderQuery.CreatedAt,
+			oidcProviderQuery.UpdatedAt,
+		).First()
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
