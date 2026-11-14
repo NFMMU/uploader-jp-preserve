@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -111,7 +110,8 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/public-requests/:id/ingest-upload", s.requireRoles("admin"), s.ingestPublicRequestUpload)
 	auth.POST("/admin/users", s.requireRoles("admin"), s.createUser)
 	auth.GET("/admin/users", s.requireRoles("admin"), s.listUsers)
-	auth.PATCH("/admin/users/:id", s.requireRoles("admin"), s.updateUser)
+	auth.PUT("/admin/users/:id", s.updateUser)
+	auth.PUT("/admin/users/:id/password", s.updatePassword)
 	auth.GET("/admin/audit-logs", s.requireRoles("admin"), s.listAuditLogs)
 	auth.GET("/admin/oidc_providers", s.requireRoles("admin"), s.listOidcProviders)
 	auth.POST("/admin/oidc_providers", s.requireRoles("admin"), s.createOidcProvider)
@@ -215,52 +215,4 @@ func (s *Server) requireRoles(roles ...string) gin.HandlerFunc {
 func (s *Server) me(c *gin.Context) {
 	user, _ := hooks.CurrentUser(c)
 	c.JSON(http.StatusOK, gin.H{"id": user.ID, "email": user.Email, "display_name": user.DisplayName, "role": user.Role, "created_at": user.CreatedAt})
-}
-
-func (s *Server) createUser(c *gin.Context) {
-	var req struct {
-		Email       string `json:"email" binding:"required,email,max=320"`
-		Password    string `json:"password" binding:"required,min=12,max=1024"`
-		DisplayName string `json:"display_name" binding:"required,min=1,max=120"`
-		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), and valid role are required"})
-		return
-	}
-	actor, _ := hooks.CurrentUser(c)
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
-		return
-	}
-	user := model.User{Email: strings.ToLower(strings.TrimSpace(req.Email)), PasswordHash: string(hash), DisplayName: strings.TrimSpace(req.DisplayName), Role: req.Role}
-	if err := s.db.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "user could not be created; email may already exist"})
-		return
-	}
-	s.audit(c, &actor, "user", user.ID, "user.create", "success", nil)
-	c.JSON(http.StatusCreated, gin.H{"id": user.ID, "email": user.Email, "display_name": user.DisplayName, "role": user.Role, "created_at": user.CreatedAt})
-}
-
-func (s *Server) listUsers(c *gin.Context) {
-	var users []model.User
-	if err := s.db.WithContext(c.Request.Context()).Select("id", "email", "display_name", "role", "disabled_at", "created_at", "updated_at").Order("created_at DESC").Limit(500).Find(&users).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list users"})
-		return
-	}
-	type userView struct {
-		ID          string     `json:"id"`
-		Email       string     `json:"email"`
-		DisplayName string     `json:"display_name"`
-		Role        string     `json:"role"`
-		DisabledAt  *time.Time `json:"disabled_at,omitempty"`
-		CreatedAt   time.Time  `json:"created_at"`
-		UpdatedAt   time.Time  `json:"updated_at"`
-	}
-	items := make([]userView, 0, len(users))
-	for _, user := range users {
-		items = append(items, userView{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Role: user.Role, DisabledAt: user.DisabledAt, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt})
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
 }
