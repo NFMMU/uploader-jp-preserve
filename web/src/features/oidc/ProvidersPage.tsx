@@ -108,7 +108,7 @@ export function ProvidersPage({
 									</td>
 									<td>
 										<span>
-											https://{hostname}/auth/oidc/callback/{x.id}
+											https://{hostname}/api/v1/auth/oidc/callback/{x.id}
 										</span>
 										<CopyEmail
 											label="URLを"
