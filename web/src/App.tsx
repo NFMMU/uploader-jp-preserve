@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { FaOpenid } from "react-icons/fa";
 import {
 	NavLink,
 	Route,
@@ -136,6 +137,7 @@ function App() {
 		["/admin/nodes", "保存ノード", HardDrive],
 		["/admin/tasks", "タスク", Workflow],
 		["/admin/users", "ユーザー管理", Users],
+		["/admin/oidc_providers", "OIDC設定", FaOpenid],
 		["/admin/audit", "操作履歴", ScrollText],
 	] as const;
 	const visibleLinks =
