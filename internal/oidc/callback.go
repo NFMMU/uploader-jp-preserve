@@ -41,8 +41,8 @@ func Callback(c *gin.Context, mode string) *model.OidcIdentity {
 	}
 
 	// プロバイダ設定の取得
-	providerID := c.Query("id")
-	if providerID != "" {
+	providerID := c.Param("id")
+	if providerID == "" {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
 	}
