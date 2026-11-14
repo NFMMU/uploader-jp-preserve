@@ -23,7 +23,7 @@ CREATE TABLE
     "id" uuid NOT NULL DEFAULT uuidv7 (),
     "issuer" CHARACTER VARYING(255) NOT NULL,
     "subject" CHARACTER VARYING(255) NOT NULL,
-    "email" VARYING (255) NOT NULL,
+    "email" CHARACTER VARYING(255) NOT NULL,
     "provider_id" uuid NOT NULL,
     "user_id" uuid NOT NULL,
     "created_at" timestamptz NOT NULL DEFAULT now (),
