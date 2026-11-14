@@ -6,6 +6,14 @@ import { Modal } from "@/components/common/Modal";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
+type CurrentUser = {
+	id: string;
+	email: string;
+	display_name: string;
+	role: "admin" | "reviewer" | "viewer";
+	disabled: boolean;
+};
+
 export function PreferencePage({
 	api,
 	refresh,
@@ -20,12 +28,11 @@ export function PreferencePage({
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/auth/oidc/providers", refresh + localRefresh);
 
-	const baseURL = `${window.location.protocol}://${window.location.host}`;
+	const baseURL = `${window.location.protocol}//${window.location.host}`;
 
 	// 基本情報
 	const [profile, setProfile] = useState({
 		display_name: "",
-		email: "",
 	});
 
 	// パスワード
@@ -35,24 +42,137 @@ export function PreferencePage({
 		confirm_password: "",
 	});
 
+	const [profileSaving, setProfileSaving] = useState(false);
+	const [passwordSaving, setPasswordSaving] = useState(false);
+
 	// 外部アカウント連携
 	const [modal, setModal] = useState(false);
-	const [provider, setProvider] = useState<string | undefined | null>();
+	const [provider, setProvider] = useState<string>("");
 
+	const me = useData(api, "/me", refresh);
+	const user = me.data?.data as CurrentUser | undefined;
+
+	// 基本情報更新
 	async function updateProfile(e: React.FormEvent) {
 		e.preventDefault();
+
+		if (!user || profileSaving) return;
+
+		const displayName = profile.display_name.trim();
+
+		if (!displayName) {
+			notify("表示名を入力してください。");
+			return;
+		}
+
+		if (displayName.length > 120) {
+			notify("表示名は120文字以内で入力してください。");
+			return;
+		}
+
+		setProfileSaving(true);
+
+		try {
+			await api(`/admin/users/${encodeURIComponent(user.id)}`, {
+				method: "PUT",
+				body: JSON.stringify({
+					role: user.role,
+					disabled: user.disabled,
+					display_name: displayName,
+				}),
+			});
+
+			setLocalRefresh((v) => v + 1);
+
+			setProfile({
+				display_name: displayName,
+			});
+
+			notify("基本情報を更新しました。");
+		} catch (error) {
+			notify(
+				error instanceof Error
+					? error.message
+					: "基本情報の更新に失敗しました。",
+			);
+		} finally {
+			setProfileSaving(false);
+		}
 	}
 
+	// パスワード変更
 	async function updatePassword(e: React.FormEvent) {
 		e.preventDefault();
+
+		if (!user || passwordSaving) return;
+
+		const { current_password, new_password, confirm_password } = password;
+
+		if (Array.from(new_password).length < 12) {
+			notify("新しいパスワードは12文字以上にしてください。");
+			return;
+		}
+
+		if (new TextEncoder().encode(new_password).length > 72) {
+			notify("新しいパスワードは72バイト以内にしてください。");
+			return;
+		}
+
+		if (new_password !== confirm_password) {
+			notify("新しいパスワードと確認用パスワードが一致しません。");
+			return;
+		}
+
+		if (current_password === new_password) {
+			notify("現在のパスワードとは異なるパスワードを設定してください。");
+			return;
+		}
+
+		setPasswordSaving(true);
+
+		try {
+			await api(`/admin/users/${encodeURIComponent(user.id)}/password`, {
+				method: "PUT",
+				body: JSON.stringify({
+					current_password,
+					new_password,
+					confirm_password,
+				}),
+			});
+
+			setPassword({
+				current_password: "",
+				new_password: "",
+				confirm_password: "",
+			});
+
+			notify("パスワードを変更しました。");
+		} catch (error) {
+			notify(
+				error instanceof Error
+					? error.message
+					: "パスワードの変更に失敗しました。",
+			);
+		} finally {
+			setPasswordSaving(false);
+		}
 	}
 
+	// 外部アカウント連携
 	async function linkAccount(e: React.FormEvent) {
 		e.preventDefault();
-		window.location.href = `${baseURL}/api/v1/auth/oidc/${provider}?mode=link`;
+
+		if (!provider) {
+			notify("連携先を選択してください。");
+			return;
+		}
+
+		window.location.href = `${baseURL}/api/v1/auth/oidc/${encodeURIComponent(provider)}?mode=link`;
 	}
 
-	async function unlinkAccount(id: string) {}
+	async function unlinkAccount(id: string) {
+		// TODO: 連携解除API実装後に追加
+	}
 
 	return (
 		<>
@@ -66,38 +186,47 @@ export function PreferencePage({
 					level="h2"
 				/>
 
-				<form className="form-stack" onSubmit={updateProfile}>
-					<label>
-						表示名
-						<input
-							required
-							value={profile.display_name}
-							onChange={(e) =>
-								setProfile({ ...profile, display_name: e.target.value })
-							}
-							placeholder="表示名を入力"
-						/>
-					</label>
+				{me.loading ? (
+					<p>ユーザー情報を読み込んでいます...</p>
+				) : me.error ? (
+					<p>ユーザー情報を取得できませんでした。</p>
+				) : user ? (
+					<form className="form-stack" onSubmit={updateProfile}>
+						<label>
+							表示名
+							<input
+								required
+								maxLength={120}
+								value={profile.display_name}
+								onChange={(e) =>
+									setProfile({
+										...profile,
+										display_name: e.target.value,
+									})
+								}
+								placeholder="表示名を入力"
+							/>
+						</label>
 
-					<label>
-						メールアドレス
-						<input
-							required
-							type="email"
-							value={profile.email}
-							onChange={(e) =>
-								setProfile({ ...profile, email: e.target.value })
-							}
-							placeholder="example@example.com"
-						/>
-					</label>
+						<label>
+							メールアドレス
+							<input type="email" value={user.email} readOnly disabled />
+							<small>メールアドレスの変更には対応していません。</small>
+						</label>
 
-					<div className="modal-actions">
-						<button type="submit" className="primary">
-							基本情報を保存
-						</button>
-					</div>
-				</form>
+						<div className="modal-actions">
+							<button
+								type="submit"
+								className="primary"
+								disabled={profileSaving}
+							>
+								{profileSaving ? "保存中..." : "基本情報を保存"}
+							</button>
+						</div>
+					</form>
+				) : (
+					<p>ユーザー情報を取得できませんでした。</p>
+				)}
 			</section>
 
 			{/* セキュリティ設定 */}
@@ -141,6 +270,7 @@ export function PreferencePage({
 								required
 								type="password"
 								autoComplete="new-password"
+								minLength={12}
 								value={password.new_password}
 								onChange={(e) =>
 									setPassword({
@@ -149,6 +279,7 @@ export function PreferencePage({
 									})
 								}
 							/>
+							<small>12文字以上、72バイト以内で入力してください。</small>
 						</label>
 
 						<label>
@@ -168,8 +299,12 @@ export function PreferencePage({
 						</label>
 
 						<div className="modal-actions">
-							<button type="submit" className="primary">
-								パスワードを変更
+							<button
+								type="submit"
+								className="primary"
+								disabled={passwordSaving || !user}
+							>
+								{passwordSaving ? "変更中..." : "パスワードを変更"}
 							</button>
 						</div>
 					</form>
@@ -186,8 +321,6 @@ export function PreferencePage({
 					</div>
 
 					<div className="preference-provider-list">
-						{/* TODO: 連携済みアカウントを表示 */}
-
 						<div className="preference-empty">
 							<p>連携されている外部アカウントはありません。</p>
 						</div>
@@ -219,16 +352,14 @@ export function PreferencePage({
 							) : (
 								<select
 									required
-									defaultValue=""
-									onChange={(e) => {
-										setProvider(e.target.value);
-									}}
+									value={provider}
+									onChange={(e) => setProvider(e.target.value)}
 								>
 									<option value="" disabled>
 										連携先を選択
 									</option>
 									{(
-										d.data.data as {
+										(d.data?.data ?? []) as {
 											id: string;
 											service_icon?: string;
 											display_name: string;
@@ -250,7 +381,11 @@ export function PreferencePage({
 							>
 								キャンセル
 							</button>
-							<button type="submit" className="primary">
+							<button
+								type="submit"
+								className="primary"
+								disabled={!provider || d.loading || !!d.error}
+							>
 								連携する
 							</button>
 						</div>
