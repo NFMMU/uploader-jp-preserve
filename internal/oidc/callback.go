@@ -6,10 +6,11 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
+
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/gen/query"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
-	"golang.org/x/oauth2"
 )
 
 type OidcClaims struct {

@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
-	"github.com/nfmmu/uploader-archive/internal/hooks"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 func (s *Server) listUsers(c *gin.Context) {
@@ -139,7 +140,6 @@ func (s *Server) updateUser(c *gin.Context) {
 			Where("id = ?", target.ID).
 			Updates(updates).Error
 	})
-
 	if err != nil {
 		if errors.Is(err, errLastActiveAdmin) {
 			c.JSON(http.StatusConflict, gin.H{"error": "cannot disable or demote the last active administrator"})

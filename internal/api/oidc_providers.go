@@ -1,14 +1,16 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/gen/query"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
-	"gorm.io/gorm"
 )
 
 func (s *Server) listOidcProvidersPublic(c *gin.Context) {
@@ -42,7 +44,7 @@ func (s *Server) getOidcProvider(c *gin.Context) {
 	oidcProviderQuery := query.OidcProvider
 	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNotNull(), oidcProviderQuery.ID.Eq(id)).First()
 	if err != nil || data == nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -74,7 +76,7 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 		UpdatedAt:         time.Now(),
 	})
 	if err != nil {
-		if err == gorm.ErrDuplicatedKey {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			c.JSON(http.StatusConflict, gin.H{"error": "this provider is already registered"})
 			return
 		}
@@ -112,7 +114,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 	oidcProviderQuery := query.OidcProvider
 	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNotNull(), oidcProviderQuery.ID.Eq(id)).First()
 	if err != nil || data == nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -154,14 +156,14 @@ func (s *Server) deleteOidcProvider(c *gin.Context) {
 	oidcProviderQuery := query.OidcProvider
 	result, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.Null(), oidcProviderQuery.ID.Eq(id)).Delete(nil)
 	if err != nil || result.Error != nil {
-		if err == gorm.ErrRecordNotFound || result.Error == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	if result.RowsAffected < 1 {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

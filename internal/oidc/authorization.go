@@ -6,8 +6,9 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
-	"github.com/nfmmu/uploader-archive/internal/gen/query"
 	"golang.org/x/oauth2"
+
+	"github.com/nfmmu/uploader-archive/internal/gen/query"
 )
 
 type OidcRequestMode string
