@@ -71,8 +71,8 @@ func (s *Server) createUser(c *gin.Context) {
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
-		Role        string  `json:"role" binding:"required,oneof=admin reviewer viewer"`
-		Disabled    *bool   `json:"disabled" binding:"required"`
+		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer"`
+		Disabled    *bool   `json:"disabled" binding:"omitempty"`
 		DisplayName string  `json:"display_name" binding:"required,min=1,max=120"`
 		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
 	}
@@ -99,10 +99,27 @@ func (s *Server) updateUser(c *gin.Context) {
 		notFoundOrError(c, err, "user")
 		return
 	}
+	isSelf := target.ID == user.ID
+
+	// 他ユーザーの更新はadminのみ許可
+	if !isSelf && user.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "only administrators can edit other users",
+		})
+		return
+	}
+
+	// 他ユーザーの管理項目変更ではroleとdisabledを必須にする
+	if !isSelf && (req.Role == nil || req.Disabled == nil) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "role and disabled are required when editing another user",
+		})
+		return
+	}
 
 	// Role と Disabled の変更は admin のみ許可
 	if user.Role != "admin" {
-		if req.Role != target.Role || *req.Disabled != (target.DisabledAt != nil) {
+		if (req.Role != nil && *req.Role != target.Role) || *req.Disabled != (target.DisabledAt != nil) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "only administrators can change role or disabled status"})
 			return
 		}
@@ -113,7 +130,7 @@ func (s *Server) updateUser(c *gin.Context) {
 	}
 
 	// 自分自身の管理者権限剥奪・無効化を禁止
-	if target.ID == user.ID && user.Role == "admin" && (req.Role != "admin" || *req.Disabled) {
+	if target.ID == user.ID && user.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || *req.Disabled) {
 		c.JSON(http.StatusConflict, gin.H{"error": "cannot remove administrator access from or disable the current account"})
 		return
 	}
@@ -145,7 +162,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		}
 
 		// 最終管理者の保護も、ロック取得後の状態を基準に判定する。
-		if lockedTarget.Role == "admin" && (req.Role != "admin" || *req.Disabled) {
+		if lockedTarget.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || *req.Disabled) {
 			var activeAdmins []model.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 				Select("id").
@@ -201,7 +218,9 @@ func (s *Server) updateUser(c *gin.Context) {
 		return
 	}
 
-	target.Role = req.Role
+	if req.Role != nil {
+		target.Role = *req.Role
+	}
 	target.DisplayName = displayName
 	target.DisabledAt = nil
 	if *req.Disabled {

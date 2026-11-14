@@ -92,8 +92,6 @@ export function PreferencePage({
 			await api(`/admin/users/${encodeURIComponent(user.id)}`, {
 				method: "PUT",
 				body: JSON.stringify({
-					role: user.role,
-					disabled: false,
 					display_name: displayName,
 				}),
 			});
