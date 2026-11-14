@@ -969,12 +969,12 @@ footer > span {
 	width: 100%;
 	max-width: 360px;
 	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
 }
 .login-form {
 	width: 100%;
-}
-.login-form .eyebrow {
-	display: none;
 }
 .login-form h2 {
 	font-size: 20px;
@@ -2731,4 +2731,22 @@ footer > span {
 		opacity: 1;
 		transform: translateY(0) scale(1) rotate(0deg);
 	}
+}
+
+.divider {
+	display: flex;
+	align-items: center;
+	color: #666;
+}
+.divider::before,
+.divider::after {
+	content: "";
+	flex: 1;
+	border-top: 1px solid #ccc;
+}
+.divider::before {
+	margin-right: 15px;
+}
+.divider::after {
+	margin-left: 15px;
 }
