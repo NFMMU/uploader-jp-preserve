@@ -16,5 +16,5 @@ func (s *Server) oidcCallback(c *gin.Context) {
 	}
 	if mode.Value != "authenticate" && mode.Value != "link" {
 	}
-	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/api/v1/auth/oidc/%s/%s?code=%s", baseURL, mode.Value, c.Param("id"), c.Query("code")))
+	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/api/v1/auth/oidc/%s/%s?%s", baseURL, mode.Value, c.Param("id"), c.Request.URL.RawQuery))
 }
