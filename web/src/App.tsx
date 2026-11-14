@@ -67,7 +67,9 @@ function App() {
 					await api("/delete-cookie");
 				} finally {
 					setUser(null);
-					nav("/admin/login");
+					if (window.location.pathname != "/admin/login") {
+						nav("/admin/login");
+					}
 					throw new Error(data.error || data.message || `HTTP ${r.status}`);
 				}
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
