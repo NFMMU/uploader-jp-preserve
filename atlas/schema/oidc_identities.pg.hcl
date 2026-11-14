@@ -17,6 +17,14 @@ table "oidc_identities" {
     type = uuid
     null = false
   }
+  column "preferred_username" {
+    type = varchar(255)
+    null = true
+  }
+  column "picture" {
+    type = varchar(255)
+    null = true
+  }
   column "provider_id" {
     type = uuid
     null = false
