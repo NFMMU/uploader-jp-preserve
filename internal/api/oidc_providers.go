@@ -27,7 +27,7 @@ func (s *Server) listOidcProvidersPublic(c *gin.Context) {
 
 func (s *Server) listOidcProviders(c *gin.Context) {
 	oidcProviderQuery := query.OidcProvider
-	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNotNull()).Find()
+	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull()).Find()
 	if err != nil || data == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -42,7 +42,7 @@ func (s *Server) getOidcProvider(c *gin.Context) {
 		return
 	}
 	oidcProviderQuery := query.OidcProvider
-	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNotNull(), oidcProviderQuery.ID.Eq(id)).First()
+	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ID.Eq(id)).First()
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
@@ -112,7 +112,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	oidcProviderQuery := query.OidcProvider
-	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNotNull(), oidcProviderQuery.ID.Eq(id)).First()
+	data, err := oidcProviderQuery.WithContext(c.Request.Context()).Where(oidcProviderQuery.DeletedAt.IsNull(), oidcProviderQuery.ID.Eq(id)).First()
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})

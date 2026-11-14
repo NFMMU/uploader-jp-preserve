@@ -17,11 +17,7 @@ func AuthorizationRequest(c *gin.Context) {
 	ctx := c.Request.Context()
 	baseURL := fmt.Sprintf("%s://%s", c.Request.URL.Scheme, c.Request.URL.Host)
 
-	mode := c.Params.ByName("mode")
-	if mode != "" {
-		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/login?error=oidc", baseURL))
-		return
-	}
+	mode := c.Query("mode")
 
 	var frontPath string
 	switch mode {
