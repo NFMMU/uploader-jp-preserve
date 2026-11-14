@@ -5,9 +5,13 @@ table "oidc_providers" {
     null = false
     default = sql("uuidv7()")
   }
-  column "name" {
+  column "display_name" {
     type = varchar(31)
     null = false
+  }
+  column "service_icon" {
+    type = varchar(255)
+    null = true
   }
   column "discovery_endpoint" {
     type = varchar(255)

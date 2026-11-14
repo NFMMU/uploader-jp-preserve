@@ -15,7 +15,7 @@ const TableNameOidcProvider = "oidc_providers"
 // OidcProvider mapped from table <oidc_providers>
 type OidcProvider struct {
 	ID                string         `gorm:"column:id;type:uuid;primaryKey;default:uuidv7()" json:"id"`
-	Name              string         `gorm:"column:name;type:character varying(31);not null" json:"name"`
+	DisplayName       string         `gorm:"column:display_name;type:character varying(31);not null" json:"display_name"`
 	DiscoveryEndpoint string         `gorm:"column:discovery_endpoint;type:character varying(255);not null" json:"discovery_endpoint"`
 	ClientID          string         `gorm:"column:client_id;type:character varying(255);not null" json:"client_id"`
 	ClientSecret      string         `gorm:"column:client_secret;type:character varying(255);not null" json:"client_secret"`
@@ -23,6 +23,7 @@ type OidcProvider struct {
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at;type:timestamp with time zone;not null;default:now()" json:"updated_at"`
 	DeletedAt         gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp with time zone" json:"deleted_at"`
+	ServiceIcon       *string        `gorm:"column:service_icon;type:character varying(255)" json:"service_icon"`
 }
 
 // TableName OidcProvider's table name

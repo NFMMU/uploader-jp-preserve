@@ -1,4 +1,4 @@
-h1:ZyKB1BXUcEDjRt4w0qyAcQxdEzNcwjwApJlPX3M0Wis=
+h1:nkBY/rXR2kTj/PNpyKl2aw5uKyY7RNeA2woiRAlcEF0=
 20261023000000_initial.sql h1:Y6/tsH5XjbWC/RHVyTzBBcUvJUnghkptH5qhp0wHavk=
 20261023010000_mvp2_node_agent.sql h1:IFrAtyvLVhZZW0yT0gBuL0m7AyX0WSbnLT9+/CX0Ax8=
 20261023020000_mvp3_replication.sql h1:w/fesKmj/1CDPIOCM0BM4+CV659OrM7t7E/ef/FRqa8=
@@ -14,3 +14,4 @@ h1:ZyKB1BXUcEDjRt4w0qyAcQxdEzNcwjwApJlPX3M0Wis=
 20261028121053_baseline.sql h1:ptzMCX68+rBuSRf4bByHzj1DQPlc3roJGhrlKc4O5Zk=
 20261103005928_case_insensitive.sql h1:r1too9S6xOqXJ3csjrmMGmFHyvI6aTSE5Zh0ildbYFc=
 20261113154117_add_oidc.sql h1:AbMdJMqa94VkVzV4idE0TILhle89PLNXAhFV9IhBvMc=
+20261113162321_add_service_icon.sql h1:Z5KQGnNn2ojNps2KDDTpC17FXK1wv0Id74r0zjAjERc=

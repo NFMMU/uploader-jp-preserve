@@ -29,7 +29,7 @@ func newOidcProvider(db *gorm.DB, opts ...gen.DOOption) oidcProvider {
 	tableName := _oidcProvider.oidcProviderDo.TableName()
 	_oidcProvider.ALL = field.NewAsterisk(tableName)
 	_oidcProvider.ID = field.NewString(tableName, "id")
-	_oidcProvider.Name = field.NewString(tableName, "name")
+	_oidcProvider.DisplayName = field.NewString(tableName, "display_name")
 	_oidcProvider.DiscoveryEndpoint = field.NewString(tableName, "discovery_endpoint")
 	_oidcProvider.ClientID = field.NewString(tableName, "client_id")
 	_oidcProvider.ClientSecret = field.NewString(tableName, "client_secret")
@@ -37,6 +37,7 @@ func newOidcProvider(db *gorm.DB, opts ...gen.DOOption) oidcProvider {
 	_oidcProvider.CreatedAt = field.NewTime(tableName, "created_at")
 	_oidcProvider.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_oidcProvider.DeletedAt = field.NewField(tableName, "deleted_at")
+	_oidcProvider.ServiceIcon = field.NewString(tableName, "service_icon")
 
 	_oidcProvider.fillFieldMap()
 
@@ -48,7 +49,7 @@ type oidcProvider struct {
 
 	ALL               field.Asterisk
 	ID                field.String
-	Name              field.String
+	DisplayName       field.String
 	DiscoveryEndpoint field.String
 	ClientID          field.String
 	ClientSecret      field.String
@@ -56,6 +57,7 @@ type oidcProvider struct {
 	CreatedAt         field.Time
 	UpdatedAt         field.Time
 	DeletedAt         field.Field
+	ServiceIcon       field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -73,7 +75,7 @@ func (o oidcProvider) As(alias string) *oidcProvider {
 func (o *oidcProvider) updateTableName(table string) *oidcProvider {
 	o.ALL = field.NewAsterisk(table)
 	o.ID = field.NewString(table, "id")
-	o.Name = field.NewString(table, "name")
+	o.DisplayName = field.NewString(table, "display_name")
 	o.DiscoveryEndpoint = field.NewString(table, "discovery_endpoint")
 	o.ClientID = field.NewString(table, "client_id")
 	o.ClientSecret = field.NewString(table, "client_secret")
@@ -81,6 +83,7 @@ func (o *oidcProvider) updateTableName(table string) *oidcProvider {
 	o.CreatedAt = field.NewTime(table, "created_at")
 	o.UpdatedAt = field.NewTime(table, "updated_at")
 	o.DeletedAt = field.NewField(table, "deleted_at")
+	o.ServiceIcon = field.NewString(table, "service_icon")
 
 	o.fillFieldMap()
 
@@ -109,9 +112,9 @@ func (o *oidcProvider) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (o *oidcProvider) fillFieldMap() {
-	o.fieldMap = make(map[string]field.Expr, 9)
+	o.fieldMap = make(map[string]field.Expr, 10)
 	o.fieldMap["id"] = o.ID
-	o.fieldMap["name"] = o.Name
+	o.fieldMap["display_name"] = o.DisplayName
 	o.fieldMap["discovery_endpoint"] = o.DiscoveryEndpoint
 	o.fieldMap["client_id"] = o.ClientID
 	o.fieldMap["client_secret"] = o.ClientSecret
@@ -119,6 +122,7 @@ func (o *oidcProvider) fillFieldMap() {
 	o.fieldMap["created_at"] = o.CreatedAt
 	o.fieldMap["updated_at"] = o.UpdatedAt
 	o.fieldMap["deleted_at"] = o.DeletedAt
+	o.fieldMap["service_icon"] = o.ServiceIcon
 }
 
 func (o oidcProvider) clone(db *gorm.DB) oidcProvider {
