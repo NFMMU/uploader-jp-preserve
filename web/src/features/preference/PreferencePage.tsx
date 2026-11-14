@@ -93,7 +93,7 @@ const identities = useData(
 				method: "PUT",
 				body: JSON.stringify({
 					role: user.role,
-					disabled: user.disabled,
+					disabled: false,
 					display_name: displayName,
 				}),
 			});
