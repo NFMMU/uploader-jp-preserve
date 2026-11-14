@@ -1,4 +1,4 @@
-import { Plus, Link2,KeyRound } from "lucide-react";
+import { KeyRound, Link2, Plus } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Heading } from "@/components/common/Heading";
@@ -18,7 +18,9 @@ export function PreferencePage({
 	role: any;
 }) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/admin/oidc_providers", refresh + localRefresh);
+	const d = useData(api, "/auth/oidc/providers", refresh + localRefresh);
+
+	const baseURL = `${window.location.protocol}://${window.location.host}`;
 
 	// 基本情報
 	const [profile, setProfile] = useState({
@@ -35,13 +37,7 @@ export function PreferencePage({
 
 	// 外部アカウント連携
 	const [modal, setModal] = useState(false);
-	const [form, setForm] = useState({
-		display_name: "",
-		service_icon: "",
-		discovery_endpoint: "",
-		client_id: "",
-		client_secret: "",
-	});
+	const [provider, setProvider] = useState<string | undefined | null>();
 
 	async function updateProfile(e: React.FormEvent) {
 		e.preventDefault();
@@ -51,17 +47,16 @@ export function PreferencePage({
 		e.preventDefault();
 	}
 
-	async function linkAccount() {}
+	async function linkAccount(e: React.FormEvent) {
+		e.preventDefault();
+		window.location.href = `${baseURL}/api/v1/auth/oidc/${provider}?mode=link`;
+	}
 
 	async function unlinkAccount(id: string) {}
 
 	return (
 		<>
-			<Heading
-				eyebrow=""
-				title="個人設定"
-				desc="アカウントの各種設定。"
-			/>
+			<Heading eyebrow="" title="個人設定" desc="アカウントの各種設定。" />
 
 			{/* 基本情報 */}
 			<section>
@@ -115,7 +110,7 @@ export function PreferencePage({
 
 				{/* パスワード変更 */}
 				<div className="preference-section">
-					<div >
+					<div>
 						<KeyRound size={20} />
 						<div>
 							<h3>パスワード変更</h3>
@@ -182,13 +177,11 @@ export function PreferencePage({
 
 				{/* 外部アカウント連携 */}
 				<div className="preference-section">
-					<div >
+					<div>
 						<Link2 size={20} />
 						<div>
 							<h3>外部アカウント連携</h3>
-							<p>
-								外部の認証プロバイダーとアカウントを連携します。
-							</p>
+							<p>外部の認証プロバイダーとアカウントを連携します。</p>
 						</div>
 					</div>
 
@@ -215,23 +208,38 @@ export function PreferencePage({
 
 			{/* 外部アカウント連携モーダル */}
 			{modal && (
-				<Modal
-					title="外部アカウントを連携"
-					close={() => setModal(false)}
-				>
+				<Modal title="外部アカウントを連携" close={() => setModal(false)}>
 					<form className="form-stack" onSubmit={linkAccount}>
 						<label>
 							連携先
-							<select
-								required
-								defaultValue=""
-								onChange={() => {}}
-							>
-								<option value="" disabled>
-									連携先を選択
-								</option>
-								{/* TODO: 利用可能なプロバイダー */}
-							</select>
+							{d.loading ? (
+								<div>ロード中...</div>
+							) : d.error ? (
+								<div>エラーが発生しました。</div>
+							) : (
+								<select
+									required
+									defaultValue=""
+									onChange={(e) => {
+										setProvider(e.target.value);
+									}}
+								>
+									<option value="" disabled>
+										連携先を選択
+									</option>
+									{(
+										d.data.data as {
+											id: string;
+											service_icon?: string;
+											display_name: string;
+										}[]
+									).map((p) => (
+										<option key={p.id} value={p.id}>
+											{p.display_name}
+										</option>
+									))}
+								</select>
+							)}
 						</label>
 
 						<div className="modal-actions">

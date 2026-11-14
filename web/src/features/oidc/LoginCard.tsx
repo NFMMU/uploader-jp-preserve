@@ -14,10 +14,11 @@ export default function OidcLoginCard({
 	busy: boolean;
 	setBusy: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
-	const d = useData(api, "/auth/providers", refresh);
+	const d = useData(api, "/auth/oidc/providers", refresh);
 	const onLoginClick = (id: string) => {
-    setBusy(true);
-    // modeはauthenticate
+		setBusy(true);
+		const baseURL = `${window.location.protocol}://${window.location.host}`;
+		window.location.href = `${baseURL}/api/v1/auth/oidc/${id}?mode=authenticate`;
 	};
 	return (
 		<div>
