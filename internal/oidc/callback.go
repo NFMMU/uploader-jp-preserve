@@ -160,7 +160,7 @@ func linkOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, fron
 	err := oidcIdentityQuery.WithContext(c.Request.Context()).Create(&model.OidcIdentity{
 		ProviderID:        providerID,
 		Issuer:            data.Issuer,
-		Subject:           data.Issuer,
+		Subject:           data.Subject,
 		Email:             data.Email,
 		UserID:            user.ID,
 		PreferredUsername: data.PreferredUsername,
