@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 const (
@@ -320,7 +321,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node id"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Table("node_enrollment_requests").Where("node_id = ?", id).Delete(nil)
 		if result.Error != nil {
@@ -530,7 +531,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 
 func (s *Server) clearFailedTasks(c *gin.Context) {
 	var affectedCount int64
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where(model.Task{
 			Status: "failed",
@@ -642,7 +643,7 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create preservation tasks"})
 		return false
 	}
-	actor, hasActor := currentUser(c)
+	actor, hasActor := hooks.CurrentUser(c)
 	var actorPtr *model.User
 	if hasActor {
 		actorPtr = &actor
@@ -702,7 +703,7 @@ func isRetryRejection(err error) bool {
 func (s *Server) retryAll(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	actor, ok := currentUser(c)
+	actor, ok := hooks.CurrentUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "unauthorized",
@@ -1027,7 +1028,7 @@ func (s *Server) retryTask(c *gin.Context) {
 		return
 	}
 
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 
 	if err := s.retryFailedTask(c.Request.Context(), taskID, actor); err != nil {
 		switch {

@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 var errDuplicateSourceURL = errors.New("source URL has already been requested or catalogued")
@@ -303,7 +304,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		}
 	}
 
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "url_collection", "batch", "url_collection.scan", "success", new(fmt.Sprintf("seeds=%d pages=%d candidates=%d created=%d duplicates=%d failed=%d", len(seeds), pagesScanned, len(candidates), created, duplicates, failed)))
 	c.JSON(http.StatusOK, gin.H{
 		"seed_count": len(seeds), "pages_scanned": pagesScanned, "candidate_count": len(candidates),

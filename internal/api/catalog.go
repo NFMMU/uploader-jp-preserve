@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 var preservationStatuses = map[string]bool{
@@ -77,7 +78,7 @@ func (s *Server) createArtifact(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
 	c.JSON(http.StatusCreated, artifact)
 }
@@ -156,7 +157,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
 	c.JSON(http.StatusCreated, file)
 }
@@ -308,7 +309,7 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		notFoundOrError(c, err, "file object")
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if req.Representative != nil {
 		var reviewer model.User
 		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
@@ -393,7 +394,7 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 			return
 		}
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update publication flag"})
 		return
@@ -415,7 +416,7 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
 	if format == "json" {
 		c.JSON(http.StatusOK, gin.H{"artifacts": artifacts, "files": files, "exported_at": time.Now().UTC()})

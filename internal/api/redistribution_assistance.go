@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 const maxPublicIntakeFileBytes int64 = 100 << 20
@@ -378,6 +379,6 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		}
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "public_request", request.ID, "public_request.upload_ingest.queued", "success", new("Permission checked by operator before ingest"))
 }
