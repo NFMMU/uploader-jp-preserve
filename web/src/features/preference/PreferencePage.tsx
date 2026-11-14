@@ -1,6 +1,6 @@
 import { KeyRound, Link2, Plus } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Heading } from "@/components/common/Heading";
 import { Modal } from "@/components/common/Modal";
 import { useData } from "@/hooks/useData";
@@ -51,6 +51,22 @@ export function PreferencePage({
 
 	const me = useData(api, "/me", refresh);
 	const user = me.data?.data as CurrentUser | undefined;
+
+	useEffect(() => {
+	if (!user) return;
+
+	setProfile({
+		display_name: user.display_name,
+	});
+}, [user?.id, user?.display_name]);
+
+const identities = useData(
+	api,
+	user?.id
+		? `/users/${encodeURIComponent(user.id)}/oidc_identities`
+		: "",
+	refresh + localRefresh,
+);
 
 	// 基本情報更新
 	async function updateProfile(e: React.FormEvent) {
@@ -170,9 +186,25 @@ export function PreferencePage({
 		window.location.href = `${baseURL}/api/v1/auth/oidc/${encodeURIComponent(provider)}?mode=link`;
 	}
 
-	async function unlinkAccount(id: string) {
-		// TODO: 連携解除API実装後に追加
+	async function unlinkAccount(identityId: string) {
+	try {
+		await api(
+			`/users/${encodeURIComponent(user!.id)}/oidc_identities/${encodeURIComponent(identityId)}`,
+			{
+				method: "DELETE",
+			},
+		);
+
+		notify("外部アカウントの連携を解除しました。");
+		setLocalRefresh((v) => v + 1);
+	} catch (error) {
+		notify(
+			error instanceof Error
+				? error.message
+				: "連携解除に失敗しました。",
+		);
 	}
+}
 
 	return (
 		<>
@@ -321,10 +353,41 @@ export function PreferencePage({
 					</div>
 
 					<div className="preference-provider-list">
-						<div className="preference-empty">
-							<p>連携されている外部アカウントはありません。</p>
-						</div>
-					</div>
+	{identities.loading ? (
+		<p>読み込み中...</p>
+	) : identities.error ? (
+		<p>連携アカウントの取得に失敗しました。</p>
+	) : identities.data?.data?.length ? (
+		identities.data.data.map((identity: {
+			id: string;
+			provider_id: string;
+			email: string;
+			preferred_username?: string;
+			picture?: string;
+		}) => (
+			<div key={identity.id} className="preference-provider">
+				<div>
+					<strong>
+						{identity.preferred_username || identity.email}
+					</strong>
+					<p>{identity.email}</p>
+				</div>
+
+				<button
+					type="button"
+					className="secondary"
+					onClick={() => unlinkAccount(identity.id)}
+				>
+					連携解除
+				</button>
+			</div>
+		))
+	) : (
+		<div className="preference-empty">
+			<p>連携されている外部アカウントはありません。</p>
+		</div>
+	)}
+</div>
 
 					<div className="modal-actions">
 						<button

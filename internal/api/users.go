@@ -65,10 +65,10 @@ func (s *Server) createUser(c *gin.Context) {
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
-		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer"`
-		Disabled    *bool  `json:"disabled" binding:"required"`
-		DisplayName string `json:"display_name" binding:"required,min=1,max=120"`
-		Reason      string `json:"reason" binding:"required,min=3,max=2000"`
+		Role        string  `json:"role" binding:"required,oneof=admin reviewer viewer"`
+		Disabled    *bool   `json:"disabled" binding:"required"`
+		DisplayName string  `json:"display_name" binding:"required,min=1,max=120"`
+		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -158,7 +158,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		target.DisabledAt = &now
 	}
 
-	s.audit(c, &user, "user", target.ID, "user.update", "success", &req.Reason)
+	s.audit(c, &user, "user", target.ID, "user.update", "success", req.Reason)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":           target.ID,
@@ -334,3 +334,132 @@ func (s *Server) updatePassword(c *gin.Context) {
 }
 
 var errLastActiveAdmin = errors.New("last active administrator cannot be demoted or disabled")
+
+func (s *Server) listUserOidcIdentities(c *gin.Context) {
+	actor, ok := hooks.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "authentication required",
+		})
+		return
+	}
+
+	userID := c.Param("id")
+
+	// 他ユーザーの連携情報を閲覧できるのはadminのみ
+	if actor.ID != userID && actor.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "insufficient permissions",
+		})
+		return
+	}
+
+	// 対象ユーザーの存在確認
+	var target model.User
+	if err := s.db.WithContext(c.Request.Context()).
+		Select("id").
+		First(&target, "id = ?", userID).Error; err != nil {
+		notFoundOrError(c, err, "user")
+		return
+	}
+
+	type identityResponse struct {
+		ID                string    `json:"id"`
+		ProviderID        string    `json:"provider_id"`
+		Email             string    `json:"email"`
+		PreferredUsername *string   `json:"preferred_username"`
+		Picture           *string   `json:"picture"`
+		CreatedAt         time.Time `json:"created_at"`
+	}
+
+	identities := make([]identityResponse, 0)
+
+	err := s.db.WithContext(c.Request.Context()).
+		Model(&model.OidcIdentity{}).
+		Select(`
+			id,
+			provider_id,
+			email,
+			preferred_username,
+			picture,
+			created_at
+		`).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Scan(&identities).Error
+
+	if err != nil {
+		s.logger.Error(
+			"failed to list OIDC identities",
+			"user_id", userID,
+			"error", err,
+		)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to retrieve linked accounts",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": identities,
+	})
+}
+
+func (s *Server) deleteUserOidcIdentity(c *gin.Context) {
+	actor, ok := hooks.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "authentication required",
+		})
+		return
+	}
+
+	userID := c.Param("user_id")
+	identityID := c.Param("identity_id")
+
+	// 他ユーザーの連携を解除できるのはadminのみ
+	if actor.ID != userID && actor.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "insufficient permissions",
+		})
+		return
+	}
+
+	result := s.db.WithContext(c.Request.Context()).
+		Where("user_id = ? AND id = ?", userID, identityID).
+		Delete(&model.OidcIdentity{})
+
+	if result.Error != nil {
+		s.logger.Error(
+			"failed to delete OIDC identity",
+			"user_id", userID,
+			"identity_id", identityID,
+			"error", result.Error,
+		)
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to unlink OIDC identity",
+		})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "OIDC identity not found",
+		})
+		return
+	}
+
+	s.audit(
+		c,
+		&actor,
+		"oidc_identity",
+		identityID,
+		"oidc_identity.delete",
+		"success",
+		nil,
+	)
+
+	c.Status(http.StatusNoContent)
+}

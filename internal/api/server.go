@@ -112,6 +112,8 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.GET("/admin/users", s.requireRoles("admin"), s.listUsers)
 	auth.PUT("/admin/users/:id", s.updateUser)
 	auth.PUT("/admin/users/:id/password", s.updatePassword)
+	auth.GET("/users/:id/oidc_identities", s.listUserOidcIdentities)
+	auth.DELETE("/users/:user_id/oidc_identities/:identity_id", s.deleteUserOidcIdentity)
 	auth.GET("/admin/audit-logs", s.requireRoles("admin"), s.listAuditLogs)
 	auth.GET("/admin/oidc_providers", s.requireRoles("admin"), s.listOidcProviders)
 	auth.POST("/admin/oidc_providers", s.requireRoles("admin"), s.createOidcProvider)
