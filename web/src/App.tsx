@@ -10,7 +10,6 @@ import {
 	Menu,
 	RefreshCw,
 	ScrollText,
-	ShieldCheck,
 	Users,
 	Workflow,
 	X,
