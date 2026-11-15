@@ -348,9 +348,9 @@ export function PreferencePage({
 					</div>
 
 					<div className="preference-provider-list">
-						{identities.loading ? (
+						{identities.loading || d.loading ? (
 							<p>読み込み中...</p>
-						) : identities.error ? (
+						) : identities.error || d.error ? (
 							<p>連携アカウントの取得に失敗しました。</p>
 						) : identities.data?.items?.length ? (
 							identities.data.items.map(
@@ -363,6 +363,43 @@ export function PreferencePage({
 								}) => (
 									<div key={identity.id} className="preference-provider">
 										<div>
+											<span>
+												{(
+													(d.data?.items ?? []) as {
+														id: string;
+														service_icon?: string;
+														display_name: string;
+													}[]
+												).find((p) => p.id == identity.provider_id)
+													?.service_icon ? (
+													<img
+														width={"20px"}
+														height={"20px"}
+														src={
+															(
+																(d.data?.items ?? []) as {
+																	id: string;
+																	service_icon?: string;
+																	display_name: string;
+																}[]
+															).find((p) => p.id == identity.provider_id)
+																?.service_icon
+														}
+													/>
+												) : (
+													<></>
+												)}
+												{
+													(
+														(d.data?.items ?? []) as {
+															id: string;
+															service_icon?: string;
+															display_name: string;
+														}[]
+													).find((p) => p.id == identity.provider_id)
+														?.display_name
+												}
+											</span>
 											<strong>
 												{identity.preferred_username || identity.email}
 											</strong>
