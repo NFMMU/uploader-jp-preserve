@@ -41,6 +41,7 @@ export function Nodes({ api, refresh, notify, role }: any) {
 				title="保存ノード"
 				desc="稼働状況と容量"
 				actions={
+					role === "admin" ? (
 					<button
 						className="secondary"
 						onClick={() =>
@@ -50,7 +51,8 @@ export function Nodes({ api, refresh, notify, role }: any) {
 						}
 					>
 						<RefreshCw size={16} /> 保存先を調整
-					</button>
+						</button>
+					) : null
 				}
 			/>
 			<div className="stat-grid">

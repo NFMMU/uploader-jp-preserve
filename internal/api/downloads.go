@@ -102,7 +102,7 @@ func (s *Server) createDownloadJob(c *gin.Context) {
 		return
 	}
 	s.writeDownloadAudit(job.ID, f.ID, nil, "requested", "accepted", "", 0, 0)
-	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/downloads/" + job.ID, "content_url": "/api/v1/downloads/" + job.ID + "/content"})
+	c.JSON(http.StatusAccepted, gin.H{"job": job, "access_token": token, "status_url": "/api/v1/catalog/downloads/" + job.ID, "content_url": "/api/v1/catalog/downloads/" + job.ID + "/content"})
 }
 
 func (s *Server) authorizedDownloadJob(c *gin.Context) (downloadJob, bool) {
