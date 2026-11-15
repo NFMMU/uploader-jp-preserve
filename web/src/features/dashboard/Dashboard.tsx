@@ -18,7 +18,7 @@ import { TaskTable } from "@/components/common/TaskTable";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-export function Dashboard({ api, refresh, notify }: any) {
+export function Dashboard({ api, refresh, notify, role }: any) {
 	const a = useData(api, "/catalog/artifacts", refresh),
 		f = useData(api, "/catalog/files?all=true", refresh),
 		n = useData(api, "/operations/nodes", refresh),
@@ -48,16 +48,18 @@ export function Dashboard({ api, refresh, notify }: any) {
 						>
 							<Download size={16} /> 一覧を出力
 						</button>
-						<button
-							className="primary"
-							onClick={() =>
-								api("/admin/placements/reconcile", { method: "POST" })
-									.then(() => notify("配置の再調整を実行しました"))
-									.catch((e: Error) => notify(e.message))
-							}
-						>
-							<RefreshCw size={16} /> 保存先を調整
-						</button>
+						{role === "admin" && (
+							<button
+								className="primary"
+								onClick={() =>
+									api("/admin/placements/reconcile", { method: "POST" })
+										.then(() => notify("配置の再調整を実行しました"))
+										.catch((e: Error) => notify(e.message))
+								}
+							>
+								<RefreshCw size={16} /> 保存先を調整
+							</button>
+						)}
 					</>
 				}
 			/>

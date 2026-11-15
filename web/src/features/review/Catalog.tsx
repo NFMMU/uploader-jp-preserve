@@ -1,7 +1,7 @@
 import { CloudUpload, Download, LockKeyhole, Plus, Search } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { downloadExport } from "@/api/admin";
 import { Heading } from "@/components/common/Heading";
 import { Modal } from "@/components/common/Modal";
@@ -15,9 +15,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [unused, setRefreshDummy] = useState(0);
 	const loc = useLocation();
 	const nav = useNavigate();
+	const routeParams = useParams();
 	const params = new URLSearchParams(loc.search);
 	const linkedFileID = params.get("file_id") || "";
-	const linkedArtifactID = params.get("artifact_id") || "";
+	const linkedArtifactID =
+		routeParams.artifactID || params.get("artifact_id") || "";
 	const [query, setQuery] = useState(params.get("q") || "");
 	const [preservationFilter, setPreservationFilter] = useState("");
 	const [policyFilter, setPolicyFilter] = useState("");
@@ -461,7 +463,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		<>
 			<Heading
 				eyebrow=""
-				title="作品・ファイル"
+				title={
+					linkedArtifactID && role === "author"
+						? "作品内のファイル"
+						: "作品・ファイル"
+				}
 				desc={
 					role === "author"
 						? "割り当てられた作品のファイルを確認・削除"
@@ -469,6 +475,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				}
 				actions={
 					<>
+						{linkedArtifactID && role === "author" && (
+							<button
+								className="secondary"
+								onClick={() => nav("/admin/artifacts")}
+								type="button"
+							>
+								作品一覧へ戻る
+							</button>
+						)}
 						{role !== "author" && (
 							<button
 								className="secondary"

@@ -2,7 +2,6 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"github.com/nfmmu/uploader-archive/internal/oidc"
 )
 

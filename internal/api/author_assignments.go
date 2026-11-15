@@ -84,12 +84,12 @@ func (s *Server) replaceAuthorArtifactAssignments(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
+		switch err {
+		case gorm.ErrRecordNotFound:
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		case errors.Is(err, errAssignmentTargetNotAuthor):
+		case errAssignmentTargetNotAuthor:
 			c.JSON(http.StatusConflict, gin.H{"error": "target user is not an author"})
-		case errors.Is(err, errAssignmentArtifactNotFound):
+		case errAssignmentArtifactNotFound:
 			c.JSON(http.StatusBadRequest, gin.H{"error": "one or more artifacts do not exist"})
 		default:
 			s.logger.Error("could not replace author artifact assignments", "user_id", userID, "error", err)
