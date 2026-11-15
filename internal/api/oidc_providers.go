@@ -143,9 +143,9 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 func (s *Server) putOidcProvider(c *gin.Context) {
 	var req struct {
 		DisplayName  string  `json:"display_name" binding:"required,max=255"`
-		ClientID     string  `json:"client_id" binding:"required,max=255"`
-		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
 		ServiceIcon  *string `json:"service_icon" binding:"omitempty,max=255"`
+		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
+		IsEnabled    bool    `json:"is_enabled" binding:"omitempty"`
 	}
 	id := c.Param("id")
 	if id == "" {
@@ -153,7 +153,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		return
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "display_name, discovery_endpoint, client_id, client_secret are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "display_name, client_id, is_enabled are required"})
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
@@ -179,8 +179,8 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 	}
 	updates := map[string]any{
 		"display_name": req.DisplayName,
-		"client_id":    req.ClientID,
 		"service_icon": req.ServiceIcon,
+		"is_enabled":   req.IsEnabled,
 		"updated_at":   time.Now(),
 	}
 	if req.ClientSecret != nil {
