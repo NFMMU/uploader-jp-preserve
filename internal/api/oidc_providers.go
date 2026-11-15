@@ -145,7 +145,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		DisplayName  string  `json:"display_name" binding:"required,max=255"`
 		ServiceIcon  *string `json:"service_icon" binding:"omitempty,max=255"`
 		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
-		IsEnabled    bool    `json:"is_enabled" binding:"omitempty"`
+		IsEnabled    bool    `json:"is_enabled" binding:"omitempty,default=true"`
 	}
 	id := c.Param("id")
 	if id == "" {
