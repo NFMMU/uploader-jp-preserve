@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 var (
@@ -343,7 +344,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		return
 	}
 
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 
 	// These errors distinguish validation failures from database failures.
 	var (

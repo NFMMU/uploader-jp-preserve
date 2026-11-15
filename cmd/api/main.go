@@ -20,6 +20,7 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/api"
 	"github.com/nfmmu/uploader-archive/internal/config"
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/gen/query"
 )
 
 func main() {
@@ -50,6 +51,8 @@ func main() {
 		log.Fatalf("database ping failed: %v", err)
 	}
 	cancel()
+
+	query.SetDefault(db)
 
 	if err := bootstrapAdmin(db, cfg); err != nil {
 		log.Fatalf("bootstrap administrator: %v", err)

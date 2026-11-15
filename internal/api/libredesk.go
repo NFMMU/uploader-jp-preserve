@@ -15,6 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 type libreDeskConversationRequest struct {
@@ -176,7 +178,7 @@ func (s *Server) listConversationLinks(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid target_id is required"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if targetType == "node_enrollment_request" && actor.Role != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "administrator role is required for node enrollment conversation links"})
 		return
@@ -207,7 +209,7 @@ func (s *Server) addConversationLink(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "target, URL, and optional label are required"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if req.TargetType == "node_enrollment_request" && actor.Role != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "administrator role is required for node enrollment conversation links"})
 		return
@@ -249,7 +251,7 @@ func (s *Server) deleteConversationLink(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation link not found"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if link.TargetType == "node_enrollment_request" && actor.Role != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "administrator role is required for node enrollment conversation links"})
 		return

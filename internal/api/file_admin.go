@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 // updateArtifactMetadata edits the descriptive record separately from file bytes.
@@ -63,7 +64,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated artifact"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.metadata.update", "success", &req.Reason)
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact})
 }
@@ -112,7 +113,7 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update file metadata"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.metadata.update", "success", &req.Reason)
 	if err := db.First(&file, "id = ?", file.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated file"})
@@ -135,7 +136,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bulk action payload"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if (req.Action == "delete" || req.Action == "publication") && actor.Role != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "administrator role is required for this action"})
 		return
@@ -352,7 +353,7 @@ func (s *Server) createAdminDeletionRequests(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "file_ids must be unique"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	created := make([]model.PublicRequest, 0, len(req.FileIDs))
 	db := s.db.WithContext(c.Request.Context())
 	err := db.Transaction(func(tx *gorm.DB) error {

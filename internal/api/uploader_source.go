@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 const maxUploaderHTMLBytes = 8 << 20
@@ -156,7 +157,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not queue source-fetch task"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.source_fetch.queued", "success", new("agent="+node.Name))
 	c.JSON(http.StatusAccepted, gin.H{
 		"file_object_id":    file.ID,
@@ -546,7 +547,7 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.source_discover", "success", new(fmt.Sprintf("pages=%d candidates=%d", pages, len(candidates))))
 	c.JSON(http.StatusOK, gin.H{"listing_url": listingURL, "pages_scanned": pages, "limit": maxUploaderListingCandidates, "truncated": len(candidates) >= maxUploaderListingCandidates, "items": candidates})
 }

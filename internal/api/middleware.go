@@ -5,18 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/nfmmu/uploader-archive/internal/gen/model"
 )
-
-func currentUser(c *gin.Context) (model.User, bool) {
-	value, ok := c.Get("currentUser")
-	if !ok {
-		return model.User{}, false
-	}
-	user, ok := value.(model.User)
-	return user, ok
-}
 
 func requestLogger(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {

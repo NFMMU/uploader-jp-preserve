@@ -24,6 +24,8 @@ var (
 	FileObject              *fileObject
 	Node                    *node
 	NodeEnrollmentRequest   *nodeEnrollmentRequest
+	OidcIdentity            *oidcIdentity
+	OidcProvider            *oidcProvider
 	Placement               *placement
 	Policy                  *policy
 	PublicRequest           *publicRequest
@@ -42,6 +44,8 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	FileObject = &Q.FileObject
 	Node = &Q.Node
 	NodeEnrollmentRequest = &Q.NodeEnrollmentRequest
+	OidcIdentity = &Q.OidcIdentity
+	OidcProvider = &Q.OidcProvider
 	Placement = &Q.Placement
 	Policy = &Q.Policy
 	PublicRequest = &Q.PublicRequest
@@ -61,6 +65,8 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		FileObject:              newFileObject(db, opts...),
 		Node:                    newNode(db, opts...),
 		NodeEnrollmentRequest:   newNodeEnrollmentRequest(db, opts...),
+		OidcIdentity:            newOidcIdentity(db, opts...),
+		OidcProvider:            newOidcProvider(db, opts...),
 		Placement:               newPlacement(db, opts...),
 		Policy:                  newPolicy(db, opts...),
 		PublicRequest:           newPublicRequest(db, opts...),
@@ -81,6 +87,8 @@ type Query struct {
 	FileObject              fileObject
 	Node                    node
 	NodeEnrollmentRequest   nodeEnrollmentRequest
+	OidcIdentity            oidcIdentity
+	OidcProvider            oidcProvider
 	Placement               placement
 	Policy                  policy
 	PublicRequest           publicRequest
@@ -104,6 +112,8 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		FileObject:              q.FileObject.clone(db),
 		Node:                    q.Node.clone(db),
 		NodeEnrollmentRequest:   q.NodeEnrollmentRequest.clone(db),
+		OidcIdentity:            q.OidcIdentity.clone(db),
+		OidcProvider:            q.OidcProvider.clone(db),
 		Placement:               q.Placement.clone(db),
 		Policy:                  q.Policy.clone(db),
 		PublicRequest:           q.PublicRequest.clone(db),
@@ -132,6 +142,8 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		FileObject:              q.FileObject.replaceDB(db),
 		Node:                    q.Node.replaceDB(db),
 		NodeEnrollmentRequest:   q.NodeEnrollmentRequest.replaceDB(db),
+		OidcIdentity:            q.OidcIdentity.replaceDB(db),
+		OidcProvider:            q.OidcProvider.replaceDB(db),
 		Placement:               q.Placement.replaceDB(db),
 		Policy:                  q.Policy.replaceDB(db),
 		PublicRequest:           q.PublicRequest.replaceDB(db),
@@ -150,6 +162,8 @@ type queryCtx struct {
 	FileObject              IFileObjectDo
 	Node                    INodeDo
 	NodeEnrollmentRequest   INodeEnrollmentRequestDo
+	OidcIdentity            IOidcIdentityDo
+	OidcProvider            IOidcProviderDo
 	Placement               IPlacementDo
 	Policy                  IPolicyDo
 	PublicRequest           IPublicRequestDo
@@ -168,6 +182,8 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		FileObject:              q.FileObject.WithContext(ctx),
 		Node:                    q.Node.WithContext(ctx),
 		NodeEnrollmentRequest:   q.NodeEnrollmentRequest.WithContext(ctx),
+		OidcIdentity:            q.OidcIdentity.WithContext(ctx),
+		OidcProvider:            q.OidcProvider.WithContext(ctx),
 		Placement:               q.Placement.WithContext(ctx),
 		Policy:                  q.Policy.WithContext(ctx),
 		PublicRequest:           q.PublicRequest.WithContext(ctx),

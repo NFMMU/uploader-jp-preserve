@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
+	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
 const (
@@ -83,7 +84,7 @@ func (s *Server) requestReplica(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not schedule replica task"})
 		return
 	}
-	actor, _ := currentUser(c)
+	actor, _ := hooks.CurrentUser(c)
 	if scheduled {
 		s.audit(c, &actor, "file_object", fileID, "placement.replication.requested", "success", new("Scheduled a replica transfer from node "+sourceID+" to node "+targetID))
 	}

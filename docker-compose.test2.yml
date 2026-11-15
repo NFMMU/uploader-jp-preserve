@@ -99,6 +99,7 @@ services:
     build: .
     environment:
       APP_ENV: ${APP_ENV:-development}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       APP_ADDR: :8080
       DATABASE_URL: postgres://archive:${POSTGRES_PASSWORD:-archive-dev-password}@postgres:5432/archive?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}

@@ -23,7 +23,7 @@ export default function CopyEmail({ email, label }: CopyEmailProps) {
 			setCopied(true);
 			window.setTimeout(() => setCopied(false), 1800);
 		} catch {
-			window.prompt("メールアドレスを手動でコピーしてください。", email);
+			window.prompt(label + "を手動でコピーしてください。", email);
 		}
 	}
 
@@ -35,8 +35,8 @@ export default function CopyEmail({ email, label }: CopyEmailProps) {
 			title={email}
 		>
 			<small>
-				{label ?? "メールアドレスを"}
-				{copied ? "コピーしました" : "コピー"}
+				{label ?? "メールアドレス"}
+				{copied ? "をコピーしました" : "をコピー"}
 			</small>
 		</button>
 	);
