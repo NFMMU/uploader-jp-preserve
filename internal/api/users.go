@@ -49,7 +49,7 @@ func (s *Server) createUser(c *gin.Context) {
 		Email       string `json:"email" binding:"required,email,max=320"`
 		Password    string `json:"password" binding:"required,min=12,max=1024"`
 		DisplayName string `json:"display_name" binding:"required,min=1,max=120"`
-		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer"`
+		Role        string `json:"role" binding:"required,oneof=admin reviewer viewer author"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email, display_name, password (12+ chars), and valid role are required"})
@@ -72,7 +72,7 @@ func (s *Server) createUser(c *gin.Context) {
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
-		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer"`
+		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer author"`
 		Disabled    *bool   `json:"disabled" binding:"omitempty"`
 		DisplayName string  `json:"display_name" binding:"required,min=1,max=120"`
 		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`

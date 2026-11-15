@@ -16,15 +16,15 @@ const TableNameOidcIdentity = "oidc_identities"
 type OidcIdentity struct {
 	ID                string         `gorm:"column:id;type:uuid;primaryKey;default:uuidv7()" json:"id"`
 	Issuer            string         `gorm:"column:issuer;type:character varying(255);not null" json:"issuer"`
-	Subject           string         `gorm:"column:subject;type:character varying(255);not null" json:"subject"`
+	Subject           string         `gorm:"column:subject;type:character varying(255);not null;uniqueIndex:uq_provider_subject,priority:2" json:"subject"`
 	Email             string         `gorm:"column:email;type:character varying(255);not null" json:"email"`
-	ProviderID        string         `gorm:"column:provider_id;type:uuid;not null" json:"provider_id"`
-	UserID            string         `gorm:"column:user_id;type:uuid;not null" json:"user_id"`
+	ProviderID        string         `gorm:"column:provider_id;type:uuid;not null;uniqueIndex:uq_provider_subject,priority:1;uniqueIndex:uq_provider_user,priority:1" json:"provider_id"`
+	UserID            string         `gorm:"column:user_id;type:uuid;not null;uniqueIndex:uq_provider_user,priority:2" json:"user_id"`
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at;type:timestamp with time zone;not null;default:now()" json:"updated_at"`
 	DeletedAt         gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp with time zone" json:"deleted_at"`
-	PreferredUsername *string        `gorm:"column:preferred_username;type:character varying(255)" json:"preferred_username"`
-	Picture           *string        `gorm:"column:picture;type:character varying(255)" json:"picture"`
+	PreferredUsername *string        `gorm:"column:preferred_username;type:text" json:"preferred_username"`
+	Picture           *string        `gorm:"column:picture;type:text" json:"picture"`
 }
 
 // TableName OidcIdentity's table name
