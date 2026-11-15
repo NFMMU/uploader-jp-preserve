@@ -12,7 +12,10 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/hooks"
 )
 
-var errAuthorArtifactAccessDenied = errors.New("author artifact access denied")
+var (
+	errAuthorArtifactAccessDenied = errors.New("author artifact access denied")
+	errFileDeletionAlreadyRequested = errors.New("file deletion has already been requested")
+)
 
 // authorArtifactScope returns a query scope that limits authors to artifacts
 // explicitly assigned by an administrator. Other roles are not filtered here.
@@ -70,6 +73,9 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 			First(&file, "id = ? AND deleted_at IS NULL", c.Param("id")).Error; err != nil {
 			return err
 		}
+		if file.DeletionRequestedAt != nil {
+			return errFileDeletionAlreadyRequested
+		}
 		if actor.Role == "author" {
 			var assignment model.AuthorArtifact
 			if err := tx.Table("author_artifact").
@@ -95,6 +101,8 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 		switch {
 		case errors.Is(err, errAuthorArtifactAccessDenied):
 			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+		case errors.Is(err, errFileDeletionAlreadyRequested):
+			c.JSON(http.StatusConflict, gin.H{"error": "file deletion has already been requested"})
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "file object not found"})
 		default:
