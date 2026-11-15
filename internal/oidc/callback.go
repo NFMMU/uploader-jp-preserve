@@ -25,6 +25,11 @@ type OidcClaims struct {
 }
 
 func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) (string, error)) *model.OidcIdentity {
+	const oidcRequestTimeout = 10 * time.Second
+	oidcHTTPClient := &http.Client{
+		Timeout: oidcRequestTimeout,
+	}
+
 	ctx := c.Request.Context()
 	r := c.Request
 
@@ -59,14 +64,22 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 	}
 
 	// OIDCディスカバリ
-	providerData, err := OidcDiscovery(ctx, providerDbData.DiscoveryEndpoint)
+	discoveryCtx, cancelDiscovery := context.WithTimeout(
+		oidc.ClientContext(ctx, oidcHTTPClient),
+		oidcRequestTimeout,
+	)
+	providerData, err := OidcDiscovery(discoveryCtx, providerDbData.DiscoveryEndpoint)
+	cancelDiscovery()
 	if err != nil || providerData == nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
 	}
 
 	// プロバイダ作成
-	discoveryCtx, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
+	discoveryCtx, cancelDiscovery = context.WithTimeout(
+		oidc.ClientContext(ctx, oidcHTTPClient),
+		oidcRequestTimeout,
+	)
 	provider, err := oidc.NewProvider(discoveryCtx, providerData.Issuer)
 	cancelDiscovery()
 	if err != nil || provider == nil {
@@ -78,7 +91,10 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 	oidcConfig := &oidc.Config{
 		ClientID: providerDbData.ClientID,
 	}
-	verifier := provider.Verifier(oidcConfig)
+	verifier := provider.VerifierContext(
+		oidc.ClientContext(context.Background(), oidcHTTPClient),
+		oidcConfig,
+	)
 
 	config := oauth2.Config{
 		ClientID:    providerDbData.ClientID,
@@ -106,7 +122,12 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 	config.ClientSecret = clientSecret
 
 	// token取得
-	oauth2Token, err := config.Exchange(ctx, c.Query("code"))
+	exchangeCtx, cancelExchange := context.WithTimeout(
+		oidc.ClientContext(ctx, oidcHTTPClient),
+		oidcRequestTimeout,
+	)
+	oauth2Token, err := config.Exchange(exchangeCtx, c.Query("code"))
+	cancelExchange()
 	if err != nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
@@ -118,7 +139,9 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
 	}
-	idToken, err := verifier.Verify(ctx, rawIDToken)
+	verifyCtx, cancelVerify := context.WithTimeout(ctx, oidcRequestTimeout)
+	idToken, err := verifier.Verify(verifyCtx, rawIDToken)
+	cancelVerify()
 	if err != nil {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
