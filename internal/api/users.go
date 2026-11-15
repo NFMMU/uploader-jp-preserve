@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	errLastActiveAdmin    = errors.New("last active administrator cannot be demoted or disabled")
-	errTargetStateChanged = errors.New("target user state changed during update")
-	errSelfAdminNotActive = errors.New("current administrator is no longer active")
+	errLastActiveAdmin       = errors.New("last active administrator cannot be demoted or disabled")
+	errTargetStateChanged    = errors.New("target user state changed during update")
+	errSelfAdminNotActive    = errors.New("current administrator is no longer active")
+	errLastActiveAdminDelete = errors.New("last active administrator cannot be deleted")
 )
 
 func (s *Server) listUsers(c *gin.Context) {
@@ -243,6 +244,106 @@ func (s *Server) updateUser(c *gin.Context) {
 		"role":         target.Role,
 		"disabled":     target.DisabledAt != nil,
 	})
+}
+
+func (s *Server) deleteUser(c *gin.Context) {
+	actor, ok := hooks.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "authentication required",
+		})
+		return
+	}
+
+	targetID := c.Param("id")
+
+	// 自分自身の削除は禁止
+	if actor.ID == targetID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "cannot delete your own account",
+		})
+		return
+	}
+
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// 削除対象を行ロック付きで取得
+		var target model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&target, "id = ?", targetID).Error; err != nil {
+			return err
+		}
+
+		// 有効な管理者を削除する場合、最後の管理者でないか確認
+		if target.Role == "admin" && target.DisabledAt == nil {
+			var activeAdmins []model.User
+
+			// 有効な管理者をロックして状態を保護する
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id").
+				Where("role = ? AND disabled_at IS NULL", "admin").
+				Order("id").
+				Find(&activeAdmins).Error; err != nil {
+				return err
+			}
+
+			if len(activeAdmins) <= 1 {
+				return errLastActiveAdminDelete
+			}
+		}
+
+		// GORMのDeletedAtによる論理削除
+		result := tx.Delete(&target)
+
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		switch {
+		case errors.Is(err, errLastActiveAdminDelete):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "cannot delete the last active administrator",
+			})
+
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "user not found",
+			})
+
+		default:
+			s.logger.Error(
+				"failed to delete user",
+				"user_id", targetID,
+				"actor_id", actor.ID,
+				"error", err,
+			)
+
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not delete user",
+			})
+		}
+		return
+	}
+
+	// トランザクション成功後に監査ログを記録
+	s.audit(
+		c,
+		&actor,
+		"user",
+		targetID,
+		"user.delete",
+		"success",
+		nil,
+	)
+
+	c.Status(http.StatusNoContent)
 }
 
 func (s *Server) updatePassword(c *gin.Context) {

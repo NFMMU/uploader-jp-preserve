@@ -110,6 +110,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	auth.POST("/admin/users", s.requireRoles("admin"), s.createUser)
 	auth.GET("/admin/users", s.requireRoles("admin"), s.listUsers)
 	auth.PUT("/admin/users/:id", s.updateUser)
+	auth.DELETE("/admin/users/:id", s.requireRoles("admin"), s.deleteUser)
 	auth.PUT("/admin/users/:id/password", s.updatePassword)
 	auth.GET("/users/:id/oidc_identities", s.listUserOidcIdentities)
 	auth.DELETE("/users/:user_id/oidc_identities/:identity_id", s.deleteUserOidcIdentity)
