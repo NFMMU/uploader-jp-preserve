@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-const TableNameAuthorArtifact = "author_artifacts"
+const TableNameAuthorArtifact = "author_artifact"
 
-// AuthorArtifact mapped from table <author_artifacts>
+// AuthorArtifact mapped from table <author_artifact>
 type AuthorArtifact struct {
 	UserID     string    `gorm:"column:user_id;type:uuid;primaryKey" json:"user_id"`
 	ArtifactID string    `gorm:"column:artifact_id;type:uuid;primaryKey" json:"artifact_id"`

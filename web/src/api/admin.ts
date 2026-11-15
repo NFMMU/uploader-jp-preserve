@@ -35,7 +35,7 @@ export async function downloadExport(
 	notify: (s: string) => void,
 ) {
 	try {
-		const r = await fetch(`${apiBase}/export?format=${format}`, {
+		const r = await fetch(`${apiBase}/catalog/export?format=${format}`, {
 			credentials: "same-origin",
 		});
 		if (!r.ok) throw new Error("エクスポートに失敗しました");
@@ -59,7 +59,7 @@ export async function downloadRequestIntakeFile(
 ) {
 	try {
 		const response = await fetch(
-			`/api/v1/public-requests/${encodeURIComponent(id)}/intake-file`,
+			`/api/v1/moderation/public-requests/${encodeURIComponent(id)}/intake-file`,
 			{
 				credentials: "same-origin",
 			},

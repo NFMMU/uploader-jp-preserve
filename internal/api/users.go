@@ -198,7 +198,6 @@ func (s *Server) updateUser(c *gin.Context) {
 			Where("id = ?", lockedTarget.ID).
 			Updates(updates).Error
 	})
-
 	if err != nil {
 		switch {
 		case errors.Is(err, errLastActiveAdmin):
@@ -304,7 +303,6 @@ func (s *Server) deleteUser(c *gin.Context) {
 
 		return nil
 	})
-
 	if err != nil {
 		switch {
 		case errors.Is(err, errLastActiveAdminDelete):
@@ -569,7 +567,6 @@ func (s *Server) listUserOidcIdentities(c *gin.Context) {
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Scan(&identities).Error
-
 	if err != nil {
 		s.logger.Error(
 			"failed to list OIDC identities",

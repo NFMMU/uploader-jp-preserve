@@ -36,6 +36,9 @@ func isUnconfirmedRedistributionPolicy(policy string) bool {
 func (s *Server) listArtifacts(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
+	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
+		query = authorArtifactScope(query, user.ID)
+	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where("title ILIKE ? OR creator_name ILIKE ? OR source_url ILIKE ?", pattern, pattern, pattern)
@@ -174,6 +177,9 @@ func (s *Server) listFiles(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 	db := s.db.WithContext(c.Request.Context())
 	query := db.Model(&model.FileObject{})
+	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
+		query = query.Where("artifact_id IN (SELECT artifact_id FROM author_artifact WHERE user_id = ?)", user.ID)
+	}
 	if c.Query("include_deleted") != "true" {
 		query = query.Where("deleted_at IS NULL")
 	}
@@ -283,6 +289,17 @@ func (s *Server) getFileObject(c *gin.Context) {
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
 		notFoundOrError(c, err, "file object")
 		return
+	}
+	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
+		allowed, accessErr := s.authorHasArtifact(c, user.ID, file.ArtifactID)
+		if accessErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify artifact access"})
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+			return
+		}
 	}
 	var policies []model.Policy
 	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {

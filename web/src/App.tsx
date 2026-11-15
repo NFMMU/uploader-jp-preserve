@@ -96,7 +96,11 @@ function App() {
 			});
 			setUser(d.user);
 			notify("ログインしました");
-			nav("/admin");
+			nav(
+				d.user.role === "author" || d.user.role === "viewer"
+					? "/admin/artifacts"
+					: "/admin",
+			);
 		} catch (e) {
 			notify((e as Error).message);
 		} finally {
@@ -147,7 +151,25 @@ function App() {
 	const visibleLinks =
 		user?.role === "admin"
 			? links
-			: links.filter(([to]) => to !== "/admin/url-collector");
+			: user?.role === "reviewer"
+				? links.filter(([to]) =>
+						[
+							"/admin",
+							"/admin/review",
+							"/admin/nodes",
+							"/admin/tasks",
+						].includes(to),
+					)
+				: [["/admin/artifacts", "作品・ファイル", Archive] as const];
+
+	useEffect(() => {
+		if (
+			(user?.role === "author" || user?.role === "viewer") &&
+			loc.pathname === "/admin"
+		) {
+			nav("/admin/artifacts", { replace: true });
+		}
+	}, [user?.role, loc.pathname, nav]);
 
 	useEffect(() => {
 		if (!loading || !loc.pathname.startsWith("/admin")) return;
@@ -270,7 +292,9 @@ function App() {
 										? "管理者"
 										: user.role === "reviewer"
 											? "確認担当者"
-											: "閲覧者"}
+											: user.role === "author"
+												? "一般ユーザー"
+												: "閲覧者"}
 								</small>
 							</div>
 							<button

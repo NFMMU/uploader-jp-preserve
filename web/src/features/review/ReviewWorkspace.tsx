@@ -37,17 +37,19 @@ export function ReviewWorkspace({
 				>
 					<Files size={16} /> 作品・ファイル
 				</button>
-				<button
-					type="button"
-					role="tab"
-					aria-selected={tab === "requests"}
-					className={tab === "requests" ? "active" : ""}
-					onClick={() => choose("requests")}
-				>
-					<ClipboardList size={16} /> 申請・保全レビュー
-				</button>
+				{(role === "admin" || role === "reviewer") && (
+					<button
+						type="button"
+						role="tab"
+						aria-selected={tab === "requests"}
+						className={tab === "requests" ? "active" : ""}
+						onClick={() => choose("requests")}
+					>
+						<ClipboardList size={16} /> 申請・保全レビュー
+					</button>
+				)}
 			</div>
-			{tab === "files" ? (
+			{tab === "files" || role === "author" || role === "viewer" ? (
 				<Catalog api={api} refresh={refresh} notify={notify} role={role} />
 			) : (
 				<Requests

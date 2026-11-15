@@ -1,6 +1,6 @@
 import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import type React from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Heading } from "../../components/common/Heading";
 import { Modal } from "../../components/common/Modal";
 import { Status } from "../../components/common/Status";
@@ -12,10 +12,18 @@ import type { Obj } from "../../types/common";
 export function UsersPage({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/admin/users", refresh + localRefresh);
+	const artifactsData = useData(
+		api,
+		"/catalog/artifacts?all=true",
+		refresh + localRefresh,
+	);
 
 	const [modal, setModal] = useState(false);
 	const [editModal, setEditModal] = useState(false);
 	const [editingUser, setEditingUser] = useState<Obj | null>(null);
+	const [authorArtifactIDs, setAuthorArtifactIDs] = useState<string[]>([]);
+	const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+	const [assignmentsError, setAssignmentsError] = useState("");
 
 	const editSessionId = useRef(0);
 
@@ -51,6 +59,9 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		editSessionId.current++;
 		setEditModal(false);
 		setEditingUser(null);
+		setAuthorArtifactIDs([]);
+		setAssignmentsError("");
+		setAssignmentsLoading(false);
 		setEditForm({
 			display_name: "",
 			role: "reviewer",
@@ -90,6 +101,22 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	function openEdit(user: Obj) {
 		editSessionId.current++;
 		setEditingUser(user);
+		setAuthorArtifactIDs([]);
+		setAssignmentsError("");
+		setAssignmentsLoading(true);
+		const sessionId = editSessionId.current;
+		api(`/admin/author-assignments/${encodeURIComponent(user.id)}`)
+			.then((result: Obj) => {
+				if (editSessionId.current === sessionId)
+					setAuthorArtifactIDs(result.artifact_ids || []);
+			})
+			.catch((error: Error) => {
+				if (editSessionId.current === sessionId)
+					setAssignmentsError(error.message);
+			})
+			.finally(() => {
+				if (editSessionId.current === sessionId) setAssignmentsLoading(false);
+			});
 
 		setEditForm({
 			display_name: String(user.display_name || ""),
@@ -111,7 +138,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	async function update(e: React.FormEvent) {
 		e.preventDefault();
 
-		if (!editingUser || saving) return;
+		if (!editingUser || saving || assignmentsLoading || assignmentsError)
+			return;
 
 		const sessionId = editSessionId.current;
 
@@ -132,6 +160,12 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				method: "PUT",
 				body: JSON.stringify(body),
 			});
+			if (editForm.role === "author") {
+				await api(`/admin/author-assignments/${editingUser.id}`, {
+					method: "PUT",
+					body: JSON.stringify({ artifact_ids: authorArtifactIDs }),
+				});
+			}
 
 			notify("ユーザー情報を更新しました");
 
@@ -389,6 +423,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							>
 								<option value="reviewer">確認担当者</option>
 								<option value="viewer">閲覧者</option>
+								<option value="author">Author</option>
 								<option value="admin">管理者</option>
 							</select>
 						</label>
@@ -447,9 +482,45 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								>
 									<option value="reviewer">確認担当者</option>
 									<option value="viewer">閲覧者</option>
+									<option value="author">Author</option>
 									<option value="admin">管理者</option>
 								</select>
 							</label>
+
+							{editForm.role === "author" && (
+								<section className="form-stack">
+									<b>操作可能な作品</b>
+									<p className="muted">
+										選択した作品に属するファイルのみ閲覧・削除できます。
+									</p>
+									{assignmentsLoading ? (
+										<p>割り当てを読み込み中...</p>
+									) : assignmentsError ? (
+										<p className="policy-warning">{assignmentsError}</p>
+									) : artifactsData.error ? (
+										<p className="policy-warning">
+											作品一覧を取得できませんでした: {artifactsData.error}
+										</p>
+									) : (
+										(artifactsData.data.items || []).map((artifact: Obj) => (
+											<label key={artifact.id} className="check-label">
+												<input
+													type="checkbox"
+													checked={authorArtifactIDs.includes(artifact.id)}
+													onChange={(event) =>
+														setAuthorArtifactIDs((current) =>
+															event.target.checked
+																? [...current, artifact.id]
+																: current.filter((id) => id !== artifact.id),
+														)
+													}
+												/>
+												{artifact.title}
+											</label>
+										))
+									)}
+								</section>
+							)}
 
 							<label>
 								アカウント状態
@@ -486,7 +557,15 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								<button type="button" className="secondary" onClick={closeEdit}>
 									キャンセル
 								</button>
-								<button className="primary" disabled={saving}>
+								<button
+									className="primary"
+									disabled={
+										saving ||
+										assignmentsLoading ||
+										!!assignmentsError ||
+										(editForm.role === "author" && !!artifactsData.error)
+									}
+								>
 									{saving ? "保存中…" : "変更を保存"}
 								</button>
 							</div>

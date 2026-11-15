@@ -19,12 +19,12 @@ import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
 export function Dashboard({ api, refresh, notify }: any) {
-	const a = useData(api, "/artifacts", refresh),
-		f = useData(api, "/files?all=true", refresh),
-		n = useData(api, "/nodes", refresh),
-		t = useData(api, "/tasks", refresh),
-		ft = useData(api, "/tasks?status=failed", refresh),
-		r = useData(api, "/public-requests?status=pending", refresh);
+	const a = useData(api, "/catalog/artifacts", refresh),
+		f = useData(api, "/catalog/files?all=true", refresh),
+		n = useData(api, "/operations/nodes", refresh),
+		t = useData(api, "/operations/tasks", refresh),
+		ft = useData(api, "/operations/tasks?status=failed", refresh),
+		r = useData(api, "/moderation/public-requests?status=pending", refresh);
 	const files = f.data.items || [],
 		nodes = n.data.items || [],
 		tasks = t.data.items || [];

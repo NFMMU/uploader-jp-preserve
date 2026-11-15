@@ -18,13 +18,13 @@ import { NodeEnrollmentRequests } from "./NodeEnrollmentRequests";
 
 export function Nodes({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/nodes", refresh + localRefresh);
+	const d = useData(api, "/operations/nodes", refresh + localRefresh);
 	const [deletingRows, setDeletingRows] = useState<string[]>([]);
 	const deleteNode = async (id: string, name: string) => {
 		if (!window.confirm(`本当に「${name}」を削除しますか？`)) return;
 		setDeletingRows((rows) => [...rows, id]);
 		try {
-			await api(`/nodes/${encodeURIComponent(id)}`, {
+			await api(`/operations/nodes/${encodeURIComponent(id)}`, {
 				method: "DELETE",
 			});
 		} catch (e) {

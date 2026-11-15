@@ -18,7 +18,7 @@ export function ConversationLinks({
 	const [busy, setBusy] = useState(false);
 	const d = useData(
 		api,
-		`/admin/conversation-links?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`,
+		`/moderation/conversation-links?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`,
 		refresh + localRefresh,
 	);
 	async function add(e: React.FormEvent) {
@@ -26,7 +26,7 @@ export function ConversationLinks({
 		if (!url.trim()) return;
 		setBusy(true);
 		try {
-			await api("/admin/conversation-links", {
+			await api("/moderation/conversation-links", {
 				method: "POST",
 				body: JSON.stringify({
 					target_type: targetType,
@@ -49,7 +49,9 @@ export function ConversationLinks({
 		if (!window.confirm(`「${item.label || item.url}」を削除しますか？`))
 			return;
 		try {
-			await api(`/admin/conversation-links/${item.id}`, { method: "DELETE" });
+			await api(`/moderation/conversation-links/${item.id}`, {
+				method: "DELETE",
+			});
 			setLocalRefresh((x) => x + 1);
 			notify("会話URLを削除しました");
 		} catch (e) {

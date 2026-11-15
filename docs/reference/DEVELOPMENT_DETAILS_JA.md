@@ -104,55 +104,58 @@ curl -s http://localhost:8080/api/v1/auth/login \
 ```sh
 export TOKEN='your-admin-access-token'
 
-curl -sS http://localhost:8080/api/v1/nodes \
+curl -sS http://localhost:8080/api/v1/operations/nodes \
   -H "Authorization: Bearer $TOKEN"
 
-ARTIFACT=$(curl -sS -X POST http://localhost:8080/api/v1/artifacts \
+ARTIFACT=$(curl -sS -X POST http://localhost:8080/api/v1/catalog/artifacts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"title":"MVP-3 test artifact","source_url":"https://www.uploader.jp/"}')
 export ARTIFACT_ID=$(printf '%s' "$ARTIFACT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
-FILE=$(curl -sS -X POST "http://localhost:8080/api/v1/artifacts/$ARTIFACT_ID/files" \
+FILE=$(curl -sS -X POST "http://localhost:8080/api/v1/catalog/artifacts/$ARTIFACT_ID/files" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"original_filename":"sample.txt","size_bytes":0,"media_type":"text/plain","redistribution_policy":"in_progress"}')
 export FILE_ID=$(printf '%s' "$FILE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 printf 'uploader.jp archive MVP-3 test\n' > /tmp/archive-sample.txt
-curl -i -X POST "http://localhost:8080/api/v1/files/$FILE_ID/ingest" \
+curl -i -X POST "http://localhost:8080/api/v1/catalog/files/$FILE_ID/ingest" \
   -H "Authorization: Bearer $TOKEN" \
   -F 'file=@/tmp/archive-sample.txt;type=text/plain' -F 'priority=3'
 
-curl -sS 'http://localhost:8080/api/v1/tasks' \
+curl -sS 'http://localhost:8080/api/v1/operations/tasks' \
   -H "Authorization: Bearer $TOKEN"
-curl -sS "http://localhost:8080/api/v1/files/$FILE_ID" \
+curl -sS "http://localhost:8080/api/v1/catalog/files/$FILE_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 期待される結果：取り込みエンドポイントが `202 Accepted` と 2 件のタスク、2 台の保存先ノードを返します。両方のタスクが `completed` になり、配置エンドポイントの `healthy_replica_count` が `2`、ファイルの `preservation_status` が `verified` になります。再配布ポリシーが `in_progress`（確認中）のため、`public_download_enabled` は `false` のままです。なお、再配布ポリシーが `pending`（未確認）の場合は保全処理を開始できません。
 
 ```sh
-curl -sS "http://localhost:8080/api/v1/files/$FILE_ID/placements" \
+curl -sS "http://localhost:8080/api/v1/catalog/files/$FILE_ID/placements" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-既存ファイルのコピーを追加作成したい場合や配置修復を試したい場合は、`POST /api/v1/files/:id/replicate` を使用します。API は追加の健全なコピーが必要で、条件を満たす保存先ノードがある場合に限り、コピー元ノードからの転送を予約します。テスト中に保全状態・配置をすぐに再調整するには、`POST /api/v1/admin/placements/reconcile` を呼び出します。
+既存ファイルのコピーを追加作成したい場合や配置修復を試したい場合は、`POST /api/v1/catalog/files/:id/replicate` を使用します。API は追加の健全なコピーが必要で、条件を満たす保存先ノードがある場合に限り、コピー元ノードからの転送を予約します。テスト中に保全状態・配置をすぐに再調整するには、`POST /api/v1/admin/placements/reconcile` を呼び出します。
 
 ノードの状態や失敗したタスクを確認するには、次を実行します。
 
 ```sh
-curl -sS http://localhost:8080/api/v1/nodes -H "Authorization: Bearer $TOKEN"
-curl -sS 'http://localhost:8080/api/v1/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
+curl -sS http://localhost:8080/api/v1/operations/nodes -H "Authorization: Bearer $TOKEN"
+curl -sS 'http://localhost:8080/api/v1/operations/tasks?status=failed' -H "Authorization: Bearer $TOKEN"
 docker compose logs --tail=200 node-agent node-agent-b node-agent-c node-agent-d api migrate
 ```
 
 ## MVP-1 の API 一覧
 
 - `POST /api/v1/auth/login`、`GET /api/v1/me`
-- `GET /api/v1/artifacts?q=...`、`POST /api/v1/artifacts`、`GET /api/v1/artifacts/:id`
-- `POST /api/v1/artifacts/:id/files`、`GET /api/v1/files`、`GET /api/v1/files/:id`
-- `PATCH /api/v1/files/:id/policy`、`PATCH /api/v1/files/:id/publication`
-- `GET /api/v1/export?format=json|csv`
-- `POST /api/v1/public-requests`、`GET /api/v1/public-requests`、`PATCH /api/v1/public-requests/:id`
+- `GET /api/v1/catalog/artifacts?q=...`、`POST /api/v1/catalog/artifacts`、`GET /api/v1/catalog/artifacts/:id`
+- `POST /api/v1/catalog/artifacts/:id/files`、`GET /api/v1/catalog/files`、`GET /api/v1/catalog/files/:id`
+- `PATCH /api/v1/catalog/files/:id/policy`、`PATCH /api/v1/catalog/files/:id/publication`
+- `DELETE /api/v1/catalog/files/:id` — 管理者または割り当て対象 artifact の author が実行する GORM 論理削除（ノード上の実体削除タスクは発行しません）
+- `PUT /api/v1/account`、`PUT /api/v1/account/password`、`GET /api/v1/account/oidc-identities` — 自分自身のアカウント操作
+- `GET /api/v1/catalog/export?format=json|csv`
+- `GET /api/v1/admin/author-assignments/:userID`、`PUT /api/v1/admin/author-assignments/:userID` — 管理者による author と artifact の割り当て管理
+- `POST /api/v1/public-requests`、`GET /api/v1/moderation/public-requests`、`PATCH /api/v1/moderation/public-requests/:id`
 - `POST /api/v1/public/node-enrollment-requests` — 公開ストレージノード参加申請。IP ごとに 1 時間 5 件まで。
 - `GET /api/v1/admin/node-enrollment-requests`、`PATCH /api/v1/admin/node-enrollment-requests/:id` — 管理者が参加申請を審査し、承認時に申請ごとの一回限り・72 時間有効な登録トークンを発行します。
 - `POST /api/v1/admin/users`、`GET /api/v1/admin/users`、`GET /api/v1/admin/audit-logs`
@@ -161,14 +164,14 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c node-agent-d
 
 - `POST /api/v1/nodes/register` — `X-Node-Enrollment-Token` を使った一回限りのノード登録。承認申請のノード名・種別・容量と一致する必要があります。`DEV_NODE_ENROLLMENT_TOKEN` による共有トークン登録はローカル開発環境だけで有効です。
 - `POST /api/v1/nodes/:id/heartbeat` — ノードトークン認証付きの容量報告
-- `GET /api/v1/nodes` — 管理者／レビュアー向けノード一覧
-- `GET /api/v1/tasks?status=...` — 管理者／レビュアー向けタスク一覧
-- `POST /api/v1/tasks/:id/retry` — 管理者専用。失敗した保存タスク／元ファイル取得タスクを再試行します。保存タスクのステージング元データが欠落・破損している場合は、multipart の `file` で代替データを送信できます。
-- `POST /api/v1/files/:id/ingest` — 管理者専用の multipart アップロード。条件を満たす別々のノード 2 台への保存を予約します。
-- `POST /api/v1/files/:id/ingest-source` — 管理者専用。uploader.jp / getuploader.com からの取得タスクをオンライン agent 1 台に割り当てます。agent がファイルを取得して中央 API に送信すると、API が SHA-256 を計算し、条件を満たす 2 台の保存タスクを作成します。パスワードや CAPTCHA の回避は行いません。
-- `POST /api/v1/artifacts/:id/discover-source-files` — 管理者専用。一覧ページから見つかった個別ダウンロードページ URL をプレビューします。1 回の確認につき最大 10 ページ・候補 100 件で、管理画面で選択した後に順番に保全します。
-- `GET /api/v1/files/:id/placements` — 管理者／レビュアー向け配置状態と健全なコピー数
-- `POST /api/v1/files/:id/replicate` — 必要な場合に代替コピーの作成を手動で要求します（管理者専用）
+- `GET /api/v1/operations/nodes` — 管理者／レビュアー向けノード一覧
+- `GET /api/v1/operations/tasks?status=...` — 管理者／レビュアー向けタスク一覧
+- `POST /api/v1/operations/tasks/:id/retry` — 管理者専用。失敗した保存タスク／元ファイル取得タスクを再試行します。保存タスクのステージング元データが欠落・破損している場合は、multipart の `file` で代替データを送信できます。
+- `POST /api/v1/catalog/files/:id/ingest` — 管理者専用の multipart アップロード。条件を満たす別々のノード 2 台への保存を予約します。
+- `POST /api/v1/catalog/files/:id/ingest-source` — 管理者専用。uploader.jp / getuploader.com からの取得タスクをオンライン agent 1 台に割り当てます。agent がファイルを取得して中央 API に送信すると、API が SHA-256 を計算し、条件を満たす 2 台の保存タスクを作成します。パスワードや CAPTCHA の回避は行いません。
+- `POST /api/v1/catalog/artifacts/:id/discover-source-files` — 管理者専用。一覧ページから見つかった個別ダウンロードページ URL をプレビューします。1 回の確認につき最大 10 ページ・候補 100 件で、管理画面で選択した後に順番に保全します。
+- `GET /api/v1/catalog/files/:id/placements` — 管理者／レビュアー向け配置状態と健全なコピー数
+- `POST /api/v1/catalog/files/:id/replicate` — 必要な場合に代替コピーの作成を手動で要求します（管理者専用）
 - `POST /api/v1/admin/placements/reconcile` — 配置の即時再調整（管理者専用）
 - `POST /api/v1/nodes/:id/tasks/claim` — ノードトークン認証付きの取得・保存・複製・余剰コピー削除タスク取得
 - `POST /api/v1/nodes/:id/tasks/:taskID/source-content?lease_token=...` — agent が取得した元ファイルを中央 API に送信。API が検証後、2 台への保存タスクを作成
@@ -192,14 +195,14 @@ docker compose logs --tail=200 node-agent node-agent-b node-agent-c node-agent-d
 ステージング元データが正常なら、代替ファイルを再アップロードせずに再試行を予約できます。
 
 ```sh
-curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
+curl -sS -X POST "http://localhost:8080/api/v1/operations/tasks/$TASK_ID/retry" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ステージング元データがない場合や整合性検証に失敗した場合は、正しい元ファイルを指定します（ファイルオブジェクトに記録されたサイズと SHA-256 が一致する必要があります）。
 
 ```sh
-curl -sS -X POST "http://localhost:8080/api/v1/tasks/$TASK_ID/retry" \
+curl -sS -X POST "http://localhost:8080/api/v1/operations/tasks/$TASK_ID/retry" \
   -H "Authorization: Bearer $TOKEN" \
   -F 'file=@/path/to/correct-file'
 ```

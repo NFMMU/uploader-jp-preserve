@@ -24,7 +24,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [publicationFilter, setPublicationFilter] = useState("");
 	const [selectedIDs, setSelectedIDs] = useState<string[]>([]);
 	const [bulkPolicy, setBulkPolicy] = useState("restricted");
-	const [relatedRequestID, setRelatedRequestID] = useState("");
 	const [modal, setModal] = useState(false);
 	const [detail, setDetail] = useState<Obj | null>(null);
 	const [metadata, setMetadata] = useState<Obj | null>(null);
@@ -62,7 +61,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	});
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
-	let filePath = `/files?page=${page}&limit=${limit}`;
+	let filePath = `/catalog/files?page=${page}&limit=${limit}`;
 	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
 	if (preservationFilter)
 		filePath +=
@@ -75,26 +74,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		filePath += "&artifact_id=" + encodeURIComponent(linkedArtifactID);
 
 	const f = useData(api, filePath, refresh + unused);
-	const requestData = useData(
-		api,
-		"/public-requests?limit=100",
-		refresh + unused,
-	);
 	const files: Obj[] = f.data.items || [];
-	const requests: Obj[] = (requestData.data.items || []).filter(
-		(x: Obj) =>
-			x.status === "accepted" ||
-			x.status === "in_review" ||
-			x.status === "pending",
-	);
 
 	useEffect(() => {
-		if (!linkedFileID || f.loading) return;
+		if (role === "author" || !linkedFileID || f.loading) return;
 		let live = true;
 		const local = (f.data.items || []).find((x: Obj) => x.id === linkedFileID);
 		(local
 			? Promise.resolve(local)
-			: api(`/files/${encodeURIComponent(linkedFileID)}`).then(
+			: api(`/catalog/files/${encodeURIComponent(linkedFileID)}`).then(
 					(result: Obj) => result.file,
 				)
 		)
@@ -141,7 +129,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (!reason || reason.trim().length < 3) return;
 		setBusy(true);
 		try {
-			await api(`/artifacts/${metadata.artifact_id}`, {
+			await api(`/catalog/artifacts/${metadata.artifact_id}`, {
 				method: "PATCH",
 				body: JSON.stringify({
 					title: metaForm.artifact_title,
@@ -151,7 +139,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					reason: reason.trim(),
 				}),
 			});
-			await api(`/files/${metadata.id}/metadata`, {
+			await api(`/catalog/files/${metadata.id}/metadata`, {
 				method: "PATCH",
 				body: JSON.stringify({
 					original_filename: metaForm.original_filename,
@@ -169,34 +157,12 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setBusy(false);
 		}
 	}
-	async function runBulk(
-		action: "policy" | "publication" | "delete",
-		extra: Obj = {},
-	) {
+	async function runBulk(action: "policy" | "publication", extra: Obj = {}) {
 		if (selectedIDs.length === 0) {
 			notify("先にファイルを選択してください");
 			return;
 		}
-		if (action === "delete" && !relatedRequestID) {
-			notify("削除を承認した申請を選択してください");
-			return;
-		}
-		if (action === "delete") {
-			const linked = requests.find((r: Obj) => r.id === relatedRequestID);
-			if (
-				!linked ||
-				linked.request_type !== "deletion" ||
-				linked.status !== "accepted"
-			) {
-				notify("承認済みの削除申請を選択してください");
-				return;
-			}
-		}
-		const reason = window.prompt(
-			action === "delete"
-				? "削除処理の理由を入力してください"
-				: "一括変更の理由を入力してください",
-		);
+		const reason = window.prompt("一括変更の理由を入力してください");
 		if (!reason || reason.trim().length < 3) return;
 		try {
 			const body: Obj = {
@@ -205,8 +171,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				reason: reason.trim(),
 				...extra,
 			};
-			if (relatedRequestID) body.request_id = relatedRequestID;
-			const result = await api("/files/bulk-action", {
+			const result = await api("/catalog/files/bulk-action", {
 				method: "POST",
 				body: JSON.stringify(body),
 			});
@@ -217,32 +182,51 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			notify((e as Error).message);
 		}
 	}
-	async function createDeletionRequests() {
+	async function deleteSelectedFiles() {
 		if (selectedIDs.length === 0) return;
-		const reason = window.prompt(
-			"削除申請の理由を入力してください（5文字以上）",
-		);
-		if (!reason || reason.trim().length < 5) return;
 		if (
 			!window.confirm(
-				`選択した ${selectedIDs.length} 件について削除申請を作成します。実際の削除は申請を承認した後に始まります。続行しますか？`,
+				`選択した ${selectedIDs.length} 件のファイルを論理削除します。続行しますか？`,
 			)
 		)
 			return;
+		setBusy(true);
+		const failures: string[] = [];
 		try {
-			const result = await api("/admin/deletion-requests", {
-				method: "POST",
-				body: JSON.stringify({ file_ids: selectedIDs, reason: reason.trim() }),
-			});
-			notify(
-				`${result.count} 件の削除申請を作成しました。申請・保全レビューで承認してください。`,
-			);
+			for (const id of selectedIDs) {
+				try {
+					await api(`/catalog/files/${encodeURIComponent(id)}`, {
+						method: "DELETE",
+					});
+				} catch (error) {
+					failures.push(`${id}: ${(error as Error).message}`);
+				}
+			}
 			setSelectedIDs([]);
-			nav("/admin/review?tab=requests");
-		} catch (e) {
-			notify((e as Error).message);
+			setRefreshDummy((x) => x + 1);
+			notify(
+				failures.length
+					? `${selectedIDs.length - failures.length} 件を削除、${failures.length} 件失敗しました`
+					: `${selectedIDs.length} 件を削除しました`,
+			);
+		} finally {
+			setBusy(false);
 		}
 	}
+
+	async function deleteSingleFile(id: string) {
+		if (!window.confirm("このファイルを論理削除しますか？")) return;
+		try {
+			await api(`/catalog/files/${encodeURIComponent(id)}`, {
+				method: "DELETE",
+			});
+			notify("ファイルを削除しました");
+			setRefreshDummy((x) => x + 1);
+		} catch (error) {
+			notify((error as Error).message);
+		}
+	}
+
 	function toggleSelected(id: string, checked: boolean) {
 		setSelectedIDs((old) =>
 			checked
@@ -267,7 +251,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		e.preventDefault();
 		setBusy(true);
 		try {
-			const a = await api("/artifacts", {
+			const a = await api("/catalog/artifacts", {
 				method: "POST",
 				body: JSON.stringify(form),
 			});
@@ -298,7 +282,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		try {
 			let fileId = pendingFileId;
 			if (!fileId) {
-				const file = await api(`/artifacts/${artifact.id}/files`, {
+				const file = await api(`/catalog/artifacts/${artifact.id}/files`, {
 					method: "POST",
 					body: JSON.stringify({
 						original_filename: upload?.name || "取得待ち",
@@ -317,12 +301,12 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				const fd = new FormData();
 				fd.append("file", upload);
 				fd.append("priority", priority);
-				ingestResult = await api(`/files/${fileId}/ingest`, {
+				ingestResult = await api(`/catalog/files/${fileId}/ingest`, {
 					method: "POST",
 					body: fd,
 				});
 			} else {
-				ingestResult = await api(`/files/${fileId}/ingest-source`, {
+				ingestResult = await api(`/catalog/files/${fileId}/ingest-source`, {
 					method: "POST",
 					body: JSON.stringify({
 						source_url: url,
@@ -366,7 +350,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		setBatchStatus("一覧を確認しています…");
 		try {
 			const result = await api(
-				`/artifacts/${artifact.id}/discover-source-files`,
+				`/catalog/artifacts/${artifact.id}/discover-source-files`,
 				{
 					method: "POST",
 					body: JSON.stringify({
@@ -407,7 +391,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				`取得タスク登録中 ${i + 1}/${chosen.length}: ${item.label || item.url}`,
 			);
 			try {
-				const file = await api(`/artifacts/${artifact.id}/files`, {
+				const file = await api(`/catalog/artifacts/${artifact.id}/files`, {
 					method: "POST",
 					body: JSON.stringify({
 						original_filename: (item.label || "取得待ち").slice(0, 500),
@@ -417,7 +401,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						redistribution_policy: policy,
 					}),
 				});
-				const queued = await api(`/files/${file.id}/ingest-source`, {
+				const queued = await api(`/catalog/files/${file.id}/ingest-source`, {
 					method: "POST",
 					body: JSON.stringify({
 						source_url: item.url,
@@ -452,7 +436,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		const reason = window.prompt("変更理由を入力してください");
 		if (!reason || reason.trim().length < 3) return;
 		try {
-			await api(`/files/${detail.id}/policy`, {
+			await api(`/catalog/files/${detail.id}/policy`, {
 				method: "PATCH",
 				body: JSON.stringify({
 					redistribution_policy: policy,
@@ -460,7 +444,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				}),
 			});
 			if (role === "admin" && pub !== detail.public_download_enabled) {
-				await api(`/files/${detail.id}/publication`, {
+				await api(`/catalog/files/${detail.id}/publication`, {
 					method: "PATCH",
 					body: JSON.stringify({ enabled: pub, reason: reason.trim() }),
 				});
@@ -478,15 +462,21 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			<Heading
 				eyebrow=""
 				title="作品・ファイル"
-				desc="メタデータ、保全状態、公開条件を検索・一括管理"
+				desc={
+					role === "author"
+						? "割り当てられた作品のファイルを確認・削除"
+						: "メタデータ、保全状態、公開条件を検索・一括管理"
+				}
 				actions={
 					<>
-						<button
-							className="secondary"
-							onClick={() => downloadExport("csv", notify)}
-						>
-							<Download size={16} /> CSV出力
-						</button>
+						{role !== "author" && (
+							<button
+								className="secondary"
+								onClick={() => downloadExport("csv", notify)}
+							>
+								<Download size={16} /> CSV出力
+							</button>
+						)}
 						{role === "admin" && (
 							<button className="primary" onClick={() => setModal(true)}>
 								<Plus size={16} /> 作品を登録
@@ -544,7 +534,24 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				</select>
 				<span className="result-count">{f.data.total ?? files.length} 件</span>
 			</div>
-			{selectedIDs.length > 0 && role !== "viewer" && (
+			{selectedIDs.length > 0 && role === "author" && (
+				<section className="bulk-toolbar panel">
+					<div className="bulk-toolbar-title">
+						<b>{selectedIDs.length} 件を選択中</b>
+						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+							選択解除
+						</button>
+					</div>
+					<button
+						className="danger-btn"
+						disabled={busy}
+						onClick={deleteSelectedFiles}
+					>
+						選択したファイルを削除
+					</button>
+				</section>
+			)}
+			{selectedIDs.length > 0 && role !== "viewer" && role !== "author" && (
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
@@ -553,41 +560,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 					</div>
 					<div className="bulk-toolbar-controls">
-						<label>
-							関連申請
-							<select
-								value={relatedRequestID}
-								onChange={(e) => setRelatedRequestID(e.target.value)}
-							>
-								<option value="">申請に紐づけない</option>
-								{requests.map((r: Obj) => (
-									<option key={r.id} value={r.id}>
-										{r.request_type === "deletion"
-											? "削除"
-											: r.request_type === "takedown"
-												? "公開停止"
-												: r.request_type === "preservation"
-													? "保全"
-													: r.request_type === "redistribution_assistance"
-														? "再配布相談"
-														: r.request_type === "publisher_assistance"
-															? "配布代行"
-															: "移設先"}{" "}
-										/{" "}
-										{r.linked_file_name ||
-											r.linked_artifact_title ||
-											r.title ||
-											String(r.id).slice(0, 8)}{" "}
-										/{" "}
-										{r.status === "accepted"
-											? "承認"
-											: r.status === "in_review"
-												? "確認中"
-												: "未処理"}
-									</option>
-								))}
-							</select>
-						</label>
 						<label>
 							公開条件
 							<select
@@ -612,6 +584,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						{role === "admin" && (
 							<>
 								<button
+									className="danger-btn"
+									disabled={busy}
+									onClick={deleteSelectedFiles}
+								>
+									選択したファイルを削除
+								</button>
+								<button
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
 								>
@@ -623,21 +602,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								>
 									一括公開停止
 								</button>
-								<button className="danger-btn" onClick={createDeletionRequests}>
-									削除申請を作成
-								</button>
-								<button
-									className="danger-btn"
-									onClick={() => runBulk("delete")}
-								>
-									承認済み申請で削除
-								</button>
 							</>
 						)}
 					</div>
-					<p className="muted">
-						「削除申請を作成」は申請を未処理で登録します。申請・保全レビューで管理者が承認するとノード削除タスクが開始します。承認済みの申請を使った削除も可能です。
-					</p>
 				</section>
 			)}
 			<section className="panel table-panel">
@@ -700,6 +667,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									setPolicy={setPolicy}
 									setPub={setPub}
 									openMetadata={openMetadata}
+									onDelete={() => deleteSingleFile(x.id)}
 								/>
 							))}
 						</>
