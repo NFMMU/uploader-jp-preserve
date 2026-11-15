@@ -2781,6 +2781,18 @@ footer > span {
 	border-bottom: 1px solid #eee;
 }
 
+.preference-provider-content {
+	flex-direction: column;
+	display: flex;
+	flex-grow: 1;
+}
+
+.preference-provider-content > span {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
 .preference-provider-icon {
 	width: 34px;
 	height: 34px;

@@ -362,7 +362,7 @@ export function PreferencePage({
 									picture?: string;
 								}) => (
 									<div key={identity.id} className="preference-provider">
-										<div>
+										<div className="preference-provider-content">
 											<span>
 												{(
 													(d.data?.items ?? []) as {
