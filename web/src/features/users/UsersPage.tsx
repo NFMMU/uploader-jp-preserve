@@ -1,4 +1,4 @@
-import { LockKeyhole, Plus } from "lucide-react";
+import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Heading } from "../../components/common/Heading";
@@ -12,25 +12,206 @@ import type { Obj } from "../../types/common";
 export function UsersPage({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/admin/users", refresh + localRefresh);
+
 	const [modal, setModal] = useState(false);
+	const [editModal, setEditModal] = useState(false);
+	const [editingUser, setEditingUser] = useState<Obj | null>(null);
+
 	const [form, setForm] = useState({
 		email: "",
 		display_name: "",
 		password: "",
 		role: "reviewer",
 	});
+
+	const [editForm, setEditForm] = useState({
+		display_name: "",
+		role: "reviewer",
+		disabled: false,
+		reason: "",
+	});
+
+	const [passwordForm, setPasswordForm] = useState({
+		new_password: "",
+		confirm_password: "",
+		reason: "",
+	});
+
+	const [saving, setSaving] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+	const [resettingPassword, setResettingPassword] = useState(false);
+
+	function reload() {
+		setLocalRefresh((x) => x + 1);
+	}
+
+	function closeEdit() {
+		setEditModal(false);
+		setEditingUser(null);
+		setEditForm({
+			display_name: "",
+			role: "reviewer",
+			disabled: false,
+			reason: "",
+		});
+		setPasswordForm({
+			new_password: "",
+			confirm_password: "",
+			reason: "",
+		});
+	}
+
 	async function create(e: React.FormEvent) {
 		e.preventDefault();
+
 		try {
-			await api("/admin/users", { method: "POST", body: JSON.stringify(form) });
+			await api("/admin/users", {
+				method: "POST",
+				body: JSON.stringify(form),
+			});
+
 			notify("ユーザーを作成しました");
-			setForm({ email: "", display_name: "", password: "", role: "reviewer" });
-			setLocalRefresh((x) => x + 1);
+			setForm({
+				email: "",
+				display_name: "",
+				password: "",
+				role: "reviewer",
+			});
+			reload();
 			setModal(false);
 		} catch (e) {
 			notify((e as Error).message);
 		}
 	}
+
+	function openEdit(user: Obj) {
+		setEditingUser(user);
+
+		setEditForm({
+			display_name: String(user.display_name || ""),
+			role: String(user.role || "reviewer"),
+			disabled: Boolean(user.disabled_at),
+			reason: "",
+		});
+
+		setPasswordForm({
+			new_password: "",
+			confirm_password: "",
+			reason: "",
+		});
+
+		setEditModal(true);
+	}
+
+	// ユーザー情報更新
+	async function update(e: React.FormEvent) {
+		e.preventDefault();
+
+		if (!editingUser || saving) return;
+
+		setSaving(true);
+
+		try {
+			const body: Record<string, unknown> = {
+				display_name: editForm.display_name,
+				role: editForm.role,
+				disabled: editForm.disabled,
+			};
+
+			if (editForm.reason.trim()) {
+				body.reason = editForm.reason.trim();
+			}
+
+			await api(`/admin/users/${editingUser.id}`, {
+				method: "PUT",
+				body: JSON.stringify(body),
+			});
+
+			notify("ユーザー情報を更新しました");
+			closeEdit();
+			reload();
+		} catch (e) {
+			notify((e as Error).message);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	// パスワードリセット
+	async function resetPassword(e: React.FormEvent) {
+		e.preventDefault();
+
+		if (!editingUser || resettingPassword) return;
+
+		if (passwordForm.new_password !== passwordForm.confirm_password) {
+			notify("パスワードが一致しません");
+			return;
+		}
+
+		if (!passwordForm.reason.trim() || passwordForm.reason.trim().length < 3) {
+			notify("パスワード変更理由を3文字以上で入力してください");
+			return;
+		}
+
+		setResettingPassword(true);
+
+		try {
+			await api(`/admin/users/${editingUser.id}/password`, {
+				method: "PUT",
+				body: JSON.stringify({
+					new_password: passwordForm.new_password,
+					confirm_password: passwordForm.confirm_password,
+					reason: passwordForm.reason.trim(),
+				}),
+			});
+
+			notify("パスワードをリセットしました");
+
+			setPasswordForm({
+				new_password: "",
+				confirm_password: "",
+				reason: "",
+			});
+
+			reload();
+		} catch (e) {
+			notify((e as Error).message);
+		} finally {
+			setResettingPassword(false);
+		}
+	}
+
+	// ユーザー削除
+	async function deleteUser(user: Obj) {
+		if (deleting) return;
+
+		const confirmed = window.confirm(
+			`「${user.display_name || user.email}」を削除しますか？\nこの操作は取り消せません。`,
+		);
+
+		if (!confirmed) return;
+
+		setDeleting(true);
+
+		try {
+			await api(`/admin/users/${user.id}`, {
+				method: "DELETE",
+			});
+
+			notify("ユーザーを削除しました");
+
+			if (editingUser?.id === user.id) {
+				closeEdit();
+			}
+
+			reload();
+		} catch (e) {
+			notify((e as Error).message);
+		} finally {
+			setDeleting(false);
+		}
+	}
+
 	return (
 		<>
 			<Heading
@@ -40,11 +221,13 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				actions={
 					role === "admin" && (
 						<button className="primary" onClick={() => setModal(true)}>
-							<Plus size={16} /> ユーザーを追加
+							<Plus size={16} />
+							ユーザーを追加
 						</button>
 					)
 				}
 			/>
+
 			{role !== "admin" ? (
 				<div className="info-card">
 					<LockKeyhole />
@@ -62,17 +245,18 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							"ロール",
 							"状態",
 							"作成日時",
+							"操作",
 						]}
 					>
 						{d.loading ? (
 							<tr>
-								<td colSpan={5} className="empty">
+								<td colSpan={6} className="empty">
 									読み込み中…
 								</td>
 							</tr>
 						) : d.error ? (
 							<tr>
-								<td colSpan={5} className="empty">
+								<td colSpan={6} className="empty">
 									{d.error}
 								</td>
 							</tr>
@@ -95,12 +279,35 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 										<Status value={x.disabled_at ? "offline" : "online"} />
 									</td>
 									<td>{date(x.created_at)}</td>
+									<td>
+										<div className="file-cell">
+											<button
+												type="button"
+												className="secondary"
+												onClick={() => openEdit(x)}
+											>
+												<Pencil size={14} />
+												編集
+											</button>
+											<button
+												type="button"
+												className="secondary"
+												onClick={() => deleteUser(x)}
+												disabled={deleting}
+												title="ユーザーを削除"
+											>
+												<Trash2 size={14} />
+											</button>
+										</div>
+									</td>
 								</tr>
 							))
 						)}
 					</Table>
 				</section>
 			)}
+
+			{/* ユーザー作成 */}
 			{modal && (
 				<Modal title="ユーザーを作成" close={() => setModal(false)}>
 					<form className="form-stack" onSubmit={create}>
@@ -110,19 +317,29 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								required
 								value={form.display_name}
 								onChange={(e) =>
-									setForm({ ...form, display_name: e.target.value })
+									setForm({
+										...form,
+										display_name: e.target.value,
+									})
 								}
 							/>
 						</label>
+
 						<label>
 							メールアドレス
 							<input
 								required
 								type="email"
 								value={form.email}
-								onChange={(e) => setForm({ ...form, email: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										email: e.target.value,
+									})
+								}
 							/>
 						</label>
+
 						<label>
 							初期パスワード（12文字以上）
 							<input
@@ -130,20 +347,32 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 								minLength={12}
 								type="password"
 								value={form.password}
-								onChange={(e) => setForm({ ...form, password: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										password: e.target.value,
+									})
+								}
 							/>
 						</label>
+
 						<label>
 							ロール
 							<select
 								value={form.role}
-								onChange={(e) => setForm({ ...form, role: e.target.value })}
+								onChange={(e) =>
+									setForm({
+										...form,
+										role: e.target.value,
+									})
+								}
 							>
 								<option value="reviewer">確認担当者</option>
 								<option value="viewer">閲覧者</option>
 								<option value="admin">管理者</option>
 							</select>
 						</label>
+
 						<div className="modal-actions">
 							<button
 								type="button"
@@ -155,6 +384,156 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 							<button className="primary">作成</button>
 						</div>
 					</form>
+				</Modal>
+			)}
+
+			{/* ユーザー編集 */}
+			{editModal && editingUser && (
+				<Modal title="ユーザー情報を編集" close={closeEdit}>
+					<div className="form-stack">
+						<div className="info-card">
+							<div>
+								<b>{editingUser.email}</b>
+								<p>ユーザーID: {editingUser.id}</p>
+							</div>
+						</div>
+
+						<form className="form-stack" onSubmit={update}>
+							<label>
+								表示名
+								<input
+									required
+									maxLength={120}
+									value={editForm.display_name}
+									onChange={(e) =>
+										setEditForm({
+											...editForm,
+											display_name: e.target.value,
+										})
+									}
+								/>
+							</label>
+
+							<label>
+								ロール
+								<select
+									value={editForm.role}
+									onChange={(e) =>
+										setEditForm({
+											...editForm,
+											role: e.target.value,
+										})
+									}
+								>
+									<option value="reviewer">確認担当者</option>
+									<option value="viewer">閲覧者</option>
+									<option value="admin">管理者</option>
+								</select>
+							</label>
+
+							<label>
+								アカウント状態
+								<select
+									value={editForm.disabled ? "disabled" : "active"}
+									onChange={(e) =>
+										setEditForm({
+											...editForm,
+											disabled: e.target.value === "disabled",
+										})
+									}
+								>
+									<option value="active">有効</option>
+									<option value="disabled">無効</option>
+								</select>
+							</label>
+
+							<label>
+								変更理由（任意）
+								<textarea
+									maxLength={2000}
+									value={editForm.reason}
+									onChange={(e) =>
+										setEditForm({
+											...editForm,
+											reason: e.target.value,
+										})
+									}
+									placeholder="変更理由を入力"
+								/>
+							</label>
+
+							<div className="modal-actions">
+								<button type="button" className="secondary" onClick={closeEdit}>
+									キャンセル
+								</button>
+								<button className="primary" disabled={saving}>
+									{saving ? "保存中…" : "変更を保存"}
+								</button>
+							</div>
+						</form>
+
+						<hr />
+
+						<h3>パスワードリセット</h3>
+						<p>このユーザーのパスワードを新しいものに変更します。</p>
+
+						<form className="form-stack" onSubmit={resetPassword}>
+							<label>
+								新しいパスワード（12文字以上）
+								<input
+									required
+									type="password"
+									minLength={12}
+									maxLength={72}
+									value={passwordForm.new_password}
+									onChange={(e) =>
+										setPasswordForm({
+											...passwordForm,
+											new_password: e.target.value,
+										})
+									}
+								/>
+							</label>
+
+							<label>
+								パスワード確認
+								<input
+									required
+									type="password"
+									minLength={12}
+									maxLength={72}
+									value={passwordForm.confirm_password}
+									onChange={(e) =>
+										setPasswordForm({
+											...passwordForm,
+											confirm_password: e.target.value,
+										})
+									}
+								/>
+							</label>
+
+							<label>
+								リセット理由（必須）
+								<textarea
+									required
+									minLength={3}
+									maxLength={2000}
+									value={passwordForm.reason}
+									onChange={(e) =>
+										setPasswordForm({
+											...passwordForm,
+											reason: e.target.value,
+										})
+									}
+									placeholder="例: ユーザーからのパスワード再設定依頼"
+								/>
+							</label>
+
+							<button className="secondary" disabled={resettingPassword}>
+								{resettingPassword ? "リセット中…" : "パスワードをリセット"}
+							</button>
+						</form>
+					</div>
 				</Modal>
 			)}
 		</>
