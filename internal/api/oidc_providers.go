@@ -38,6 +38,7 @@ func (s *Server) listOidcProviders(c *gin.Context) {
 			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
+			oidcProviderQuery.GoogleHd,
 		).Find()
 	if err != nil || data == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -73,6 +74,7 @@ func (s *Server) getOidcProvider(c *gin.Context) {
 			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
+			oidcProviderQuery.GoogleHd,
 		).First()
 	if err != nil || data == nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -92,6 +94,7 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 		ClientID          string  `json:"client_id" binding:"required,max=255"`
 		ClientSecret      string  `json:"client_secret" binding:"required,max=255"`
 		ServiceIcon       *string `json:"service_icon" binding:"omitempty,max=255"`
+		GoogleHD          *string `json:"google_hd" binding:"omitempty,max=255"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "display_name, discovery_endpoint, client_id, client_secret are required"})
@@ -110,6 +113,7 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 		ClientID:          req.ClientID,
 		ClientSecret:      *encrypted,
 		ServiceIcon:       req.ServiceIcon,
+		GoogleHd:          req.GoogleHD,
 		UpdatedAt:         time.Now(),
 	})
 	if err != nil {
@@ -217,6 +221,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
+			oidcProviderQuery.GoogleHd,
 		).First()
 	if data == nil || err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

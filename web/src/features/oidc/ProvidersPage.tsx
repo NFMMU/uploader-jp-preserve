@@ -31,6 +31,7 @@ export function ProvidersPage({
 		discovery_endpoint: "",
 		client_id: "",
 		client_secret: "",
+		google_hd: "",
 	});
 	async function create(e: React.FormEvent) {
 		e.preventDefault();
@@ -48,6 +49,7 @@ export function ProvidersPage({
 				discovery_endpoint: "",
 				client_id: "",
 				client_secret: "",
+				google_hd: "",
 			});
 			setLocalRefresh((x) => x + 1);
 			setModal(false);
@@ -55,6 +57,16 @@ export function ProvidersPage({
 			notify((e as Error).message);
 		} finally {
 			setSubmitting(false);
+		}
+	}
+
+	async function deleteProvider(id: string) {
+		try {
+			await api(`/admin/oidc_providers/${id}`, { method: "DELETE" });
+			notify("OIDCプロバイダーを削除しました");
+			setLocalRefresh((x) => x + 1);
+		} catch (e) {
+			notify((e as Error).message);
 		}
 	}
 
@@ -86,7 +98,9 @@ export function ProvidersPage({
 				</div>
 			) : (
 				<section className="panel table-panel">
-					<Table headers={["名前", "コールバックURL", "状態", "作成日時"]}>
+					<Table
+						headers={["名前", "コールバックURL", "状態", "作成日時", "操作"]}
+					>
 						{d.loading ? (
 							<tr>
 								<td colSpan={5} className="empty">
@@ -106,7 +120,12 @@ export function ProvidersPage({
 										<div className="file-cell">
 											<div className="avatar">
 												{x.service_icon ? (
-													<img alt="サービスアイコン" src={x.service_icon} width="25px" height="25px" />
+													<img
+														alt="サービスアイコン"
+														src={x.service_icon}
+														width="25px"
+														height="25px"
+													/>
 												) : (
 													x.display_name.slice(0, 1).toUpperCase()
 												)}
@@ -126,6 +145,16 @@ export function ProvidersPage({
 										)}
 									</td>
 									<td>{date(x.created_at)}</td>
+									<td>
+										<div className="row-actions">
+											<button
+												className="small-btn"
+												onClick={() => deleteProvider(x.id)}
+											>
+												削除
+											</button>
+										</div>
+									</td>
 								</tr>
 							))
 						)}
@@ -194,6 +223,17 @@ export function ProvidersPage({
 								value={form.client_secret}
 								onChange={(e) =>
 									setForm({ ...form, client_secret: e.target.value })
+								}
+							/>
+						</label>
+						<label>
+							Google HD
+							<input
+								disabled={submitting}
+								required
+								value={form.google_hd}
+								onChange={(e) =>
+									setForm({ ...form, google_hd: e.target.value })
 								}
 							/>
 						</label>

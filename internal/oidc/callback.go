@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -172,6 +173,11 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 		return nil
 	}
 
+	if domain, _ := extractDomain(idTokenData.Email); providerDbData.GoogleHd != nil && *providerDbData.GoogleHd != domain {
+		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
+		return nil
+	}
+
 	// モードに合わせた処理
 	switch mode {
 	case "authenticate":
@@ -228,4 +234,13 @@ func getOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, front
 		return nil
 	}
 	return resp
+}
+
+func extractDomain(email string) (string, bool) {
+	// "@" で前後に分割する（found は "@" が見つかったかどうか）
+	_, domain, found := strings.Cut(email, "@")
+	if !found || domain == "" {
+		return "", false
+	}
+	return domain, true
 }

@@ -38,6 +38,7 @@ func newOidcProvider(db *gorm.DB, opts ...gen.DOOption) oidcProvider {
 	_oidcProvider.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_oidcProvider.DeletedAt = field.NewField(tableName, "deleted_at")
 	_oidcProvider.ServiceIcon = field.NewString(tableName, "service_icon")
+	_oidcProvider.GoogleHd = field.NewString(tableName, "google_hd")
 
 	_oidcProvider.fillFieldMap()
 
@@ -58,6 +59,7 @@ type oidcProvider struct {
 	UpdatedAt         field.Time
 	DeletedAt         field.Field
 	ServiceIcon       field.String
+	GoogleHd          field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -84,6 +86,7 @@ func (o *oidcProvider) updateTableName(table string) *oidcProvider {
 	o.UpdatedAt = field.NewTime(table, "updated_at")
 	o.DeletedAt = field.NewField(table, "deleted_at")
 	o.ServiceIcon = field.NewString(table, "service_icon")
+	o.GoogleHd = field.NewString(table, "google_hd")
 
 	o.fillFieldMap()
 
@@ -112,7 +115,7 @@ func (o *oidcProvider) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (o *oidcProvider) fillFieldMap() {
-	o.fieldMap = make(map[string]field.Expr, 10)
+	o.fieldMap = make(map[string]field.Expr, 11)
 	o.fieldMap["id"] = o.ID
 	o.fieldMap["display_name"] = o.DisplayName
 	o.fieldMap["discovery_endpoint"] = o.DiscoveryEndpoint
@@ -123,6 +126,7 @@ func (o *oidcProvider) fillFieldMap() {
 	o.fieldMap["updated_at"] = o.UpdatedAt
 	o.fieldMap["deleted_at"] = o.DeletedAt
 	o.fieldMap["service_icon"] = o.ServiceIcon
+	o.fieldMap["google_hd"] = o.GoogleHd
 }
 
 func (o oidcProvider) clone(db *gorm.DB) oidcProvider {

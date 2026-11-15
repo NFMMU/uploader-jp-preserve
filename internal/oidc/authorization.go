@@ -84,5 +84,9 @@ func AuthorizationRequest(c *gin.Context, baseURL string) {
 	setCallbackCookie(c.Writer, c.Request, "state", state)
 	setCallbackCookie(c.Writer, c.Request, "nonce", nonce)
 	setCallbackCookie(c.Writer, c.Request, "oidc_mode", string(mode))
-	c.Redirect(http.StatusFound, config.AuthCodeURL(state, oidc.Nonce(nonce)))
+	redirectURL := config.AuthCodeURL(state, oidc.Nonce(nonce))
+	if providerDbData.GoogleHd != nil {
+		redirectURL = redirectURL + fmt.Sprintf("&hd=%s", *providerDbData.GoogleHd)
+	}
+	c.Redirect(http.StatusFound, redirectURL)
 }

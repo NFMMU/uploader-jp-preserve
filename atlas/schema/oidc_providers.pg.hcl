@@ -17,6 +17,10 @@ table "oidc_providers" {
     type = varchar(255)
     null = false
   }
+  column "google_hd" {
+    type = varchar(255)
+    null = true
+  }
   column "client_id" {
     type = varchar(255)
     null = false
