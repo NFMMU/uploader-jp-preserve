@@ -230,7 +230,6 @@ export function ProvidersPage({
 							Google HD
 							<input
 								disabled={submitting}
-								required
 								value={form.google_hd}
 								onChange={(e) =>
 									setForm({ ...form, google_hd: e.target.value })
