@@ -170,7 +170,7 @@ func linkOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, fron
 	oidcIdentityQuery := query.OidcIdentity
 	err := oidcIdentityQuery.WithContext(c.Request.Context()).Create(&model.OidcIdentity{
 		ProviderID:        providerID,
-		Issuer:            data.Issuer,
+		Issuer:            normalizeIssuer(data.Issuer),
 		Subject:           data.Subject,
 		Email:             data.Email,
 		UserID:            user.ID,
@@ -182,7 +182,8 @@ func linkOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, fron
 		return nil
 	}
 	resp, err := oidcIdentityQuery.WithContext(c.Request.Context()).Where(
-		oidcIdentityQuery.UserID.Eq(user.ID),
+		oidcIdentityQuery.ProviderID.Eq(providerID),
+		oidcIdentityQuery.Issuer.Eq(normalizeIssuer(data.Issuer)),
 		oidcIdentityQuery.Subject.Eq(data.Subject),
 	).First()
 	if err != nil {
@@ -196,7 +197,7 @@ func getOidcIdentity(c *gin.Context, data OidcClaims, providerID, baseURL, front
 	oidcIdentityQuery := query.OidcIdentity
 	resp, err := oidcIdentityQuery.WithContext(c.Request.Context()).Where(
 		oidcIdentityQuery.ProviderID.Eq(providerID),
-		oidcIdentityQuery.Issuer.Eq(data.Issuer),
+		oidcIdentityQuery.Issuer.Eq(normalizeIssuer(data.Issuer)),
 		oidcIdentityQuery.Subject.Eq(data.Subject),
 	).First()
 	if err != nil {

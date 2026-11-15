@@ -26,3 +26,12 @@ func setCallbackCookie(w http.ResponseWriter, r *http.Request, name, value strin
 	}
 	http.SetCookie(w, c)
 }
+
+func normalizeIssuer(issuer string) string {
+	switch issuer {
+	case "accounts.google.com", "https://accounts.google.com":
+		return "https://accounts.google.com"
+	default:
+		return issuer
+	}
+}
