@@ -1,4 +1,4 @@
-table "author_artifacts" {
+table "author_artifact" {
   schema = schema.public
   column "user_id" {
     type = uuid
