@@ -142,11 +142,10 @@ func (s *Server) createOidcProvider(c *gin.Context) {
 
 func (s *Server) putOidcProvider(c *gin.Context) {
 	var req struct {
-		DisplayName       string  `json:"display_name" binding:"required,max=255"`
-		DiscoveryEndpoint string  `json:"discovery_endpoint" binding:"required,max=255"`
-		ClientID          string  `json:"client_id" binding:"required,max=255"`
-		ClientSecret      *string `json:"client_secret" binding:"omitempty,max=255"`
-		ServiceIcon       *string `json:"service_icon" binding:"omitempty,max=255"`
+		DisplayName  string  `json:"display_name" binding:"required,max=255"`
+		ClientID     string  `json:"client_id" binding:"required,max=255"`
+		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
+		ServiceIcon  *string `json:"service_icon" binding:"omitempty,max=255"`
 	}
 	id := c.Param("id")
 	if id == "" {
@@ -179,11 +178,10 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		return
 	}
 	updates := map[string]any{
-		"display_name":       req.DisplayName,
-		"discovery_endpoint": req.DiscoveryEndpoint,
-		"client_id":          req.ClientID,
-		"service_icon":       req.ServiceIcon,
-		"updated_at":         time.Now(),
+		"display_name": req.DisplayName,
+		"client_id":    req.ClientID,
+		"service_icon": req.ServiceIcon,
+		"updated_at":   time.Now(),
 	}
 	if req.ClientSecret != nil {
 		encrypted, err := s.encryptSourcePassword(*req.ClientSecret)
