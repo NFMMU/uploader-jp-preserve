@@ -1,6 +1,6 @@
 import { LockKeyhole, Pencil, Plus, Trash2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Heading } from "../../components/common/Heading";
 import { Modal } from "../../components/common/Modal";
 import { Status } from "../../components/common/Status";
@@ -16,6 +16,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	const [modal, setModal] = useState(false);
 	const [editModal, setEditModal] = useState(false);
 	const [editingUser, setEditingUser] = useState<Obj | null>(null);
+
+	const editSessionId = useRef(0);
 
 	const [form, setForm] = useState({
 		email: "",
@@ -46,6 +48,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	}
 
 	function closeEdit() {
+		editSessionId.current++;
 		setEditModal(false);
 		setEditingUser(null);
 		setEditForm({
@@ -85,6 +88,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	}
 
 	function openEdit(user: Obj) {
+		editSessionId.current++;
 		setEditingUser(user);
 
 		setEditForm({
@@ -109,6 +113,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 
 		if (!editingUser || saving) return;
 
+		const sessionId = editSessionId.current;
+
 		setSaving(true);
 
 		try {
@@ -128,7 +134,11 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 			});
 
 			notify("ユーザー情報を更新しました");
-			closeEdit();
+
+			if (editSessionId.current === sessionId) {
+				closeEdit();
+			}
+
 			reload();
 		} catch (e) {
 			notify((e as Error).message);
@@ -153,6 +163,8 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 			return;
 		}
 
+		const sessionId = editSessionId.current;
+
 		setResettingPassword(true);
 
 		try {
@@ -172,6 +184,14 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				confirm_password: "",
 				reason: "",
 			});
+
+			if (editSessionId.current === sessionId) {
+				setPasswordForm({
+					new_password: "",
+					confirm_password: "",
+					reason: "",
+				});
+			}
 
 			reload();
 		} catch (e) {
