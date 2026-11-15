@@ -98,25 +98,38 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		}
 	}
 
+	async function loadAuthorAssignments(
+		userID: string,
+		sessionId = editSessionId.current,
+	) {
+		setAssignmentsLoading(true);
+		setAssignmentsError("");
+
+		try {
+			const result: Obj = await api(
+				`/admin/author-assignments/${encodeURIComponent(userID)}`,
+			);
+			if (editSessionId.current === sessionId) {
+				setAuthorArtifactIDs(result.artifact_ids || []);
+			}
+		} catch (error) {
+			if (editSessionId.current === sessionId) {
+				setAssignmentsError((error as Error).message);
+			}
+		} finally {
+			if (editSessionId.current === sessionId) {
+				setAssignmentsLoading(false);
+			}
+		}
+	}
+
 	function openEdit(user: Obj) {
 		editSessionId.current++;
 		setEditingUser(user);
 		setAuthorArtifactIDs([]);
 		setAssignmentsError("");
-		setAssignmentsLoading(true);
 		const sessionId = editSessionId.current;
-		api(`/admin/author-assignments/${encodeURIComponent(user.id)}`)
-			.then((result: Obj) => {
-				if (editSessionId.current === sessionId)
-					setAuthorArtifactIDs(result.artifact_ids || []);
-			})
-			.catch((error: Error) => {
-				if (editSessionId.current === sessionId)
-					setAssignmentsError(error.message);
-			})
-			.finally(() => {
-				if (editSessionId.current === sessionId) setAssignmentsLoading(false);
-			});
+		void loadAuthorAssignments(user.id, sessionId);
 
 		setEditForm({
 			display_name: String(user.display_name || ""),
@@ -138,8 +151,15 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	async function update(e: React.FormEvent) {
 		e.preventDefault();
 
-		if (!editingUser || saving || assignmentsLoading || assignmentsError)
+		if (!editingUser || saving) return;
+
+		const savesAssignments = editForm.role === "author";
+		if (
+			savesAssignments &&
+			(assignmentsLoading || assignmentsError || artifactsData.error)
+		) {
 			return;
+		}
 
 		const sessionId = editSessionId.current;
 
@@ -494,7 +514,19 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 									{assignmentsLoading ? (
 										<p>割り当てを読み込み中...</p>
 									) : assignmentsError ? (
-										<p className="policy-warning">{assignmentsError}</p>
+										<div className="policy-warning">
+											<p>{assignmentsError}</p>
+											<button
+												type="button"
+												className="secondary"
+												onClick={() =>
+													editingUser &&
+													void loadAuthorAssignments(editingUser.id)
+												}
+											>
+												再試行
+											</button>
+										</div>
 									) : artifactsData.error ? (
 										<p className="policy-warning">
 											作品一覧を取得できませんでした: {artifactsData.error}
@@ -559,9 +591,10 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 									className="primary"
 									disabled={
 										saving ||
-										assignmentsLoading ||
-										!!assignmentsError ||
-										(editForm.role === "author" && !!artifactsData.error)
+										(editForm.role === "author" &&
+											(assignmentsLoading ||
+												!!assignmentsError ||
+												!!artifactsData.error))
 									}
 								>
 									{saving ? "保存中…" : "変更を保存"}

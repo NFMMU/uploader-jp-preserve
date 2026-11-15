@@ -42,15 +42,15 @@ export function Nodes({ api, refresh, notify, role }: any) {
 				desc="稼働状況と容量"
 				actions={
 					role === "admin" ? (
-					<button
-						className="secondary"
-						onClick={() =>
-							api("/admin/placements/reconcile", { method: "POST" })
-								.then(() => notify("再調整を実行しました"))
-								.catch((e: Error) => notify(e.message))
-						}
-					>
-						<RefreshCw size={16} /> 保存先を調整
+						<button
+							className="secondary"
+							onClick={() =>
+								api("/admin/placements/reconcile", { method: "POST" })
+									.then(() => notify("再調整を実行しました"))
+									.catch((e: Error) => notify(e.message))
+							}
+						>
+							<RefreshCw size={16} /> 保存先を調整
 						</button>
 					) : null
 				}
