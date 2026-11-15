@@ -106,7 +106,7 @@ export function ProvidersPage({
 										<div className="file-cell">
 											<div className="avatar">
 												{x.service_icon ? (
-													<img alt="サービスアイコン" src={x.service_icon} />
+													<img alt="サービスアイコン" src={x.service_icon} width="25px" height="25px" />
 												) : (
 													x.display_name.slice(0, 1).toUpperCase()
 												)}
