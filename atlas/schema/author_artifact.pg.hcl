@@ -16,4 +16,16 @@ table "author_artifact" {
   primary_key {
     columns = [ column.artifact_id, column.user_id ]
   }
+  foreign_key "fk_artifact_id" {
+    columns = [ column.artifact_id ]
+    ref_columns = [ table.artifacts.column.id ]
+    on_delete = CASCADE
+    on_update = CASCADE
+  }
+  foreign_key "fk_user_id" {
+    columns = [ column.user_id ]
+    ref_columns = [ table.users.column.id ]
+    on_delete = CASCADE
+    on_update = CASCADE
+  }
 }
