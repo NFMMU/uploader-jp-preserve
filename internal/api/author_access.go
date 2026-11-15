@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	errAuthorArtifactAccessDenied = errors.New("author artifact access denied")
+	errAuthorArtifactAccessDenied     = errors.New("author artifact access denied")
 	errFileDeletionAlreadyRequested = errors.New("file deletion has already been requested")
 )
 
@@ -73,9 +73,6 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 			First(&file, "id = ? AND deleted_at IS NULL", c.Param("id")).Error; err != nil {
 			return err
 		}
-		if file.DeletionRequestedAt != nil {
-			return errFileDeletionAlreadyRequested
-		}
 		if actor.Role == "author" {
 			var assignment model.AuthorArtifact
 			if err := tx.Table("author_artifact").
@@ -87,6 +84,9 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 				}
 				return err
 			}
+		}
+		if file.DeletionRequestedAt != nil {
+			return errFileDeletionAlreadyRequested
 		}
 		result := tx.Delete(&file)
 		if result.Error != nil {
