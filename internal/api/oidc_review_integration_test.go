@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,105 @@ import (
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/gen/query"
 )
+
+func TestUpdateUserRoleAndAuthorAssignmentsAreAtomic(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE author_artifact (
+		user_id uuid NOT NULL,
+		artifact_id uuid NOT NULL,
+		PRIMARY KEY (user_id, artifact_id)
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	actor := model.User{ID: uuid.NewString(), Email: "admin@example.test", DisplayName: "admin", PasswordHash: "unused", Role: "admin"}
+	target := model.User{ID: uuid.NewString(), Email: "author@example.test", DisplayName: "before", PasswordHash: "unused", Role: "reviewer"}
+	if err := db.Create(&actor).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	artifact := model.Artifact{ID: uuid.NewString(), Title: "assigned", SourceURL: "https://example.test/source"}
+	if err := db.Create(&artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{db: db, logger: slog.Default()}
+	router := gin.New()
+	router.PUT("/:id", func(c *gin.Context) {
+		c.Set("currentUser", actor)
+		s.updateUser(c)
+	})
+
+	missingArtifactID := uuid.NewString()
+	body := `{"display_name":"after","role":"author","disabled":false,"artifact_ids":["` + missingArtifactID + `"]}`
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/"+target.ID, strings.NewReader(body)))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid assignment to fail: %d %s", response.Code, response.Body.String())
+	}
+	var stored model.User
+	if err := db.First(&stored, "id = ?", target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Role != "reviewer" || stored.DisplayName != "before" {
+		t.Fatalf("user update was not rolled back: role=%s name=%s", stored.Role, stored.DisplayName)
+	}
+
+	const callbackName = "test:fail-user-update-after-assignment-write"
+	if err := db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			tx.AddError(errors.New("forced update failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body = `{"display_name":"after","role":"author","disabled":false,"artifact_ids":["` + artifact.ID + `"]}`
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/"+target.ID, strings.NewReader(body)))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected forced update failure: %d %s", response.Code, response.Body.String())
+	}
+	db.Callback().Update().Remove(callbackName)
+	if err := db.First(&stored, "id = ?", target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Role != "reviewer" || stored.DisplayName != "before" {
+		t.Fatalf("role update escaped transaction rollback: role=%s name=%s", stored.Role, stored.DisplayName)
+	}
+	var rolledBackAssignments int64
+	if err := db.Table("author_artifact").Where("user_id = ?", target.ID).Count(&rolledBackAssignments).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rolledBackAssignments != 0 {
+		t.Fatalf("assignment write escaped transaction rollback: %d rows", rolledBackAssignments)
+	}
+
+	body = `{"display_name":"after","role":"author","disabled":false,"artifact_ids":["` + artifact.ID + `"]}`
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/"+target.ID, strings.NewReader(body)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("combined update failed: %d %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&stored, "id = ?", target.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Role != "author" || stored.DisplayName != "after" {
+		t.Fatalf("user fields were not updated: role=%s name=%s", stored.Role, stored.DisplayName)
+	}
+	var assignedIDs []string
+	if err := db.Table("author_artifact").Where("user_id = ?", target.ID).Pluck("artifact_id", &assignedIDs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(assignedIDs) != 1 || assignedIDs[0] != artifact.ID {
+		t.Fatalf("unexpected author assignments: %v", assignedIDs)
+	}
+}
 
 func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	db, _ := catalogTestDB(t)

@@ -156,16 +156,14 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				body.reason = editForm.reason.trim();
 			}
 
+			if (editForm.role === "author") {
+				body.artifact_ids = authorArtifactIDs;
+			}
+
 			await api(`/admin/users/${editingUser.id}`, {
 				method: "PUT",
 				body: JSON.stringify(body),
 			});
-			if (editForm.role === "author") {
-				await api(`/admin/author-assignments/${editingUser.id}`, {
-					method: "PUT",
-					body: JSON.stringify({ artifact_ids: authorArtifactIDs }),
-				});
-			}
 
 			notify("ユーザー情報を更新しました");
 

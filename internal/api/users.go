@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,10 +17,12 @@ import (
 )
 
 var (
-	errLastActiveAdmin       = errors.New("last active administrator cannot be demoted or disabled")
-	errTargetStateChanged    = errors.New("target user state changed during update")
-	errSelfAdminNotActive    = errors.New("current administrator is no longer active")
-	errLastActiveAdminDelete = errors.New("last active administrator cannot be deleted")
+	errLastActiveAdmin           = errors.New("last active administrator cannot be demoted or disabled")
+	errTargetStateChanged        = errors.New("target user state changed during update")
+	errSelfAdminNotActive        = errors.New("current administrator is no longer active")
+	errLastActiveAdminDelete     = errors.New("last active administrator cannot be deleted")
+	errAssignmentsRequireAuthor  = errors.New("artifact assignments can only be set for authors")
+	errAuthorAssignmentsRequired = errors.New("artifact_ids is required when promoting a user to author")
 )
 
 func (s *Server) listUsers(c *gin.Context) {
@@ -72,10 +75,11 @@ func (s *Server) createUser(c *gin.Context) {
 
 func (s *Server) updateUser(c *gin.Context) {
 	var req struct {
-		Role        *string `json:"role" binding:"omitempty,oneof=admin reviewer viewer author"`
-		Disabled    *bool   `json:"disabled" binding:"omitempty"`
-		DisplayName string  `json:"display_name" binding:"required,min=1,max=120"`
-		Reason      *string `json:"reason" binding:"omitempty,min=3,max=2000"`
+		Role        *string   `json:"role" binding:"omitempty,oneof=admin reviewer viewer author"`
+		Disabled    *bool     `json:"disabled" binding:"omitempty"`
+		DisplayName string    `json:"display_name" binding:"required,min=1,max=120"`
+		Reason      *string   `json:"reason" binding:"omitempty,min=3,max=2000"`
+		ArtifactIDs *[]string `json:"artifact_ids" binding:"omitempty,max=1000,dive,uuid"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -87,6 +91,21 @@ func (s *Server) updateUser(c *gin.Context) {
 	if displayName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "display_name cannot be empty"})
 		return
+	}
+
+	var artifactIDs []string
+	if req.ArtifactIDs != nil {
+		artifactIDs = uniqueStrings(*req.ArtifactIDs)
+		if len(artifactIDs) != len(*req.ArtifactIDs) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_ids must be unique"})
+			return
+		}
+		for _, id := range artifactIDs {
+			if _, err := uuid.Parse(id); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_ids must contain valid UUIDs"})
+				return
+			}
+		}
 	}
 
 	user, ok := hooks.CurrentUser(c)
@@ -162,6 +181,43 @@ func (s *Server) updateUser(c *gin.Context) {
 			}
 		}
 
+		finalRole := lockedTarget.Role
+		if req.Role != nil {
+			finalRole = *req.Role
+		}
+		if finalRole == "author" && req.Role != nil && *req.Role == "author" && req.ArtifactIDs == nil {
+			return errAuthorAssignmentsRequired
+		}
+		if req.ArtifactIDs != nil && finalRole != "author" {
+			return errAssignmentsRequireAuthor
+		}
+
+		// Role と author_artifact の割り当てを同一トランザクションで更新する。
+		// author 以外へ変更する場合は古い割り当ても同時に解除する。
+		if finalRole == "author" && req.ArtifactIDs != nil {
+			if len(artifactIDs) > 0 {
+				var count int64
+				if err := tx.Model(&model.Artifact{}).Where("id IN ?", artifactIDs).Count(&count).Error; err != nil {
+					return err
+				}
+				if count != int64(len(artifactIDs)) {
+					return errAssignmentArtifactNotFound
+				}
+			}
+			if err := tx.Exec("DELETE FROM author_artifact WHERE user_id = ?", lockedTarget.ID).Error; err != nil {
+				return err
+			}
+			for _, artifactID := range artifactIDs {
+				if err := tx.Exec("INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", lockedTarget.ID, artifactID).Error; err != nil {
+					return err
+				}
+			}
+		} else if lockedTarget.Role == "author" && finalRole != "author" {
+			if err := tx.Exec("DELETE FROM author_artifact WHERE user_id = ?", lockedTarget.ID).Error; err != nil {
+				return err
+			}
+		}
+
 		// 最終管理者の保護も、ロック取得後の状態を基準に判定する。
 		if lockedTarget.Role == "admin" && ((req.Role != nil && *req.Role != "admin") || (req.Disabled != nil && *req.Disabled)) {
 			var activeAdmins []model.User
@@ -213,6 +269,12 @@ func (s *Server) updateUser(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{
 				"error": "current account is no longer an active administrator",
 			})
+		case errors.Is(err, errAssignmentArtifactNotFound):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "one or more assigned artifacts do not exist"})
+		case errors.Is(err, errAssignmentsRequireAuthor):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_ids can only be set for authors"})
+		case errors.Is(err, errAuthorAssignmentsRequired):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "artifact_ids is required when changing role to author"})
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		default:
