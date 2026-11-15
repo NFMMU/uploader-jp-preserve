@@ -144,7 +144,7 @@ func Callback(c *gin.Context, baseURL, mode string, decryptSecret func(*string) 
 		return nil
 	}
 
-	if !idTokenData.EmailVerified {
+	if !idTokenData.EmailVerified || idTokenData.Subject == "" {
 		c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/admin/%s?error=oidc", baseURL, frontPath))
 		return nil
 	}
