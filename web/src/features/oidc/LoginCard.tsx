@@ -34,9 +34,9 @@ export default function OidcLoginCard({
 							disabled={busy}
 							onClick={() => onLoginClick(p.id)}
 						>
-							{p.service_icon ?? (
+							{p.service_icon ? (
 								<img src={p.service_icon} alt={`${p.display_name}のアイコン`} />
-							)}
+							) : <></>}
 							{p.display_name}でログイン
 						</button>
 					))}
