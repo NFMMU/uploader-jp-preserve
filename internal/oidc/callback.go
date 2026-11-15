@@ -16,9 +16,9 @@ import (
 )
 
 type OidcClaims struct {
-	Issuer            string  `json:"iss"`
-	Subject           string  `json:"sub"`
-	Email             string  `json:"email"`
+	Issuer            string  `json:"iss" binding:"required"`
+	Subject           string  `json:"sub" binding:"required"`
+	Email             string  `json:"email" binding:"required"`
 	EmailVerified     bool    `json:"email_verified"`
 	Picture           *string `json:"picture" binding:"omitempty"`
 	PreferredUsername *string `json:"preferred_username" binding:"omitempty"`
