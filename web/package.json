@@ -11,7 +11,10 @@
 		"preview": "vike preview --host 0.0.0.0",
 		"lint": "biome check --write",
 		"format": "biome format",
-		"test:author-selection": "node --test src/features/review/authorSelection.test.mjs"
+		"test": "node --test",
+		"test:watch": "node --watch --test",
+		"lint:check": "biome check .",
+		"format:check": "biome format . --check"
 	},
 	"dependencies": {
 		"@fontsource/noto-sans-jp": "^5.3.1",
