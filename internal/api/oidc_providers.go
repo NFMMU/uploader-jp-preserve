@@ -35,7 +35,6 @@ func (s *Server) listOidcProviders(c *gin.Context) {
 			oidcProviderQuery.DiscoveryEndpoint,
 			oidcProviderQuery.ClientID,
 			oidcProviderQuery.ServiceIcon,
-			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
 			oidcProviderQuery.GoogleHd,
@@ -181,15 +180,13 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	isEnabled := data.IsEnabled
-	if req.IsEnabled != nil {
-		isEnabled = *req.IsEnabled
-	}
 	updates := map[string]any{
 		"display_name": req.DisplayName,
 		"service_icon": req.ServiceIcon,
-		"is_enabled":   isEnabled,
 		"updated_at":   time.Now(),
+	}
+	if req.IsEnabled != nil {
+		updates["is_enabled"] = *req.IsEnabled
 	}
 	if req.ClientSecret != nil {
 		encrypted, err := s.encryptSourcePassword(*req.ClientSecret)
