@@ -144,8 +144,12 @@ fetchLoop:
 			return nil, errors.New("uploader.jpのダウンロードページを解析できませんでした")
 		}
 		pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(doc)
-		if artifactDescription == "" { artifactDescription = pageArtifactDescription }
-		if fileDescription == "" { fileDescription = pageFileDescription }
+		artifactDescription, fileDescription = mergeUploaderDescriptions(
+			artifactDescription,
+			fileDescription,
+			pageArtifactDescription,
+			pageFileDescription,
+		)
 		pageText := strings.ToLower(htmlText(doc))
 		hasPassword := hasPasswordInput(doc) || strings.Contains(pageText, "ダウンロードパスワードの認証が必要") || strings.Contains(pageText, "パスワードを入力")
 		if hasPassword && password == "" {
@@ -256,12 +260,12 @@ fetchLoop:
 			}
 
 			pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(nextDoc)
-			if artifactDescription == "" {
-				artifactDescription = pageArtifactDescription
-			}
-			if fileDescription == "" {
-				fileDescription = pageFileDescription
-			}
+			artifactDescription, fileDescription = mergeUploaderDescriptions(
+				artifactDescription,
+				fileDescription,
+				pageArtifactDescription,
+				pageFileDescription,
+			)
 
 			nextPageText := strings.ToLower(htmlText(nextDoc))
 
@@ -392,6 +396,16 @@ func limitUploaderDescription(value string) string {
 		runes = runes[:maxUploaderDescriptionRunes]
 	}
 	return string(runes)
+}
+
+func mergeUploaderDescriptions(currentArtifact, currentFile, nextArtifact, nextFile string) (string, string) {
+	if currentArtifact == "" {
+		currentArtifact = nextArtifact
+	}
+	if currentFile == "" {
+		currentFile = nextFile
+	}
+	return currentArtifact, currentFile
 }
 
 func extractUploaderDescriptions(root *xhtml.Node) (artifactDescription, fileDescription string) {
