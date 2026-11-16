@@ -658,7 +658,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<Download size={16} /> CSV出力
 							</button>
 						)}
-						{linkedArtifactID && (role === "admin" || role === "reviewer") && artifactRecord && (
+						{linkedArtifactID && role === "admin" && artifactRecord && (
 							<button className="primary" onClick={() => setArtifact(artifactRecord)} type="button">
 								<Plus size={16} /> ファイルを追加
 							</button>
