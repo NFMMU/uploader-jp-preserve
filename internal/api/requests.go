@@ -9,6 +9,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -358,16 +359,32 @@ func limitAuthorDisplayName(value string) string {
 }
 
 func (s *Server) listAuthors(c *gin.Context) {
+	const pageSize = 100
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 || page > 100000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer"})
+		return
+	}
+
 	var users []model.User
-	if err := s.db.WithContext(c.Request.Context()).
+	query := s.db.WithContext(c.Request.Context()).
+		Model(&model.User{}).
 		Select("id", "email", "display_name").
-		Where("role = ? AND disabled_at IS NULL", "author").
-		Order("display_name ASC, email ASC").
-		Limit(500).
+		Where("role = ? AND disabled_at IS NULL", "author")
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count authors"})
+		return
+	}
+	if err := query.
+		Order("display_name ASC, email ASC, id ASC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
 		Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list authors"})
 		return
 	}
+
 	type authorView struct {
 		ID          string `json:"id"`
 		Email       string `json:"email"`
@@ -377,7 +394,13 @@ func (s *Server) listAuthors(c *gin.Context) {
 	for _, user := range users {
 		items = append(items, authorView{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName})
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{
+		"items": items,
+		"page": page,
+		"page_size": pageSize,
+		"total": total,
+		"has_more": int64(page*pageSize) < total,
+	})
 }
 
 func (s *Server) patchPublicRequest(c *gin.Context) {
