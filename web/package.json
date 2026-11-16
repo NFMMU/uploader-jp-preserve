@@ -14,7 +14,7 @@
 		"test": "node --test",
 		"test:watch": "node --watch --test",
 		"lint:check": "biome check src/features/review/authorSelection.js src/features/review/authorSelection.test.mjs",
-		"format:check": "biome format src/features/review/authorSelection.js src/features/review/authorSelection.test.mjs --check"
+		"format:check": "biome format src/features/review/authorSelection.js src/features/review/authorSelection.test.mjs"
 	},
 	"dependencies": {
 		"@fontsource/noto-sans-jp": "^5.3.1",
