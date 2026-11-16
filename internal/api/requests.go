@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -313,6 +314,30 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"item": item})
+}
+
+
+func (s *Server) listAuthors(c *gin.Context) {
+	var users []model.User
+	if err := s.db.WithContext(c.Request.Context()).
+		Select("id", "email", "display_name").
+		Where("role = ? AND disabled_at IS NULL", "author").
+		Order("display_name ASC, email ASC").
+		Limit(500).
+		Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list authors"})
+		return
+	}
+	type authorView struct {
+		ID string `json:"id"`
+		Email string `json:"email"`
+		DisplayName string `json:"display_name"`
+	}
+	items := make([]authorView, 0, len(users))
+	for _, user := range users {
+		items = append(items, authorView{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (s *Server) patchPublicRequest(c *gin.Context) {
@@ -725,6 +750,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		switch {
+		case strings.Contains(err.Error(), "author") || strings.Contains(err.Error(), "email address"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+
 		case errors.Is(err, errInvalidArtifact):
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
