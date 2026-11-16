@@ -19,7 +19,9 @@ test-unit:
 	go test ./...
 
 test-integration:
-	./scripts/test-surplus-cleanup.sh
+	./scripts/test-integration.sh
+
+test-surplus-cleanup: test-integration
 
 test-web:
 	cd web && npm test
