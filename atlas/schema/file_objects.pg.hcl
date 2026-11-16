@@ -27,7 +27,7 @@ table "file_objects" {
     type = varchar(255)
     null = true
   }
-  column "source_url" {
+  column "description" {\n    type = text\n    null = true\n  }\n  column "source_url" {
     type = text
     null = true
   }
