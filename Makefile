@@ -21,8 +21,6 @@ test-unit:
 test-integration:
 	sh ./scripts/test-integration.sh
 
-test-surplus-cleanup: test-integration
-
 test-web:
 	cd web && npm test
 
