@@ -1,7 +1,7 @@
-import { CloudUpload, Download, LockKeyhole, Plus, Search } from "lucide-react";
+import { ArrowUpRight, CloudUpload, Download, Files, FolderOpen, LockKeyhole, Plus, Search } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { downloadExport } from "@/api/admin";
 import { Heading } from "@/components/common/Heading";
 import { Modal } from "@/components/common/Modal";
@@ -10,6 +10,95 @@ import { Table } from "@/components/common/Table";
 import { FileRow } from "@/components/files/FileRow";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
+
+function ArtifactCatalog({ api, refresh, notify }: any) {
+	const [query, setQuery] = useState("");
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
+	const data = useData(api, path, refresh);
+	const items: Obj[] = data.data.items || [];
+	const total = Number(data.data.total || 0);
+
+	useEffect(() => {
+		setPage(1);
+	}, [query, limit]);
+
+	return (
+		<>
+			<Heading
+				eyebrow="CATALOG MANAGEMENT"
+				title="作品一覧"
+				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
+				actions={
+					<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
+						<Download size={16} /> CSV出力
+					</button>
+				}
+			/>
+			<section className="panel artifact-catalog-toolbar">
+				<div className="filter-bar file-filter-bar">
+					<div className="search-box">
+						<Search size={17} />
+						<input
+							value={query}
+							onChange={(event) => setQuery(event.target.value)}
+							placeholder="作品名・作者・作品ID・元ページURLで検索"
+							aria-label="作品を検索"
+						/>
+					</div>
+					<span className="result-count" aria-live="polite">
+						{data.loading ? "読み込み中…" : `${total.toLocaleString()} 作品`}
+					</span>
+				</div>
+			</section>
+			{data.loading ? (
+				<section className="panel empty">作品一覧を読み込んでいます…</section>
+			) : data.error ? (
+				<section className="panel policy-warning">作品一覧を取得できませんでした: {data.error}</section>
+			) : items.length === 0 ? (
+				<section className="panel empty">
+					<FolderOpen size={28} />
+					<b>{query ? "一致する作品がありません" : "登録された作品がありません"}</b>
+					<span>{query ? "検索語を変更してください。" : "作品を登録すると、ここからファイルを管理できます。"}</span>
+				</section>
+			) : (
+				<div className="artifact-catalog-grid">
+					{items.map((item) => (
+						<NavLink
+							className="panel artifact-catalog-card"
+							to={`/admin/artifacts/${encodeURIComponent(item.id)}`}
+							key={item.id}
+						>
+							<div className="artifact-catalog-card-head">
+								<span className="artifact-catalog-icon"><FolderOpen size={19} /></span>
+								<span className="artifact-catalog-count"><Files size={14} /> {Number(item.file_count || 0).toLocaleString()} ファイル</span>
+							</div>
+							<div className="artifact-catalog-card-body">
+								<b>{item.title || "名称未設定"}</b>
+								<span>{item.creator_name || "作者不明"}</span>
+								{item.description && <p>{item.description}</p>}
+								<small><code>{item.id}</code></small>
+							</div>
+							<div className="artifact-catalog-card-footer">
+								<span>作品内のファイルを管理</span>
+								<ArrowUpRight size={17} />
+							</div>
+						</NavLink>
+					))}
+				</div>
+			)}
+			<Pagination
+				page={page}
+				limit={limit}
+				total={total}
+				loading={data.loading}
+				onPageChange={setPage}
+				onLimitChange={setLimit}
+			/>
+		</>
+	);
+}
 
 export function Catalog({ api, refresh, notify, role }: any) {
 	const [unused, setRefreshDummy] = useState(0);
@@ -480,6 +569,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		} catch (e) {
 			notify((e as Error).message);
 		}
+	}
+
+	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID) {
+		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} />;
 	}
 
 	return (
