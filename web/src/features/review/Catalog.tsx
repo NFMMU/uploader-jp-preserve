@@ -37,7 +37,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		original_filename: "",
 		media_type: "",
 		source_url: "",
-		file_description: x.description || "",
+		file_description: "",
 	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
 	const [pendingFileId, setPendingFileId] = useState("");
