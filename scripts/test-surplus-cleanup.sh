@@ -21,5 +21,4 @@ done
 
 TEST_DATABASE_URL='postgres://archive_test:archive_test_password@127.0.0.1:55432/archive_test?sslmode=disable' RUN_CATALOG_DB_INTEGRATION=1 go test -race -coverprofile=coverage.out ./...
 
-RUN_SURPLUS_DB_INTEGRATION=1 TEST_DATABASE_URL='postgres://archive_test:archive_test_password@127.0.0.1:55432/archive_test?sslmode=disable' go test ./internal/api -run '^(TestScheduleSurplusPlacementDeletionIntegration|TestReconcileRepairsOfflineReplicaIntegration|TestRetryStoreTaskIntegration|TestRetryErrorHandlingIntegration)
- -count=1 -v
+RUN_SURPLUS_DB_INTEGRATION=1 TEST_DATABASE_URL='postgres://archive_test:archive_test_password@127.0.0.1:55432/archive_test?sslmode=disable' go test ./internal/api -run '^(TestScheduleSurplusPlacementDeletionIntegration|TestReconcileRepairsOfflineReplicaIntegration|TestRetryStoreTaskIntegration|TestRetryErrorHandlingIntegration)$' -count=1 -v
