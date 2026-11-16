@@ -25,7 +25,7 @@ Web は Node.js 組み込みの `node:test` と `node:assert` を使用します
 go test ./...
 
 # Web
-(cd web && npm ci && npm test && npm run lint:check && npm run build)
+(cd web && npm ci && npm test && npm run lint:check:local && npm run format:check:local && npm run build)
 ```
 
 または `make test` で Go 単体テストと Web テストを実行できます。
@@ -85,4 +85,4 @@ CI のテストがスキップされたり、DB が準備されていない状�
 
 ### Biome の検査範囲
 
-Lint と format は Biome の `--changed --since=HEAD^` を使用し、Git の直近の親コミット（PR の場合はベース側）と比較して変更されたファイルを検査します。既存コード全体に一括で検査を適用せず、変更ファイルを対象にするため、新規ファイルも追加時点から検査対象になります。既存のフォーマット差分が確認された7ファイルは、変更されない限り検査対象になりません。
+CI では `BIOME_BASE_REF` を比較基準として Biome の `--changed --since` を使用します。Pull Request では base SHA、push では push 前の SHA を基準にするため、push に含まれる複数コミットの変更をまとめて検査します。変更対象がない場合は `--no-errors-on-unmatched` により正常終了します。\n\nローカルでは `npm run lint:check:local` と `npm run format:check:local` を使用してください。これらは `src` 全体を検査するため、未コミット変更や新規ファイルも対象になります。CI 用の `lint:check` / `format:check` はイベントの比較基準を使うため、ローカルの未コミット変更確認には使用しません。
