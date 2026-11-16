@@ -42,12 +42,13 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-			title ILIKE ? OR COALESCE(creator_name, '') ILIKE ? OR source_url ILIKE ?
+			CAST(id AS TEXT) ILIKE ? OR title ILIKE ? OR COALESCE(creator_name, '') ILIKE ? OR source_url ILIKE ?
 			OR id IN (
 				SELECT artifact_id FROM file_objects
-				WHERE CAST(id AS TEXT) ILIKE ? OR original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ?
+				WHERE deleted_at IS NULL
+				AND (CAST(id AS TEXT) ILIKE ? OR original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ?)
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
