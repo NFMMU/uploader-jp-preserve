@@ -344,6 +344,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setPendingFileId("");
 			setUpload(null);
 			setSourceURL("");
+			setFileDescription("");
 			setAcceptSourceTerms(false);
 			setListingURL("");
 			setAcceptListingTerms(false);
@@ -786,6 +787,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					close={() => {
 						setArtifact(null);
 						setPendingFileId("");
+						setFileDescription("");
 						setListingURL("");
 						setAcceptListingTerms(false);
 						setCandidates([]);
