@@ -1176,14 +1176,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								type="button"
 								className="secondary"
 								onClick={() => {
-									setArtifact(null);
-									setPendingFileId("");
-									setFileDescription("");
-									setListingURL("");
-									setAcceptListingTerms(false);
-									setCandidates([]);
-									setSelectedCandidates([]);
-									setBatchStatus("");
+									closeAddFile();
 								}}
 							>
 								キャンセル
