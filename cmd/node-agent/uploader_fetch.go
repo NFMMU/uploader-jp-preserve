@@ -130,7 +130,15 @@ fetchLoop:
 			if filename == "" {
 				filename = safeSourceFilename(path.Base(resp.Request.URL.Path))
 			}
-			return &fetchedUploaderFile{Body: resp.Body, Filename: filename, MediaType: contentType, Size: resp.ContentLength, FinalURL: resp.Request.URL.String(), ArtifactDescription: artifactDescription, FileDescription: fileDescription}, nil
+			return &fetchedUploaderFile{
+				Body:                resp.Body,
+				Filename:            filename,
+				MediaType:           contentType,
+				ArtifactDescription: artifactDescription,
+				FileDescription:     fileDescription,
+				Size:                resp.ContentLength,
+				FinalURL:            resp.Request.URL.String(),
+			}, nil
 		}
 
 		pageURL := resp.Request.URL
@@ -144,8 +152,12 @@ fetchLoop:
 			return nil, errors.New("uploader.jpのダウンロードページを解析できませんでした")
 		}
 		pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(doc)
-		if artifactDescription == "" { artifactDescription = pageArtifactDescription }
-		if fileDescription == "" { fileDescription = pageFileDescription }
+		artifactDescription, fileDescription = mergeUploaderDescriptions(
+			artifactDescription,
+			fileDescription,
+			pageArtifactDescription,
+			pageFileDescription,
+		)
 		pageText := strings.ToLower(htmlText(doc))
 		hasPassword := hasPasswordInput(doc) || strings.Contains(pageText, "ダウンロードパスワードの認証が必要") || strings.Contains(pageText, "パスワードを入力")
 		if hasPassword && password == "" {
@@ -224,13 +236,13 @@ fetchLoop:
 				}
 
 				return &fetchedUploaderFile{
-					Body:      resp.Body,
-					Filename:  filename,
-					MediaType: contentType,
-					Size:      resp.ContentLength,
-					FinalURL:  resp.Request.URL.String(),
+					Body:                resp.Body,
+					Filename:            filename,
+					MediaType:           contentType,
 					ArtifactDescription: artifactDescription,
-					FileDescription: fileDescription,
+					FileDescription:     fileDescription,
+					Size:                resp.ContentLength,
+					FinalURL:            resp.Request.URL.String(),
 				}, nil
 			}
 
@@ -254,6 +266,14 @@ fetchLoop:
 					"ダウンロード確認ページを解析できませんでした",
 				)
 			}
+
+			pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(nextDoc)
+			artifactDescription, fileDescription = mergeUploaderDescriptions(
+				artifactDescription,
+				fileDescription,
+				pageArtifactDescription,
+				pageFileDescription,
+			)
 
 			nextPageText := strings.ToLower(htmlText(nextDoc))
 
@@ -371,7 +391,6 @@ func htmlText(node *xhtml.Node) string {
 	return b.String()
 }
 
-
 const maxUploaderDescriptionRunes = 20_000
 
 func normalizedUploaderText(node *xhtml.Node) string {
@@ -384,6 +403,16 @@ func limitUploaderDescription(value string) string {
 		runes = runes[:maxUploaderDescriptionRunes]
 	}
 	return string(runes)
+}
+
+func mergeUploaderDescriptions(currentArtifact, currentFile, nextArtifact, nextFile string) (string, string) {
+	if currentArtifact == "" {
+		currentArtifact = nextArtifact
+	}
+	if currentFile == "" {
+		currentFile = nextFile
+	}
+	return currentArtifact, currentFile
 }
 
 func extractUploaderDescriptions(root *xhtml.Node) (artifactDescription, fileDescription string) {

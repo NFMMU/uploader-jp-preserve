@@ -8,6 +8,7 @@ import { useData } from "@/hooks/useData";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { ConversationLinks } from "./ConversationLinks";
+import { includeSelectedAuthor } from "./authorSelection.js";
 
 export function RequestDetailPage({
 	api,
@@ -132,6 +133,21 @@ export function RequestDetailPage({
 	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
 
 	const [status, setStatus] = useState("in_review");
+	const [authorMode, setAuthorMode] = useState<"existing" | "create">("existing");
+	const [authorUserID, setAuthorUserID] = useState("");
+	const [authorEmail, setAuthorEmail] = useState("");
+	const [authors, setAuthors] = useState<Obj[]>([]);
+	const [selectedAuthor, setSelectedAuthor] = useState<Obj | null>(null);
+	const authorOptions = includeSelectedAuthor(authors, selectedAuthor);
+	const [authorsPage, setAuthorsPage] = useState(1);
+	const [authorsHasMore, setAuthorsHasMore] = useState(false);
+	const [authorsLoadingMore, setAuthorsLoadingMore] = useState(false);
+	const [createdCredentialsByRequestID, setCreatedCredentialsByRequestID] = useState<
+		Record<string, { email: string; password: string }>
+	>({});
+	const createdCredentials = request
+		? createdCredentialsByRequestID[request.id]
+		: undefined;
 	const [reason, setReason] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [password, setPassword] = useState("");
@@ -152,8 +168,51 @@ export function RequestDetailPage({
 		}
 	}, [request?.id, request?.status]);
 	useEffect(() => {
+		setAuthorMode("existing");
+		setAuthorUserID("");
+		setSelectedAuthor(null);
+		setAuthorEmail("");
+	}, [request?.id]);
+	useEffect(() => {
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
+	useEffect(() => {
+		if (request?.request_type !== "preservation") return;
+		let cancelled = false;
+		setAuthors([]);
+		setAuthorsPage(1);
+		setAuthorsHasMore(false);
+		api("/moderation/authors?page=1").then((result: Obj) => {
+			if (cancelled) return;
+			const items: Obj[] = result.items || [];
+			setAuthors(items);
+			setAuthorsPage(Number(result.page) || 1);
+			setAuthorsHasMore(Boolean(result.has_more));
+			if (items.length) {
+				setAuthorUserID((prev) => prev || String(items[0].id));
+				setSelectedAuthor((prev) => prev || items[0]);
+			}
+		}).catch((e: Error) => notify(e.message));
+		return () => { cancelled = true; };
+	}, [request?.id, request?.request_type]);
+
+	async function loadMoreAuthors() {
+		if (authorsLoadingMore || !authorsHasMore) return;
+		setAuthorsLoadingMore(true);
+		try {
+			const nextPage = authorsPage + 1;
+			const result: Obj = await api(`/moderation/authors?page=${nextPage}`);
+			const items: Obj[] = result.items || [];
+			setAuthors((current) => [...current, ...items]);
+			setAuthorsPage(Number(result.page) || nextPage);
+			setAuthorsHasMore(Boolean(result.has_more));
+		} catch (e) {
+			notify((e as Error).message);
+		} finally {
+			setAuthorsLoadingMore(false);
+		}
+	}
+
 	async function ingestAcceptedUpload() {
 		if (!request) return;
 		if (
@@ -205,12 +264,38 @@ export function RequestDetailPage({
 			)
 		)
 			return;
+		const assigningAuthor =
+			request.status !== "accepted" &&
+			!request.author_assigned &&
+			request.request_type === "preservation" &&
+			status === "accepted";
+		if (assigningAuthor) {
+			if (authorMode === "existing" && !authorUserID) { notify("紐付けるauthorを選択してください"); return; }
+			if (authorMode === "create" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
+		}
+		const requestID = request.id;
+		const submittedAuthorEmail = authorEmail.trim();
 		setSaving(true);
 		try {
-			await api(`/moderation/public-requests/${request.id}`, {
+			const result = await api(`/moderation/public-requests/${requestID}`, {
 				method: "PATCH",
-				body: JSON.stringify({ status, reason: reason.trim() }),
+				body: JSON.stringify({
+					status, reason: reason.trim(),
+					...(assigningAuthor ? {
+						author_mode: authorMode,
+						...(authorMode === "existing" ? { author_user_id: authorUserID } : { author_email: authorEmail.trim() }),
+					} : {}),
+				}),
 			});
+			if (result.initial_password) {
+				setCreatedCredentialsByRequestID((current) => ({
+					...current,
+					[requestID]: {
+						email: submittedAuthorEmail,
+						password: result.initial_password,
+					},
+				}));
+			}
 			notify("申請ステータスを更新しました");
 			setReason("");
 			setLocalRefresh((x) => x + 1);
@@ -799,6 +884,21 @@ export function RequestDetailPage({
 						</section>
 					)}
 				</div>
+				{createdCredentials && (
+					<section className="panel request-action-panel">
+						<h2>Authorアカウントを作成しました</h2>
+						<p>初期パスワードはこの画面でのみ表示されます。安全な方法で本人に共有してください。</p>
+						<label>メールアドレス<input readOnly value={createdCredentials.email} /></label>
+						<label>初期パスワード<input readOnly value={createdCredentials.password} /></label>
+						<button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(`メールアドレス: ${createdCredentials.email}\n初期パスワード: ${createdCredentials.password}`)}>認証情報をコピー</button>
+						<button type="button" className="small-btn" onClick={() => setCreatedCredentialsByRequestID((current) => {
+											const next = { ...current };
+											delete next[request.id];
+											return next;
+										})}>表示を閉じる</button>
+					</section>
+				)}
+
 				<aside className="request-page-sidebar">
 					{role !== "viewer" && (
 						<section className="panel request-action-panel">
@@ -828,6 +928,40 @@ export function RequestDetailPage({
 										<option value="closed">終了</option>
 									</select>
 								</label>
+								{request.request_type === "preservation" && !request.author_assigned && request.status !== "accepted" && status === "accepted" && (
+									<>
+										<label>作品のauthor
+											<select value={authorMode} onChange={(e) => setAuthorMode(e.target.value as "existing" | "create")}>
+												<option value="existing">既存authorに紐付ける</option>
+												<option value="create">新しいauthorを作成する</option>
+											</select>
+										</label>
+										{authorMode === "existing" ? (
+											<>
+												<label>紐付け先author
+													<select value={authorUserID} onChange={(e) => {
+													const nextID = e.target.value;
+													setAuthorUserID(nextID);
+													setSelectedAuthor(authorOptions.find((author) => String(author.id) === nextID) || null);
+												}} required>
+														<option value="">選択してください</option>
+														{authorOptions.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
+													</select>
+												</label>
+												{authorsHasMore && (
+													<button type="button" className="small-btn" disabled={authorsLoadingMore} onClick={loadMoreAuthors}>
+														{authorsLoadingMore ? "読み込み中…" : "さらに100件読み込む"}
+													</button>
+												)}
+											</>
+) : (
+											<label>新しいauthorのメールアドレス
+												<input type="email" value={authorEmail} onChange={(e) => setAuthorEmail(e.target.value)} maxLength={320} required placeholder="author@example.jp" autoComplete="email" />
+												<small>初期パスワードは安全な乱数で自動生成し、作成後に一度だけ表示します。</small>
+											</label>
+										)}
+									</>
+								)}
 								<label>
 									対応理由 *
 									<textarea

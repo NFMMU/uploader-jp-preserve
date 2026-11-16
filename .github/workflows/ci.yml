@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         working-directory: web
         run: npm install --no-audit --no-fund
+      - name: Test author selection behavior
+        working-directory: web
+        run: npm run test:author-selection
       - name: Build web application
         working-directory: web
         run: npm run build

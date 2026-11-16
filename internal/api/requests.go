@@ -1,15 +1,21 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -190,6 +196,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 type publicRequestListItem struct {
 	model.PublicRequest
 	HasSourcePassword   bool   `json:"has_source_password"`
+	AuthorAssigned      bool   `json:"author_assigned"`
 	LinkedFileName      string `json:"linked_file_name,omitempty"`
 	LinkedArtifactTitle string `json:"linked_artifact_title,omitempty"`
 }
@@ -300,6 +307,22 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 		}
 	}
 
+	if request.RequestType == "preservation" {
+		if err := db.Model(&model.AuditLog{}).
+			Where(
+				"target_type = ? AND target_id = ? AND action = ? AND result = ?",
+				"public_request",
+				request.ID,
+				"public_request.author_assigned",
+				"success",
+			).
+			Select("count(*) > 0").
+			Scan(&item.AuthorAssigned).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load author assignment state"})
+			return
+		}
+	}
+
 	if artifactID != nil {
 		var artifact model.Artifact
 		if err := db.First(&artifact, "id = ?", *artifactID).Error; err == nil {
@@ -315,6 +338,71 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"item": item})
 }
 
+func sameOptionalRequestTarget(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func shouldRejectRequestTargetChange(status string, priorAssignments int64, targetsChanged bool) bool {
+	return targetsChanged && (status == "accepted" || priorAssignments > 0)
+}
+
+func limitAuthorDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) > 120 {
+		return string(runes[:120])
+	}
+	return value
+}
+
+func (s *Server) listAuthors(c *gin.Context) {
+	const pageSize = 100
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 || page > 100000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page must be a positive integer"})
+		return
+	}
+
+	var users []model.User
+	query := s.db.WithContext(c.Request.Context()).
+		Model(&model.User{}).
+		Select("id", "email", "display_name").
+		Where("role = ? AND disabled_at IS NULL", "author")
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count authors"})
+		return
+	}
+	if err := query.
+		Order("display_name ASC, email ASC, id ASC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list authors"})
+		return
+	}
+
+	type authorView struct {
+		ID          string `json:"id"`
+		Email       string `json:"email"`
+		DisplayName string `json:"display_name"`
+	}
+	items := make([]authorView, 0, len(users))
+	for _, user := range users {
+		items = append(items, authorView{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items": items,
+		"page": page,
+		"page_size": pageSize,
+		"total": total,
+		"has_more": int64(page*pageSize) < total,
+	})
+}
+
 func (s *Server) patchPublicRequest(c *gin.Context) {
 	var req struct {
 		Status       *string `json:"status" binding:"omitempty"`
@@ -327,6 +415,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		Reason       string  `json:"reason" binding:"required,min=3,max=2000"`
 		ArtifactID   *string `json:"artifact_id" binding:"omitempty,uuid"`
 		FileObjectID *string `json:"file_object_id" binding:"omitempty,uuid"`
+		AuthorMode   string `json:"author_mode"`
+		AuthorUserID string `json:"author_user_id"`
+		AuthorEmail  string `json:"author_email"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -378,6 +469,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	now := time.Now().UTC()
 	var intakeFilePathToRemove string
+	var generatedAuthorPassword string
+	var assignedAuthorID string
+	var assignedArtifactID string
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Lock the request row before reading its state.
@@ -392,9 +486,26 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		// Remember the status observed under the row lock.
 		originalStatus := publicRequest.Status
 
-		// An accepted request cannot have its targets changed.
-		if originalStatus == "accepted" &&
-			(req.ArtifactID != nil || req.FileObjectID != nil) {
+		// Once a preservation request has been assigned to an author, its
+		// artifact/file target is immutable even if the request is reopened.
+		var priorAssignmentCount int64
+		if publicRequest.RequestType == "preservation" {
+			if err := tx.Model(&model.AuditLog{}).
+				Where(
+					"target_type = ? AND target_id = ? AND action = ? AND result = ?",
+					"public_request",
+					publicRequest.ID,
+					"public_request.author_assigned",
+					"success",
+				).
+				Count(&priorAssignmentCount).Error; err != nil {
+				return err
+			}
+		}
+
+		targetsChanged := (req.ArtifactID != nil && !sameOptionalRequestTarget(req.ArtifactID, publicRequest.ArtifactID)) ||
+			(req.FileObjectID != nil && !sameOptionalRequestTarget(req.FileObjectID, publicRequest.FileObjectID))
+		if shouldRejectRequestTargetChange(originalStatus, priorAssignmentCount, targetsChanged) {
 			return errAcceptedTargetsImmutable
 		}
 
@@ -469,6 +580,148 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		updates := map[string]any{
 			"updated_at": now,
+		}
+
+		// Assign the artifact to an author as part of preservation approval.
+		if req.Status != nil &&
+			*req.Status == "accepted" &&
+			originalStatus != "accepted" &&
+			publicRequest.RequestType == "preservation" {
+			// An author assignment is a one-time operation per preservation request.
+			if priorAssignmentCount == 0 {
+				if req.AuthorMode != "existing" && req.AuthorMode != "create" {
+					return errors.New("author assignment is required when accepting a preservation request")
+				}
+	
+				// A request may reference only a file. Reuse that file's artifact
+				// rather than creating a new artifact and assigning the author to it.
+				if targetFileID != nil {
+					var targetFile model.FileObject
+					if err := tx.
+						Select("id", "artifact_id").
+						First(&targetFile, "id = ?", *targetFileID).Error; err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return errInvalidFile
+						}
+						return err
+					}
+					if strings.TrimSpace(targetFile.ArtifactID) == "" {
+						return errInvalidFile
+					}
+					if targetArtifactID != nil && *targetArtifactID != targetFile.ArtifactID {
+						return errInvalidFile
+					}
+					if targetArtifactID == nil {
+						targetArtifactID = &targetFile.ArtifactID
+						assignedArtifactID = targetFile.ArtifactID
+					}
+				}
+	
+				if targetArtifactID == nil {
+					if publicRequest.SourceURL == nil {
+						return errors.New("preservation request has no source URL")
+					}
+					artifactDescription := publicRequest.Details
+					if req.Details != nil {
+						artifactDescription = *req.Details
+					}
+					artifact := model.Artifact{
+						Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
+						CreatorName: publicRequest.CreatorName,
+						SourceURL:   *publicRequest.SourceURL,
+						Description: &artifactDescription,
+					}
+					if req.Title != nil {
+						artifact.Title = strings.TrimSpace(*req.Title)
+					}
+					if req.CreatorName != nil {
+						artifact.CreatorName = req.CreatorName
+					}
+					if req.SourceURL != nil {
+						artifact.SourceURL = *req.SourceURL
+					}
+					if err := tx.Create(&artifact).Error; err != nil {
+						return err
+					}
+					targetArtifactID = &artifact.ID
+					assignedArtifactID = artifact.ID
+				}
+	
+				if req.AuthorMode == "existing" {
+					if _, err := uuid.Parse(req.AuthorUserID); err != nil {
+						return errors.New("a valid existing author must be selected")
+					}
+					var author model.User
+					if err := tx.
+						Clauses(clause.Locking{Strength: "UPDATE"}).
+						Select("id", "role", "disabled_at").
+						First(&author, "id = ?", req.AuthorUserID).Error; err != nil {
+						return errors.New("selected author was not found")
+					}
+					if author.Role != "author" || author.DisabledAt != nil {
+						return errors.New("selected user is not an active author")
+					}
+					assignedAuthorID = author.ID
+				} else {
+					email := strings.ToLower(strings.TrimSpace(req.AuthorEmail))
+					parsedEmail, emailErr := mail.ParseAddress(email)
+					if emailErr != nil || parsedEmail.Address != email || len(email) > 320 {
+						return errors.New("a valid email address is required to create an author")
+					}
+	
+					passwordBytes := make([]byte, 24)
+					if _, err := rand.Read(passwordBytes); err != nil {
+						return err
+					}
+					generatedAuthorPassword = base64.RawURLEncoding.EncodeToString(passwordBytes)
+					hash, err := bcrypt.GenerateFromPassword([]byte(generatedAuthorPassword), bcrypt.DefaultCost)
+					if err != nil {
+						return err
+					}
+	
+					displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
+					if displayName == "" {
+						displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title))
+					}
+					if displayName == "" {
+						displayName = strings.Split(email, "@")[0]
+					}
+					displayName = limitAuthorDisplayName(displayName)
+	
+					author := model.User{
+						Email:        email,
+						PasswordHash: string(hash),
+						DisplayName:  displayName,
+						Role:         "author",
+					}
+					if err := tx.Create(&author).Error; err != nil {
+						return fmt.Errorf("could not create author account: %w", err)
+					}
+					assignedAuthorID = author.ID
+				}
+	
+				if err := tx.Exec(
+					"INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+					assignedAuthorID,
+					*targetArtifactID,
+				).Error; err != nil {
+					return err
+				}
+				updates["artifact_id"] = *targetArtifactID
+	
+				assignmentAudit := model.AuditLog{
+					ActorID:    &actor.ID,
+					ActorLabel: actor.Email,
+					TargetType: "public_request",
+					TargetID:   &publicRequest.ID,
+					Action:     "public_request.author_assigned",
+					Result:     "success",
+					Reason:     trimOptional(&req.Reason),
+				}
+				if err := tx.Create(&assignmentAudit).Error; err != nil {
+					return err
+				}
+			}
 		}
 
 		sourceURLChanged := false
@@ -725,6 +978,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		switch {
+		case strings.Contains(err.Error(), "author") || strings.Contains(err.Error(), "email address"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+
 		case errors.Is(err, errInvalidArtifact):
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
@@ -821,6 +1078,8 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	if req.ArtifactID != nil {
 		publicRequest.ArtifactID = req.ArtifactID
+	} else if assignedArtifactID != "" {
+		publicRequest.ArtifactID = &assignedArtifactID
 	}
 
 	if req.FileObjectID != nil {
@@ -882,10 +1141,17 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"request": publicRequest,
 		"note": "Accepted takedown requests disable public downloads. " +
 			"Accepted deletion requests enqueue node-agent deletion tasks; " +
 			"the catalog entry is hidden after all placements report deletion success.",
-	})
+	}
+	if assignedAuthorID != "" {
+		response["author_id"] = assignedAuthorID
+	}
+	if generatedAuthorPassword != "" {
+		response["initial_password"] = generatedAuthorPassword
+	}
+	c.JSON(http.StatusOK, response)
 }

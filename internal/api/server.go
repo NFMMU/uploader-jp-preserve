@@ -103,6 +103,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	// Moderation and request review.
 	moderation := auth.Group("/moderation")
 	moderation.Use(s.requireRoles("admin", "reviewer"))
+	moderation.GET("/authors", s.listAuthors)
 	moderation.GET("/public-requests", s.listPublicRequests)
 	moderation.GET("/public-requests/:id", s.getPublicRequest)
 	moderation.PATCH("/public-requests/:id", s.patchPublicRequest)

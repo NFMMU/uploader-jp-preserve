@@ -1,0 +1,11 @@
+/**
+ * Keep the selected author available in the select even when the visible
+ * author list is refreshed or paginated back to an earlier page.
+ */
+export function includeSelectedAuthor(authors, selectedAuthor) {
+	if (!selectedAuthor) return authors;
+	if (authors.some((author) => String(author.id) === String(selectedAuthor.id))) {
+		return authors;
+	}
+	return [selectedAuthor, ...authors];
+}
