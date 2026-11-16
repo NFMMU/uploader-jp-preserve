@@ -136,7 +136,12 @@ export function RequestDetailPage({
 	const [authorUserID, setAuthorUserID] = useState("");
 	const [authorEmail, setAuthorEmail] = useState("");
 	const [authors, setAuthors] = useState<Obj[]>([]);
-	const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
+	const [createdCredentialsByRequestID, setCreatedCredentialsByRequestID] = useState<
+		Record<string, { email: string; password: string }>
+	>({});
+	const createdCredentials = request
+		? createdCredentialsByRequestID[request.id]
+		: undefined;
 	const [reason, setReason] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [password, setPassword] = useState("");
@@ -160,7 +165,6 @@ export function RequestDetailPage({
 		setAuthorMode("existing");
 		setAuthorUserID("");
 		setAuthorEmail("");
-		setCreatedCredentials(null);
 	}, [request?.id]);
 	useEffect(() => {
 		setTitle(request?.title || "");
@@ -236,9 +240,11 @@ export function RequestDetailPage({
 			if (authorMode === "existing" && !authorUserID) { notify("紐付けるauthorを選択してください"); return; }
 			if (authorMode === "create" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
 		}
+		const requestID = request.id;
+		const submittedAuthorEmail = authorEmail.trim();
 		setSaving(true);
 		try {
-			const result = await api(`/moderation/public-requests/${request.id}`, {
+			const result = await api(`/moderation/public-requests/${requestID}`, {
 				method: "PATCH",
 				body: JSON.stringify({
 					status, reason: reason.trim(),
@@ -248,8 +254,15 @@ export function RequestDetailPage({
 					} : {}),
 				}),
 			});
-			if (result.initial_password) setCreatedCredentials({ email: authorEmail.trim(), password: result.initial_password });
-			else setCreatedCredentials(null);
+			if (result.initial_password) {
+				setCreatedCredentialsByRequestID((current) => ({
+					...current,
+					[requestID]: {
+						email: submittedAuthorEmail,
+						password: result.initial_password,
+					},
+				}));
+			}
 			notify("申請ステータスを更新しました");
 			setReason("");
 			setLocalRefresh((x) => x + 1);
@@ -845,7 +858,11 @@ export function RequestDetailPage({
 						<label>メールアドレス<input readOnly value={createdCredentials.email} /></label>
 						<label>初期パスワード<input readOnly value={createdCredentials.password} /></label>
 						<button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(`メールアドレス: ${createdCredentials.email}\\n初期パスワード: ${createdCredentials.password}`)}>認証情報をコピー</button>
-						<button type="button" className="small-btn" onClick={() => setCreatedCredentials(null)}>表示を閉じる</button>
+						<button type="button" className="small-btn" onClick={() => setCreatedCredentialsByRequestID((current) => {
+											const next = { ...current };
+											delete next[request.id];
+											return next;
+										})}>表示を閉じる</button>
 					</section>
 				)}
 
