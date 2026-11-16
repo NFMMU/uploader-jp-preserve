@@ -927,18 +927,20 @@ export function RequestDetailPage({
 											</select>
 										</label>
 										{authorMode === "existing" ? (
-											<label>紐付け先author
-												<select value={authorUserID} onChange={(e) => setAuthorUserID(e.target.value)} required>
-													<option value="">選択してください</option>
-													{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
-												</select>
-										</label>
-											{authorsHasMore && (
-												<button type="button" className="small-btn" disabled={authorsLoadingMore} onClick={loadMoreAuthors}>
-													{authorsLoadingMore ? "読み込み中…" : "さらに100件読み込む"}
-												</button>
-											)}
-										) : (
+											<>
+												<label>紐付け先author
+													<select value={authorUserID} onChange={(e) => setAuthorUserID(e.target.value)} required>
+														<option value="">選択してください</option>
+														{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
+													</select>
+												</label>
+												{authorsHasMore && (
+													<button type="button" className="small-btn" disabled={authorsLoadingMore} onClick={loadMoreAuthors}>
+														{authorsLoadingMore ? "読み込み中…" : "さらに100件読み込む"}
+													</button>
+												)}
+											</>
+) : (
 											<label>新しいauthorのメールアドレス
 												<input type="email" value={authorEmail} onChange={(e) => setAuthorEmail(e.target.value)} maxLength={320} required placeholder="author@example.jp" autoComplete="email" />
 												<small>初期パスワードは安全な乱数で自動生成し、作成後に一度だけ表示します。</small>
