@@ -15,6 +15,9 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 	const [query, setQuery] = useState("");
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
+	const [createOpen, setCreateOpen] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [form, setForm] = useState({ title: "", creator_name: "", source_url: "", description: "" });
 	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
 	const data = useData(api, path, refresh);
 	const items: Obj[] = data.data.items || [];
@@ -24,6 +27,23 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 		setPage(1);
 	}, [query, limit]);
 
+	async function createArtifact(event: React.FormEvent) {
+		event.preventDefault();
+		setBusy(true);
+		try {
+			const artifact = await api("/catalog/artifacts", {
+				method: "POST",
+				body: JSON.stringify(form),
+			});
+			notify("作品を登録しました");
+			nav(`/admin/artifacts/${encodeURIComponent(artifact.id)}`);
+		} catch (error) {
+			notify((error as Error).message);
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	return (
 		<>
 			<Heading
@@ -31,9 +51,14 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 				title="作品一覧"
 				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
 				actions={
-					<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
-						<Download size={16} /> CSV出力
-					</button>
+					<>
+						<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
+							<Download size={16} /> CSV出力
+						</button>
+						<button className="primary" type="button" onClick={() => setCreateOpen(true)}>
+							<Plus size={16} /> 作品を登録
+						</button>
+					</>
 				}
 			/>
 			<section className="panel artifact-catalog-toolbar">
@@ -61,6 +86,7 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 					<FolderOpen size={28} />
 					<b>{query ? "一致する作品がありません" : "登録された作品がありません"}</b>
 					<span>{query ? "検索語を変更してください。" : "作品を登録すると、ここからファイルを管理できます。"}</span>
+					{query && <button className="secondary" type="button" onClick={() => setQuery("")}>検索をクリア</button>}
 				</section>
 			) : (
 				<div className="artifact-catalog-grid">
@@ -96,6 +122,20 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 				onPageChange={setPage}
 				onLimitChange={setLimit}
 			/>
+			{createOpen && (
+				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
+					<form className="form-stack" onSubmit={createArtifact}>
+						<label>作品名 *<input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label>
+						<label>作者・配布者<input value={form.creator_name} onChange={(event) => setForm({ ...form, creator_name: event.target.value })} /></label>
+						<label>元ページURL *<input required type="url" placeholder="https://www.uploader.jp/..." value={form.source_url} onChange={(event) => setForm({ ...form, source_url: event.target.value })} /></label>
+						<label>説明<textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+						<div className="modal-actions">
+							<button type="button" className="secondary" onClick={() => setCreateOpen(false)}>キャンセル</button>
+							<button className="primary" disabled={busy}>{busy ? "登録中…" : "登録してファイルを追加"}</button>
+						</div>
+					</form>
+				</Modal>
+			)}
 		</>
 	);
 }
@@ -571,7 +611,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}
 
-	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID) {
+	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID && !detail && !metadata && !modal && !artifact) {
 		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} />;
 	}
 
