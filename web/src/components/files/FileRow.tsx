@@ -20,6 +20,7 @@ export function FileRow({
 	setPub,
 	openMetadata,
 	onRefresh,
+	onDelete,
 }: {
 	x: Obj;
 	role: string;
@@ -30,6 +31,7 @@ export function FileRow({
 	setPub: React.Dispatch<React.SetStateAction<boolean>>;
 	openMetadata: React.Dispatch<React.SetStateAction<Obj>>;
 	onRefresh?: () => void | Promise<void>;
+	onDelete?: () => void;
 }) {
 	const [busy, setBusy] = React.useState(false);
 	const [message, setMessage] = useState("");
@@ -62,12 +64,12 @@ export function FileRow({
 			const created = await publicAPI<{
 				job: { id: string };
 				access_token: string;
-			}>(`/files/${x.id}/downloads`, { method: "POST" });
+			}>(`/catalog/files/${x.id}/downloads`, { method: "POST" });
 			let ready = false;
 			for (let attempt = 0; attempt < 90; attempt += 1) {
 				await new Promise((resolve) => window.setTimeout(resolve, 2000));
 				const status = await publicAPI<{ status: string; last_error?: string }>(
-					`/downloads/${created.job.id}`,
+					`/catalog/downloads/${created.job.id}`,
 					{
 						headers: {
 							"Download-Authorization": `Bearer ${created.access_token}`,
@@ -90,7 +92,7 @@ export function FileRow({
 				);
 			writable = await handle.createWritable();
 			const response = await fetch(
-				`/api/v1/downloads/${created.job.id}/content`,
+				`/api/v1/catalog/downloads/${created.job.id}/content`,
 				{
 					headers: {
 						"Download-Authorization": `Bearer ${created.access_token}`,
@@ -174,7 +176,7 @@ export function FileRow({
 				};
 				status: string;
 				message?: string;
-			}>(`/files/${encodeURIComponent(x.id)}/ingest-source`, {
+			}>(`/catalog/files/${encodeURIComponent(x.id)}/ingest-source`, {
 				method: "POST",
 				body: JSON.stringify(body),
 			});
@@ -246,7 +248,7 @@ export function FileRow({
 					{x.deletion_requested_at && !x.deleted_at && (
 						<small className="cell-sub">削除処理中</small>
 					)}
-					{x.preservation_status === "error" && (
+					{x.preservation_status === "error" && role !== "author" && (
 						<button
 							type="button"
 							className="small-btn"
@@ -278,36 +280,60 @@ export function FileRow({
 				<td>{date(x.created_at)}</td>
 				<td>
 					<div className="row-actions">
-						<button
-							className="small-btn"
-							disabled={role === "viewer"}
-							onClick={() => {
-								setDetail(x);
-								setPolicy(x.redistribution_policy || "unknown");
-								setPub(!!x.public_download_enabled);
-							}}
-							type="button"
-						>
-							公開設定
-						</button>
-						<button
-							className="small-btn"
-							disabled={
-								role === "viewer" || !!x.deletion_requested_at || !!x.deleted_at
-							}
-							onClick={() => openMetadata(x)}
-							type="button"
-						>
-							メタデータ
-						</button>
-						<button
-							className="small-btn"
-							type="button"
-							disabled={busy}
-							onClick={download}
-						>
-							{busy ? "準備中…" : "ダウンロード"}
-						</button>
+						{role === "author" ? (
+							<button
+								className="danger-btn"
+								type="button"
+								disabled={busy || !!x.deleted_at}
+								onClick={onDelete}
+							>
+								削除
+							</button>
+						) : (
+							<>
+								<button
+									className="small-btn"
+									disabled={role === "viewer"}
+									onClick={() => {
+										setDetail(x);
+										setPolicy(x.redistribution_policy || "unknown");
+										setPub(!!x.public_download_enabled);
+									}}
+									type="button"
+								>
+									公開設定
+								</button>
+								<button
+									className="small-btn"
+									disabled={
+										role === "viewer" ||
+										!!x.deletion_requested_at ||
+										!!x.deleted_at
+									}
+									onClick={() => openMetadata(x)}
+									type="button"
+								>
+									メタデータ
+								</button>
+								<button
+									className="small-btn"
+									type="button"
+									disabled={busy}
+									onClick={download}
+								>
+									{busy ? "準備中…" : "ダウンロード"}
+								</button>
+								{role === "admin" && (
+									<button
+										className="danger-btn"
+										type="button"
+										onClick={onDelete}
+									>
+										削除
+									</button>
+								)}
+							</>
+						)}
 					</div>
 					{message && (
 						<small className="public-download-message">{message}</small>

@@ -28,7 +28,7 @@ export function RequestDetailPage({
 	// 基本データの取得
 	const requestData = useData(
 		api,
-		`/public-requests/${encodeURIComponent(id)}`,
+		`/moderation/public-requests/${encodeURIComponent(id)}`,
 		refresh + localRefresh,
 	);
 	const request: Obj | undefined = requestData.data.item;
@@ -47,7 +47,7 @@ export function RequestDetailPage({
 
 		while (total === undefined || allFiles.length < total) {
 			const result = await api(
-				`/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
+				`/catalog/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
 			);
 			const items: Obj[] = result.items || [];
 
@@ -85,7 +85,7 @@ export function RequestDetailPage({
 				let loadedFiles: Obj[];
 				let total: number;
 				const result = await api(
-					`/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
+					`/catalog/files?artifact_id=${encodeURIComponent(artifactID)}&page=${filesPage}&limit=${filesLimit}`,
 				);
 
 				loadedFiles = result.items || [];
@@ -165,9 +165,12 @@ export function RequestDetailPage({
 		setIntakeIngesting(true);
 		setIntakeIngestMessage("保全タスクを登録しています…");
 		try {
-			const result = await api(`/public-requests/${request.id}/ingest-upload`, {
-				method: "POST",
-			});
+			const result = await api(
+				`/moderation/public-requests/${request.id}/ingest-upload`,
+				{
+					method: "POST",
+				},
+			);
 			setIntakeIngestMessage(
 				`保全タスクを登録しました。ファイルID: ${result.file_object_id || "登録済み"}。公開設定は別途確認してください。`,
 			);
@@ -204,7 +207,7 @@ export function RequestDetailPage({
 			return;
 		setSaving(true);
 		try {
-			await api(`/public-requests/${request.id}`, {
+			await api(`/moderation/public-requests/${request.id}`, {
 				method: "PATCH",
 				body: JSON.stringify({ status, reason: reason.trim() }),
 			});
@@ -223,7 +226,7 @@ export function RequestDetailPage({
 			setActiveArtifactID(String(req.artifact_id));
 			return String(req.artifact_id);
 		}
-		const artifact: Obj = await api("/artifacts", {
+		const artifact: Obj = await api("/catalog/artifacts", {
 			method: "POST",
 			body: JSON.stringify({
 				title: req.title || "保全リクエスト",
@@ -232,7 +235,7 @@ export function RequestDetailPage({
 				description: req.details || undefined,
 			}),
 		});
-		await api(`/public-requests/${req.id}`, {
+		await api(`/moderation/public-requests/${req.id}`, {
 			method: "PATCH",
 			body: JSON.stringify({
 				status: req.status === "pending" ? undefined : req.status,
@@ -271,7 +274,7 @@ export function RequestDetailPage({
 				if (request.file_object_id) {
 					try {
 						const result = await api(
-							`/files/${encodeURIComponent(String(request.file_object_id))}`,
+							`/catalog/files/${encodeURIComponent(String(request.file_object_id))}`,
 						);
 						file = result.file;
 					} catch {
@@ -290,7 +293,7 @@ export function RequestDetailPage({
 					return;
 				}
 				if (!file) {
-					file = await api(`/artifacts/${aid}/files`, {
+					file = await api(`/catalog/artifacts/${aid}/files`, {
 						method: "POST",
 						body: JSON.stringify({
 							original_filename: (request.title || "取得待ち").slice(0, 500),
@@ -302,7 +305,7 @@ export function RequestDetailPage({
 					});
 				}
 				if (!file) throw new Error("ファイル登録結果を取得できませんでした");
-				await api(`/public-requests/${request.id}`, {
+				await api(`/moderation/public-requests/${request.id}`, {
 					method: "PATCH",
 					body: JSON.stringify({
 						reason: "保全対象ファイルを登録",
@@ -310,7 +313,7 @@ export function RequestDetailPage({
 						file_object_id: file.id,
 					}),
 				});
-				const result = await api(`/files/${file.id}/ingest-source`, {
+				const result = await api(`/catalog/files/${file.id}/ingest-source`, {
 					method: "POST",
 					body: JSON.stringify({
 						source_url: request.source_url,
@@ -328,15 +331,18 @@ export function RequestDetailPage({
 				setLocalRefresh((x) => x + 1);
 				bumpRefresh?.();
 			} else {
-				const result = await api(`/artifacts/${aid}/discover-source-files`, {
-					method: "POST",
-					body: JSON.stringify({
-						listing_url: request.source_url,
-						accept_terms: true,
-						password,
-						public_request_id: request.id,
-					}),
-				});
+				const result = await api(
+					`/catalog/artifacts/${aid}/discover-source-files`,
+					{
+						method: "POST",
+						body: JSON.stringify({
+							listing_url: request.source_url,
+							accept_terms: true,
+							password,
+							public_request_id: request.id,
+						}),
+					},
+				);
 				const found: Obj[] = result.items || [];
 				setCandidates(found);
 				setSelectedURLs(found.map((x: Obj) => x.url));
@@ -372,7 +378,7 @@ export function RequestDetailPage({
 						continue;
 					}
 					if (!file) {
-						const created: Obj = await api(`/artifacts/${aid}/files`, {
+						const created: Obj = await api(`/catalog/artifacts/${aid}/files`, {
 							method: "POST",
 							body: JSON.stringify({
 								original_filename: (item.label || "取得待ち").slice(0, 500),
@@ -387,7 +393,7 @@ export function RequestDetailPage({
 					}
 					if (!file?.id) throw new Error("ファイル登録結果にIDがありません");
 					if (!linked) {
-						await api(`/public-requests/${request.id}`, {
+						await api(`/moderation/public-requests/${request.id}`, {
 							method: "PATCH",
 							body: JSON.stringify({
 								reason: "保全対象ファイルを登録",
@@ -397,7 +403,7 @@ export function RequestDetailPage({
 						});
 						linked = file.id;
 					}
-					const result = await api(`/files/${file.id}/ingest-source`, {
+					const result = await api(`/catalog/files/${file.id}/ingest-source`, {
 						method: "POST",
 						body: JSON.stringify({
 							source_url: item.url,
@@ -433,7 +439,7 @@ export function RequestDetailPage({
 		}
 		setSaving(true);
 		try {
-			await api(`/public-requests/${request.id}`, {
+			await api(`/moderation/public-requests/${request.id}`, {
 				method: "PATCH",
 				body: JSON.stringify({
 					title: value,

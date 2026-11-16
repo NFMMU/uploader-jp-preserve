@@ -18,13 +18,13 @@ import { NodeEnrollmentRequests } from "./NodeEnrollmentRequests";
 
 export function Nodes({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/nodes", refresh + localRefresh);
+	const d = useData(api, "/operations/nodes", refresh + localRefresh);
 	const [deletingRows, setDeletingRows] = useState<string[]>([]);
 	const deleteNode = async (id: string, name: string) => {
 		if (!window.confirm(`本当に「${name}」を削除しますか？`)) return;
 		setDeletingRows((rows) => [...rows, id]);
 		try {
-			await api(`/nodes/${encodeURIComponent(id)}`, {
+			await api(`/operations/nodes/${encodeURIComponent(id)}`, {
 				method: "DELETE",
 			});
 		} catch (e) {
@@ -41,16 +41,18 @@ export function Nodes({ api, refresh, notify, role }: any) {
 				title="保存ノード"
 				desc="稼働状況と容量"
 				actions={
-					<button
-						className="secondary"
-						onClick={() =>
-							api("/admin/placements/reconcile", { method: "POST" })
-								.then(() => notify("再調整を実行しました"))
-								.catch((e: Error) => notify(e.message))
-						}
-					>
-						<RefreshCw size={16} /> 保存先を調整
-					</button>
+					role === "admin" ? (
+						<button
+							className="secondary"
+							onClick={() =>
+								api("/admin/placements/reconcile", { method: "POST" })
+									.then(() => notify("再調整を実行しました"))
+									.catch((e: Error) => notify(e.message))
+							}
+						>
+							<RefreshCw size={16} /> 保存先を調整
+						</button>
+					) : null
 				}
 			/>
 			<div className="stat-grid">

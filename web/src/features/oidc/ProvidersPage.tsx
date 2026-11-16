@@ -22,7 +22,7 @@ export function ProvidersPage({
 	role: any;
 }) {
 	const [localRefresh, setLocalRefresh] = useState(0);
-	const d = useData(api, "/admin/oidc_providers", refresh + localRefresh);
+	const d = useData(api, "/admin/oidc-providers", refresh + localRefresh);
 	const [modal, setModal] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [form, setForm] = useState({
@@ -38,7 +38,7 @@ export function ProvidersPage({
 		if (submitting) return;
 		setSubmitting(true);
 		try {
-			await api("/admin/oidc_providers", {
+			await api("/admin/oidc-providers", {
 				method: "POST",
 				body: JSON.stringify(form),
 			});
@@ -62,7 +62,7 @@ export function ProvidersPage({
 
 	async function deleteProvider(id: string) {
 		try {
-			await api(`/admin/oidc_providers/${id}`, { method: "DELETE" });
+			await api(`/admin/oidc-providers/${id}`, { method: "DELETE" });
 			notify("OIDCプロバイダーを削除しました");
 			setLocalRefresh((x) => x + 1);
 		} catch (e) {

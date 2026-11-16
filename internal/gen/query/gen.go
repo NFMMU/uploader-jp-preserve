@@ -19,6 +19,7 @@ var (
 	Q                       = new(Query)
 	Artifact                *artifact
 	AuditLog                *auditLog
+	AuthorArtifact          *authorArtifact
 	DownloadAuditLog        *downloadAuditLog
 	DownloadJob             *downloadJob
 	FileObject              *fileObject
@@ -39,6 +40,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
 	Artifact = &Q.Artifact
 	AuditLog = &Q.AuditLog
+	AuthorArtifact = &Q.AuthorArtifact
 	DownloadAuditLog = &Q.DownloadAuditLog
 	DownloadJob = &Q.DownloadJob
 	FileObject = &Q.FileObject
@@ -60,6 +62,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		db:                      db,
 		Artifact:                newArtifact(db, opts...),
 		AuditLog:                newAuditLog(db, opts...),
+		AuthorArtifact:          newAuthorArtifact(db, opts...),
 		DownloadAuditLog:        newDownloadAuditLog(db, opts...),
 		DownloadJob:             newDownloadJob(db, opts...),
 		FileObject:              newFileObject(db, opts...),
@@ -82,6 +85,7 @@ type Query struct {
 
 	Artifact                artifact
 	AuditLog                auditLog
+	AuthorArtifact          authorArtifact
 	DownloadAuditLog        downloadAuditLog
 	DownloadJob             downloadJob
 	FileObject              fileObject
@@ -107,6 +111,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		db:                      db,
 		Artifact:                q.Artifact.clone(db),
 		AuditLog:                q.AuditLog.clone(db),
+		AuthorArtifact:          q.AuthorArtifact.clone(db),
 		DownloadAuditLog:        q.DownloadAuditLog.clone(db),
 		DownloadJob:             q.DownloadJob.clone(db),
 		FileObject:              q.FileObject.clone(db),
@@ -137,6 +142,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		db:                      db,
 		Artifact:                q.Artifact.replaceDB(db),
 		AuditLog:                q.AuditLog.replaceDB(db),
+		AuthorArtifact:          q.AuthorArtifact.replaceDB(db),
 		DownloadAuditLog:        q.DownloadAuditLog.replaceDB(db),
 		DownloadJob:             q.DownloadJob.replaceDB(db),
 		FileObject:              q.FileObject.replaceDB(db),
@@ -157,6 +163,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 type queryCtx struct {
 	Artifact                IArtifactDo
 	AuditLog                IAuditLogDo
+	AuthorArtifact          IAuthorArtifactDo
 	DownloadAuditLog        IDownloadAuditLogDo
 	DownloadJob             IDownloadJobDo
 	FileObject              IFileObjectDo
@@ -177,6 +184,7 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
 		Artifact:                q.Artifact.WithContext(ctx),
 		AuditLog:                q.AuditLog.WithContext(ctx),
+		AuthorArtifact:          q.AuthorArtifact.WithContext(ctx),
 		DownloadAuditLog:        q.DownloadAuditLog.WithContext(ctx),
 		DownloadJob:             q.DownloadJob.WithContext(ctx),
 		FileObject:              q.FileObject.WithContext(ctx),

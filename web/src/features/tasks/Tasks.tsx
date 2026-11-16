@@ -26,13 +26,13 @@ export function Tasks({ api, refresh, notify, role }: any) {
 
 	const d = useData(
 		api,
-		`/tasks?${taskParams.toString()}`,
+		`/operations/tasks?${taskParams.toString()}`,
 		refresh + localRefresh,
 	);
 
 	const clearFailedTasks = async () => {
 		try {
-			await api("/tasks/clear-failed", { method: "POST" });
+			await api("/operations/tasks/clear-failed", { method: "POST" });
 			notify("失敗タスクのレコードをクリアしました");
 			setLocalRefresh((x) => x + 1);
 		} catch (e) {
@@ -40,7 +40,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 		}
 	};
 
-	const nodes = useData(api, "/nodes", refresh + localRefresh);
+	const nodes = useData(api, "/operations/nodes", refresh + localRefresh);
 
 	const nodeNames = Object.fromEntries(
 		(nodes.data.items || []).map((node: Obj) => [node.id, node.name]),
@@ -60,7 +60,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 
 	async function retry(id: string) {
 		try {
-			await api(`/tasks/${id}/retry`, { method: "POST" });
+			await api(`/operations/tasks/${id}/retry`, { method: "POST" });
 			notify("再試行を開始しました");
 			setLocalRefresh((x) => x + 1);
 		} catch (e) {
@@ -75,9 +75,11 @@ export function Tasks({ api, refresh, notify, role }: any) {
 				desc="処理状況と失敗理由"
 				actions={
 					<>
-						<button className="secondary" onClick={() => clearFailedTasks()}>
-							<DeleteIcon size={16} /> 失敗レコードの削除
-						</button>
+						{role === "admin" && (
+							<button className="secondary" onClick={() => clearFailedTasks()}>
+								<DeleteIcon size={16} /> 失敗レコードの削除
+							</button>
+						)}
 						<button
 							className="secondary"
 							onClick={() => setLocalRefresh((x) => x + 1)}

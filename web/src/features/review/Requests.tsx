@@ -17,7 +17,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	const [limit, setLimit] = useState(20);
 
 	const requestPath =
-		`/public-requests?page=${page}&limit=${limit}` +
+		`/moderation/public-requests?page=${page}&limit=${limit}` +
 		(filter !== "all" ? `&status=${encodeURIComponent(filter)}` : "");
 
 	const d = useData(api, requestPath, refresh);
@@ -35,15 +35,19 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	// 統計
 	const pendingCountData = useData(
 		api,
-		"/public-requests?page=1&limit=1&status=pending",
+		"/moderation/public-requests?page=1&limit=1&status=pending",
 		refresh,
 	);
 	const inReviewCountData = useData(
 		api,
-		"/public-requests?page=1&limit=1&status=in_review",
+		"/moderation/public-requests?page=1&limit=1&status=in_review",
 		refresh,
 	);
-	const allCountData = useData(api, "/public-requests?page=1&limit=1", refresh);
+	const allCountData = useData(
+		api,
+		"/moderation/public-requests?page=1&limit=1",
+		refresh,
+	);
 
 	const pendingCount = Number(pendingCountData.data.total ?? 0);
 	const inReviewCount = Number(inReviewCountData.data.total ?? 0);
@@ -117,7 +121,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 			const failures: string[] = [];
 			for (const item of selected) {
 				try {
-					await api(`/public-requests/${item.id}`, {
+					await api(`/moderation/public-requests/${item.id}`, {
 						method: "PATCH",
 						body: JSON.stringify({ status: nextStatus, reason: reason.trim() }),
 					});
@@ -190,7 +194,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					);
 					let artifactID = String(req.artifact_id || "");
 					if (!artifactID) {
-						const artifact: Obj = await api("/artifacts", {
+						const artifact: Obj = await api("/catalog/artifacts", {
 							method: "POST",
 							body: JSON.stringify({
 								title: req.title || "保全リクエスト",
@@ -201,7 +205,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 						});
 						artifactID = artifact.id;
 					}
-					await api(`/public-requests/${req.id}`, {
+					await api(`/moderation/public-requests/${req.id}`, {
 						method: "PATCH",
 						body: JSON.stringify({
 							status: "in_review",
@@ -213,7 +217,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 						}),
 					});
 					const existingResult = await api(
-						`/files?artifact_id=${encodeURIComponent(artifactID)}&limit=100`,
+						`/catalog/files?artifact_id=${encodeURIComponent(artifactID)}&limit=100`,
 					);
 					const existingFiles: Obj[] = [...(existingResult.items || [])];
 					if (isIndividualDownload(req.source_url)) {
@@ -231,7 +235,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 						}
 						if (!file) {
 							const createdFile: Obj = await api(
-								`/artifacts/${artifactID}/files`,
+								`/catalog/artifacts/${artifactID}/files`,
 								{
 									method: "POST",
 									body: JSON.stringify({
@@ -249,7 +253,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 						if (!file)
 							throw new Error("保全対象ファイルを作成できませんでした");
 						const targetFile: Obj = file;
-						await api(`/public-requests/${req.id}`, {
+						await api(`/moderation/public-requests/${req.id}`, {
 							method: "PATCH",
 							body: JSON.stringify({
 								status: "in_review",
@@ -258,19 +262,22 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 								file_object_id: targetFile.id,
 							}),
 						});
-						const result = await api(`/files/${targetFile.id}/ingest-source`, {
-							method: "POST",
-							body: JSON.stringify({
-								source_url: req.source_url,
-								accept_terms: true,
-								priority: 3,
-								public_request_id: req.id,
-							}),
-						});
+						const result = await api(
+							`/catalog/files/${targetFile.id}/ingest-source`,
+							{
+								method: "POST",
+								body: JSON.stringify({
+									source_url: req.source_url,
+									accept_terms: true,
+									priority: 3,
+									public_request_id: req.id,
+								}),
+							},
+						);
 						if (result.source_fetch_task) queuedCount++;
 					} else {
 						const discovered = await api(
-							`/artifacts/${artifactID}/discover-source-files`,
+							`/catalog/artifacts/${artifactID}/discover-source-files`,
 							{
 								method: "POST",
 								body: JSON.stringify({
@@ -298,7 +305,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 								}
 								if (!file) {
 									const createdFile: Obj = await api(
-										`/artifacts/${artifactID}/files`,
+										`/catalog/artifacts/${artifactID}/files`,
 										{
 											method: "POST",
 											body: JSON.stringify({
@@ -320,7 +327,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 									throw new Error("保全対象ファイルを作成できませんでした");
 								const targetFile: Obj = file;
 								if (!linkedFileID) {
-									await api(`/public-requests/${req.id}`, {
+									await api(`/moderation/public-requests/${req.id}`, {
 										method: "PATCH",
 										body: JSON.stringify({
 											status: "in_review",
@@ -332,7 +339,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 									linkedFileID = targetFile.id;
 								}
 								const result = await api(
-									`/files/${targetFile.id}/ingest-source`,
+									`/catalog/files/${targetFile.id}/ingest-source`,
 									{
 										method: "POST",
 										body: JSON.stringify({

@@ -10,6 +10,7 @@ import {
 	Menu,
 	RefreshCw,
 	ScrollText,
+	UserCog,
 	Users,
 	Workflow,
 	X,
@@ -18,6 +19,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { FaOpenid } from "react-icons/fa";
 import {
+	Navigate,
 	NavLink,
 	Route,
 	Routes,
@@ -31,10 +33,13 @@ import { Nodes } from "@/features/nodes/Nodes";
 import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 import { PreferencePage } from "@/features/preference/PreferencePage";
 import PublicSite from "@/features/public/PublicSite";
+import { AuthorArtifacts } from "@/features/review/AuthorArtifacts";
+import { Catalog } from "@/features/review/Catalog";
 import { RequestDetailPage } from "@/features/review/RequestDetailPage";
 import { ReviewWorkspace } from "@/features/review/ReviewWorkspace";
 import { Tasks } from "@/features/tasks/Tasks";
 import { URLCollector } from "@/features/url-collector/URLCollector";
+import { AuthorAssignmentsPage } from "@/features/users/AuthorAssignmentsPage";
 import { UsersPage } from "@/features/users/UsersPage";
 import type { Obj } from "@/types/common";
 
@@ -96,7 +101,11 @@ function App() {
 			});
 			setUser(d.user);
 			notify("ログインしました");
-			nav("/admin");
+			nav(
+				d.user.role === "author" || d.user.role === "viewer"
+					? "/admin/artifacts"
+					: "/admin",
+			);
 		} catch (e) {
 			notify((e as Error).message);
 		} finally {
@@ -141,13 +150,47 @@ function App() {
 		["/admin/nodes", "保存ノード", HardDrive],
 		["/admin/tasks", "タスク", Workflow],
 		["/admin/users", "ユーザー管理", Users],
+		["/admin/author-assignments", "Author作品割り当て", UserCog],
 		["/admin/oidc_providers", "OIDC設定", FaOpenid],
 		["/admin/audit", "操作履歴", ScrollText],
 	] as const;
 	const visibleLinks =
 		user?.role === "admin"
 			? links
-			: links.filter(([to]) => to !== "/admin/url-collector");
+			: user?.role === "reviewer"
+				? links.filter(([to]) =>
+						[
+							"/admin",
+							"/admin/review",
+							"/admin/nodes",
+							"/admin/tasks",
+						].includes(to),
+					)
+				: [["/admin/artifacts", "割り当て作品", Archive] as const];
+
+	function canAccessPath(role: string, path: string) {
+		if (role === "admin") return true;
+		if (role === "reviewer") {
+			return (
+				[
+					"/admin",
+					"/admin/review",
+					"/admin/nodes",
+					"/admin/tasks",
+					"/admin/preference",
+					"/admin/requests",
+				].includes(path) || path.startsWith("/admin/requests/")
+			);
+		}
+		if (role === "author")
+			return (
+				["/admin/artifacts", "/admin/preference"].includes(path) ||
+				/^\/admin\/artifacts\/[^/]+$/.test(path)
+			);
+		if (role === "viewer")
+			return ["/admin/artifacts", "/admin/preference"].includes(path);
+		return false;
+	}
 
 	useEffect(() => {
 		if (!loading || !loc.pathname.startsWith("/admin")) return;
@@ -213,6 +256,18 @@ function App() {
 					{toast && <div className="toast error">{toast}</div>}
 				</div>
 			);
+		if (!canAccessPath(user.role, loc.pathname)) {
+			return (
+				<Navigate
+					to={
+						user.role === "admin" || user.role === "reviewer"
+							? "/admin"
+							: "/admin/artifacts"
+					}
+					replace
+				/>
+			);
+		}
 		return (
 			<div className="app-shell">
 				<aside className={"sidebar " + (mobile ? "open" : "")}>
@@ -270,7 +325,9 @@ function App() {
 										? "管理者"
 										: user.role === "reviewer"
 											? "確認担当者"
-											: "閲覧者"}
+											: user.role === "author"
+												? "Author"
+												: "閲覧者"}
 								</small>
 							</div>
 							<button
@@ -321,7 +378,12 @@ function App() {
 							<Route
 								path="/admin"
 								element={
-									<Dashboard api={api} refresh={refresh} notify={notify} />
+									<Dashboard
+										api={api}
+										refresh={refresh}
+										notify={notify}
+										role={user.role}
+									/>
 								}
 							/>
 							<Route
@@ -352,13 +414,28 @@ function App() {
 							<Route
 								path="/admin/artifacts"
 								element={
-									<ReviewWorkspace
+									user.role === "author" ? (
+										<AuthorArtifacts api={api} refresh={refresh} />
+									) : (
+										<ReviewWorkspace
+											api={api}
+											refresh={refresh}
+											notify={notify}
+											role={user.role}
+											bumpRefresh={() => setRefresh((x) => x + 1)}
+											initialTab="files"
+										/>
+									)
+								}
+							/>
+							<Route
+								path="/admin/artifacts/:artifactID"
+								element={
+									<Catalog
 										api={api}
 										refresh={refresh}
 										notify={notify}
 										role={user.role}
-										bumpRefresh={() => setRefresh((x) => x + 1)}
-										initialTab="files"
 									/>
 								}
 							/>
@@ -421,6 +498,16 @@ function App() {
 								}
 							/>
 							<Route
+								path="/admin/author-assignments"
+								element={
+									<AuthorAssignmentsPage
+										api={api}
+										refresh={refresh}
+										notify={notify}
+									/>
+								}
+							/>
+							<Route
 								path="/admin/oidc_providers"
 								element={
 									<ProvidersPage
@@ -449,7 +536,14 @@ function App() {
 							<Route
 								path="*"
 								element={
-									<Dashboard api={api} refresh={refresh} notify={notify} />
+									<Navigate
+										to={
+											user.role === "admin" || user.role === "reviewer"
+												? "/admin"
+												: "/admin/artifacts"
+										}
+										replace
+									/>
 								}
 							/>
 						</Routes>

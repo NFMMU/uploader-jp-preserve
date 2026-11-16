@@ -46,6 +46,6 @@ table "users" {
     columns = [column.email]
   }
   check "users_role_check" {
-    expr = "role IN ('admin', 'reviewer', 'viewer')"
+    expr = "role IN ('admin', 'reviewer', 'viewer', 'author')"
   }
 }

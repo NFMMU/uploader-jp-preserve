@@ -15,9 +15,9 @@ const TableNameOidcProvider = "oidc_providers"
 // OidcProvider mapped from table <oidc_providers>
 type OidcProvider struct {
 	ID                string         `gorm:"column:id;type:uuid;primaryKey;default:uuidv7()" json:"id"`
-	DisplayName       string         `gorm:"column:display_name;type:character varying(31);not null" json:"display_name"`
-	DiscoveryEndpoint string         `gorm:"column:discovery_endpoint;type:character varying(255);not null" json:"discovery_endpoint"`
-	ClientID          string         `gorm:"column:client_id;type:character varying(255);not null" json:"client_id"`
+	DisplayName       string         `gorm:"column:display_name;type:character varying(255);not null" json:"display_name"`
+	DiscoveryEndpoint string         `gorm:"column:discovery_endpoint;type:character varying(255);not null;uniqueIndex:uq_client_id_discovery_endpoint,priority:2" json:"discovery_endpoint"`
+	ClientID          string         `gorm:"column:client_id;type:character varying(255);not null;uniqueIndex:uq_client_id_discovery_endpoint,priority:1" json:"client_id"`
 	ClientSecret      string         `gorm:"column:client_secret;type:text;not null" json:"-"`
 	IsEnabled         bool           `gorm:"column:is_enabled;type:boolean;not null;index:idx_is_enabled,priority:1;default:true" json:"is_enabled"`
 	CreatedAt         time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`

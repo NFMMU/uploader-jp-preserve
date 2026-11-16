@@ -10,7 +10,7 @@ type CurrentUser = {
 	id: string;
 	email: string;
 	display_name: string;
-	role: "admin" | "reviewer" | "viewer";
+	role: "admin" | "reviewer" | "viewer" | "author";
 };
 
 export function PreferencePage({
@@ -63,7 +63,7 @@ export function PreferencePage({
 
 	const identities = useData(
 		api,
-		user?.id ? `/users/${encodeURIComponent(user.id)}/oidc_identities` : "",
+		user?.id ? "/account/oidc-identities" : "",
 		refresh + localRefresh,
 	);
 
@@ -88,7 +88,7 @@ export function PreferencePage({
 		setProfileSaving(true);
 
 		try {
-			await api(`/admin/users/${encodeURIComponent(user.id)}`, {
+			await api("/account", {
 				method: "PUT",
 				body: JSON.stringify({
 					display_name: displayName,
@@ -144,7 +144,7 @@ export function PreferencePage({
 		setPasswordSaving(true);
 
 		try {
-			await api(`/admin/users/${encodeURIComponent(user.id)}/password`, {
+			await api("/account/password", {
 				method: "PUT",
 				body: JSON.stringify({
 					current_password,
@@ -185,12 +185,9 @@ export function PreferencePage({
 
 	async function unlinkAccount(identityId: string) {
 		try {
-			await api(
-				`/users/${encodeURIComponent(user!.id)}/oidc_identities/${encodeURIComponent(identityId)}`,
-				{
-					method: "DELETE",
-				},
-			);
+			await api(`/account/oidc-identities/${encodeURIComponent(identityId)}`, {
+				method: "DELETE",
+			});
 
 			notify("外部アカウントの連携を解除しました。");
 			setLocalRefresh((v) => v + 1);
