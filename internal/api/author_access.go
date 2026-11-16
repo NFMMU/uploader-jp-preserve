@@ -31,6 +31,43 @@ func (s *Server) authorHasArtifact(ctx *gin.Context, userID, artifactID string) 
 	return count > 0, err
 }
 
+// requireAuthorFileArtifactAccess limits author file mutations to files belonging
+// to artifacts explicitly assigned to the current author.
+func (s *Server) requireAuthorFileArtifactAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := hooks.CurrentUser(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+			return
+		}
+		if user.Role != "author" {
+			c.Next()
+			return
+		}
+		var file model.FileObject
+		if err := s.db.WithContext(c.Request.Context()).
+			Select("id", "artifact_id").
+			First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "file object not found"})
+			} else {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not verify file access"})
+			}
+			return
+		}
+		allowed, err := s.authorHasArtifact(c, user.ID, file.ArtifactID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not verify artifact access"})
+			return
+		}
+		if !allowed {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+			return
+		}
+		c.Next()
+	}
+}
+
 func (s *Server) requireAuthorArtifactAccess() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, ok := hooks.CurrentUser(c)

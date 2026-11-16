@@ -281,14 +281,36 @@ export function FileRow({
 				<td>
 					<div className="row-actions">
 						{role === "author" ? (
-							<button
-								className="danger-btn"
-								type="button"
-								disabled={busy || !!x.deleted_at}
-								onClick={onDelete}
-							>
-								削除
-							</button>
+							<>
+								<button
+									className="small-btn"
+									type="button"
+									disabled={!!x.deleted_at || !!x.deletion_requested_at}
+									onClick={() => {
+										setDetail(x);
+										setPolicy(x.redistribution_policy || "unknown");
+										setPub(!!x.public_download_enabled);
+									}}
+								>
+									公開設定
+								</button>
+								<button
+									className="small-btn"
+									type="button"
+									disabled={busy || !!x.deleted_at || !!x.deletion_requested_at}
+									onClick={() => openMetadata(x)}
+								>
+									メタデータ
+								</button>
+								<button
+									className="danger-btn"
+									type="button"
+									disabled={busy || !!x.deleted_at}
+									onClick={onDelete}
+								>
+									削除
+								</button>
+							</>
 						) : (
 							<>
 								<button
