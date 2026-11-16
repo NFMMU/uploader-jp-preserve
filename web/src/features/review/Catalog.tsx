@@ -12,6 +12,7 @@ import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
 function ArtifactCatalog({ api, refresh, notify }: any) {
+	const nav = useNavigate();
 	const [query, setQuery] = useState("");
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
@@ -169,6 +170,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		file_description: "",
 	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
+	const [artifactRecord, setArtifactRecord] = useState<Obj | null>(null);
 	const [pendingFileId, setPendingFileId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [upload, setUpload] = useState<File | null>(null);
@@ -208,6 +210,16 @@ export function Catalog({ api, refresh, notify, role }: any) {
 
 	const f = useData(api, filePath, refresh + unused);
 	const files: Obj[] = f.data.items || [];
+	const artifactData = useData(
+		api,
+		linkedArtifactID ? `/catalog/artifacts/${encodeURIComponent(linkedArtifactID)}` : "/catalog/artifacts?limit=1",
+		refresh + unused,
+	);
+	useEffect(() => {
+		if (linkedArtifactID && artifactData.data.artifact) {
+			setArtifactRecord(artifactData.data.artifact);
+		}
+	}, [linkedArtifactID, artifactData.data.artifact]);
 
 	useEffect(() => {
 		if (role === "author" || !linkedFileID || f.loading) return;
@@ -619,15 +631,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		<>
 			<Heading
 				eyebrow=""
-				title={
-					linkedArtifactID && role === "author"
-						? "作品内のファイル"
-						: "作品・ファイル"
-				}
+				title={linkedArtifactID ? "作品内のファイル" : "作品・ファイル"}
 				desc={
 					role === "author"
 						? "割り当てられた作品のファイルを確認・削除"
-						: "メタデータ、保全状態、公開条件を検索・一括管理"
+						: linkedArtifactID
+							? "この作品に属するファイルの保全状態・公開条件を管理"
+							: "作品を選択して、作品単位でファイルを管理"
 				}
 				actions={
 					<>
@@ -648,8 +658,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<Download size={16} /> CSV出力
 							</button>
 						)}
-						{role === "admin" && (
-							<button className="primary" onClick={() => setModal(true)}>
+						{linkedArtifactID && (role === "admin" || role === "reviewer") && artifactRecord && (
+							<button className="primary" onClick={() => setArtifact(artifactRecord)} type="button">
+								<Plus size={16} /> ファイルを追加
+							</button>
+						)}
+						{role === "admin" && !linkedArtifactID && (
+							<button className="primary" onClick={() => setModal(true)} type="button">
 								<Plus size={16} /> 作品を登録
 							</button>
 						)}
