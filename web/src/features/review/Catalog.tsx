@@ -120,12 +120,18 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				<section className="panel empty">
 					<FolderOpen size={28} />
 					<b>
-						{query ? "一致する作品がありません" : "登録された作品がありません"}
+						{query
+							? "一致する作品がありません"
+							: role === "author"
+								? "まだ作品が割り当てられていません"
+								: "登録された作品がありません"}
 					</b>
 					<span>
 						{query
 							? "検索語を変更してください。"
-							: "作品を登録すると、ここからファイルを管理できます。"}
+							: role === "author"
+								? "管理者に作品の割り当てを依頼してください。"
+								: "作品を登録すると、ここからファイルを管理できます。"}
 					</span>
 					{query && (
 						<button
