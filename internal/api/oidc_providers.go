@@ -149,7 +149,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		DisplayName  string  `json:"display_name" binding:"required,max=255"`
 		ServiceIcon  *string `json:"service_icon" binding:"omitempty,max=255"`
 		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
-		IsEnabled    bool    `json:"is_enabled" binding:"omitempty,default=true"`
+		IsEnabled    *bool   `json:"is_enabled"`
 	}
 	id := c.Param("id")
 	if id == "" {
@@ -181,10 +181,14 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+	isEnabled := true
+	if req.IsEnabled != nil {
+		isEnabled = *req.IsEnabled
+	}
 	updates := map[string]any{
 		"display_name": req.DisplayName,
 		"service_icon": req.ServiceIcon,
-		"is_enabled":   req.IsEnabled,
+		"is_enabled":   isEnabled,
 		"updated_at":   time.Now(),
 	}
 	if req.ClientSecret != nil {
