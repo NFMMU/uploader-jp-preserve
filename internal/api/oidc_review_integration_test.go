@@ -155,7 +155,7 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{FrontendURL: "http://canonical.example:8080", SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
 	id, other := uuid.NewString(), uuid.NewString()
 	for _, row := range []model.OidcProvider{
-		{ID: id, DisplayName: "original", DiscoveryEndpoint: "https://issuer.example", ClientID: "client", ClientSecret: "keep-secret"},
+		{ID: id, DisplayName: "original", DiscoveryEndpoint: "https://issuer.example", ClientID: "client", ClientSecret: "keep-secret", IsEnabled: true},
 		{ID: other, DisplayName: "other", DiscoveryEndpoint: "https://issuer.example", ClientID: "other", ClientSecret: "other-secret"},
 	} {
 		if err := db.Create(&row).Error; err != nil {
@@ -192,6 +192,9 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 		}
 		if stored != expected || row.DisplayName != "updated" {
 			t.Fatalf("unexpected provider: %s", row.ID)
+		}
+		if !row.IsEnabled {
+			t.Fatal("omitting is_enabled should preserve the existing enabled state")
 		}
 	}
 	var count int64
