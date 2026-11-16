@@ -8,6 +8,7 @@ import { useData } from "@/hooks/useData";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { ConversationLinks } from "./ConversationLinks";
+import { includeSelectedAuthor } from "./authorSelection";
 
 export function RequestDetailPage({
 	api,
@@ -136,6 +137,8 @@ export function RequestDetailPage({
 	const [authorUserID, setAuthorUserID] = useState("");
 	const [authorEmail, setAuthorEmail] = useState("");
 	const [authors, setAuthors] = useState<Obj[]>([]);
+	const [selectedAuthor, setSelectedAuthor] = useState<Obj | null>(null);
+	const authorOptions = includeSelectedAuthor(authors, selectedAuthor);
 	const [authorsPage, setAuthorsPage] = useState(1);
 	const [authorsHasMore, setAuthorsHasMore] = useState(false);
 	const [authorsLoadingMore, setAuthorsLoadingMore] = useState(false);
@@ -167,6 +170,7 @@ export function RequestDetailPage({
 	useEffect(() => {
 		setAuthorMode("existing");
 		setAuthorUserID("");
+		setSelectedAuthor(null);
 		setAuthorEmail("");
 	}, [request?.id]);
 	useEffect(() => {
@@ -184,7 +188,10 @@ export function RequestDetailPage({
 			setAuthors(items);
 			setAuthorsPage(Number(result.page) || 1);
 			setAuthorsHasMore(Boolean(result.has_more));
-			if (items.length) setAuthorUserID((prev) => prev || String(items[0].id));
+			if (items.length) {
+				setAuthorUserID((prev) => prev || String(items[0].id));
+				setSelectedAuthor((prev) => prev || items[0]);
+			}
 		}).catch((e: Error) => notify(e.message));
 		return () => { cancelled = true; };
 	}, [request?.id, request?.request_type]);
@@ -932,9 +939,13 @@ export function RequestDetailPage({
 										{authorMode === "existing" ? (
 											<>
 												<label>紐付け先author
-													<select value={authorUserID} onChange={(e) => setAuthorUserID(e.target.value)} required>
+													<select value={authorUserID} onChange={(e) => {
+													const nextID = e.target.value;
+													setAuthorUserID(nextID);
+													setSelectedAuthor(authorOptions.find((author) => String(author.id) === nextID) || null);
+												}} required>
 														<option value="">選択してください</option>
-														{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
+														{authorOptions.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
 													</select>
 												</label>
 												{authorsHasMore && (
