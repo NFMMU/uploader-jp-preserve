@@ -11,7 +11,7 @@ import { FileRow } from "@/components/files/FileRow";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-function ArtifactCatalog({ api, refresh, notify }: any) {
+function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const nav = useNavigate();
 	const [query, setQuery] = useState("");
 	const [page, setPage] = useState(1);
@@ -56,9 +56,11 @@ function ArtifactCatalog({ api, refresh, notify }: any) {
 						<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
 							<Download size={16} /> CSV出力
 						</button>
-						<button className="primary" type="button" onClick={() => setCreateOpen(true)}>
-							<Plus size={16} /> 作品を登録
-						</button>
+						{role === "admin" && (
+							<button className="primary" type="button" onClick={() => setCreateOpen(true)}>
+								<Plus size={16} /> 作品を登録
+							</button>
+						)}
 					</>
 				}
 			/>
@@ -624,7 +626,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	}
 
 	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID && !detail && !metadata && !modal && !artifact) {
-		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} />;
+		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} role={role} />;
 	}
 
 	return (
