@@ -1082,7 +1082,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<input
 								type="checkbox"
 								checked={pub}
-								disabled={role !== "admin"}
+								disabled={role !== "admin" && role !== "author"}
 								onChange={(e) => setPub(e.target.checked)}
 							/>{" "}
 							一般公開する
