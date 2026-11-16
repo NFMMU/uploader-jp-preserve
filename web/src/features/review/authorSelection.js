@@ -4,7 +4,9 @@
  */
 export function includeSelectedAuthor(authors, selectedAuthor) {
 	if (!selectedAuthor) return authors;
-	if (authors.some((author) => String(author.id) === String(selectedAuthor.id))) {
+	if (
+		authors.some((author) => String(author.id) === String(selectedAuthor.id))
+	) {
 		return authors;
 	}
 	return [selectedAuthor, ...authors];
