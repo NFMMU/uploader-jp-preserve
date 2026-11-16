@@ -137,6 +137,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (!metadata) return;
 		const reason = window.prompt("メタデータの変更理由を入力してください");
 		if (!reason || reason.trim().length < 3) return;
+		if (metaForm.file_description.length > 20_000) {
+			notify("ファイルの説明は20,000文字以内で入力してください");
+			return;
+		}
 		setBusy(true);
 		try {
 			await api(`/catalog/artifacts/${metadata.artifact_id}`, {
@@ -155,7 +159,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					original_filename: metaForm.original_filename,
 					media_type: metaForm.media_type,
 					source_url: metaForm.source_url,
-					description: metaForm.file_description,
+					...(metaForm.file_description !== (metadata.description || "") && {
+						description: metaForm.file_description,
+					}),
 					reason: reason.trim(),
 				}),
 			});
