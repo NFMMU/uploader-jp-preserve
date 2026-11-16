@@ -32,6 +32,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - name: Set Biome comparison base
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "BIOME_BASE_REF=$EVENT_BASE" >> "$GITHUB_ENV"
+          elif [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            echo "BIOME_BASE_REF=$EVENT_BEFORE" >> "$GITHUB_ENV"
+          else
+            echo "BIOME_BASE_REF=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+          fi
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
