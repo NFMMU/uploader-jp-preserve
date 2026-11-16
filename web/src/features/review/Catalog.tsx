@@ -45,6 +45,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [upload, setUpload] = useState<File | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [sourceURL, setSourceURL] = useState("");
+	const [fileDescription, setFileDescription] = useState("");
 	const [acceptSourceTerms, setAcceptSourceTerms] = useState(false);
 	const [listingURL, setListingURL] = useState("");
 	const [acceptListingTerms, setAcceptListingTerms] = useState(false);
@@ -302,6 +303,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						size_bytes: upload?.size || 0,
 						media_type: upload?.type || "application/octet-stream",
 						source_url: url || undefined,
+						description: fileDescription,
 						redistribution_policy: policy,
 						public_download_enabled: false,
 					}),
@@ -586,6 +588,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 					</div>
 					<div className="bulk-toolbar-controls">
+						<label>
+							ファイルの説明
+							<textarea rows={3} value={fileDescription} onChange={(e) => setFileDescription(e.target.value)} placeholder="このファイルの内容や用途など" />
+						</label>
 						<label>
 							公開条件
 							<select
