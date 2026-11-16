@@ -224,7 +224,7 @@ export function RequestDetailPage({
 			return;
 		if (request.request_type === "preservation" && status === "accepted") {
 			if (authorMode === "existing" && !authorUserID) { notify("紐付けるauthorを選択してください"); return; }
-			if (authorMode === "create" && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
+			if (authorMode === "create" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
 		}
 		setSaving(true);
 		try {
