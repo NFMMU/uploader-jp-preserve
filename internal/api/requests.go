@@ -321,6 +321,15 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 }
 
 
+func limitAuthorDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) > 120 {
+		return string(runes[:120])
+	}
+	return value
+}
+
 func (s *Server) listAuthors(c *gin.Context) {
 	var users []model.User
 	if err := s.db.WithContext(c.Request.Context()).
@@ -557,9 +566,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
 				if displayName == "" { displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title)) }
 				if displayName == "" { displayName = strings.Split(email, "@")[0] }
-				if runes := []rune(displayName); len(runes) > 120 {
-					displayName = string(runes[:120])
-				}
+				displayName = limitAuthorDisplayName(displayName)
 				author := model.User{Email: email, PasswordHash: string(hash), DisplayName: displayName, Role: "author"}
 				if err := tx.Create(&author).Error; err != nil { return fmt.Errorf("could not create author account: %w", err) }
 				assignedAuthorID = author.ID
