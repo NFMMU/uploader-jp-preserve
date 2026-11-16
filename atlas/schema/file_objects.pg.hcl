@@ -27,6 +27,10 @@ table "file_objects" {
     type = varchar(255)
     null = true
   }
+  column "description" {
+    type = text
+    null = true
+  }
   column "source_url" {
     type = text
     null = true

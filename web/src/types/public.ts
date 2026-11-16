@@ -3,6 +3,7 @@ export type PublicFile = {
 	original_filename: string;
 	size_bytes: number;
 	media_type?: string;
+	description?: string;
 	created_at: string;
 };
 
@@ -15,3 +16,5 @@ export type PublicArtifact = {
 	created_at: string;
 	files: PublicFile[];
 };
+
+export type PublicFileDetail = PublicFile & { artifact_id: string; artifact_title: string };

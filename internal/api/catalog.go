@@ -108,6 +108,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
 		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
 		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
+		Description          *string `json:"description" binding:"omitempty,max=20000"`
 		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
 		Representative       *string `json:"representative" binding:"omitempty,uuid"`
 	}
@@ -155,6 +156,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
 		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
 		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
+		Description: trimOptional(req.Description),
 	}
 	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})

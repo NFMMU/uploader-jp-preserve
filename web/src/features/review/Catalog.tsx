@@ -37,6 +37,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		original_filename: "",
 		media_type: "",
 		source_url: "",
+		file_description: "",
 	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
 	const [pendingFileId, setPendingFileId] = useState("");
@@ -44,6 +45,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [upload, setUpload] = useState<File | null>(null);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [sourceURL, setSourceURL] = useState("");
+	const [fileDescription, setFileDescription] = useState("");
 	const [acceptSourceTerms, setAcceptSourceTerms] = useState(false);
 	const [listingURL, setListingURL] = useState("");
 	const [acceptListingTerms, setAcceptListingTerms] = useState(false);
@@ -127,6 +129,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			original_filename: x.original_filename || "",
 			media_type: x.media_type || "",
 			source_url: x.source_url || "",
+			file_description: x.description || "",
 		});
 	}
 	async function saveMetadata(e: React.FormEvent) {
@@ -134,6 +137,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (!metadata) return;
 		const reason = window.prompt("メタデータの変更理由を入力してください");
 		if (!reason || reason.trim().length < 3) return;
+		if (Array.from(metaForm.file_description).length > 20_000) {
+			notify("ファイルの説明は20,000文字以内で入力してください");
+			return;
+		}
 		setBusy(true);
 		try {
 			await api(`/catalog/artifacts/${metadata.artifact_id}`, {
@@ -152,6 +159,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					original_filename: metaForm.original_filename,
 					media_type: metaForm.media_type,
 					source_url: metaForm.source_url,
+					...(metaForm.file_description !== (metadata.description || "") && {
+						description: metaForm.file_description,
+					}),
 					reason: reason.trim(),
 				}),
 			});
@@ -299,6 +309,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						size_bytes: upload?.size || 0,
 						media_type: upload?.type || "application/octet-stream",
 						source_url: url || undefined,
+						description: fileDescription,
 						redistribution_policy: policy,
 						public_download_enabled: false,
 					}),
@@ -339,6 +350,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setPendingFileId("");
 			setUpload(null);
 			setSourceURL("");
+			setFileDescription("");
 			setAcceptSourceTerms(false);
 			setListingURL("");
 			setAcceptListingTerms(false);
@@ -777,6 +789,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					close={() => {
 						setArtifact(null);
 						setPendingFileId("");
+						setFileDescription("");
 						setListingURL("");
 						setAcceptListingTerms(false);
 						setCandidates([]);
@@ -946,6 +959,16 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								</button>
 							</div>
 						)}
+						{!listingURL.trim() && <label>
+							ファイルの説明
+							<textarea
+								rows={3}
+								value={fileDescription}
+								disabled={busy || !!pendingFileId}
+								onChange={(e) => setFileDescription(e.target.value)}
+								placeholder="このファイルの内容や用途など"
+							/>
+						</label>}
 						<label>
 							公開条件
 							<select
@@ -983,6 +1006,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								onClick={() => {
 									setArtifact(null);
 									setPendingFileId("");
+									setFileDescription("");
 									setListingURL("");
 									setAcceptListingTerms(false);
 									setCandidates([]);
@@ -1146,6 +1170,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									})
 								}
 							/>
+						</label>
+						<label>
+							ファイルの説明
+							<textarea rows={3} value={metaForm.file_description || ""} onChange={(e) => setMetaForm({ ...metaForm, file_description: e.target.value })} />
 						</label>
 						<label>
 							MIME タイプ

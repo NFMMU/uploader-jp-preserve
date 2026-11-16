@@ -16,6 +16,7 @@ type publicCatalogFile struct {
 	OriginalFilename string    `json:"original_filename"`
 	SizeBytes        int64     `json:"size_bytes"`
 	MediaType        *string   `json:"media_type,omitempty"`
+	Description      *string   `json:"description,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -198,7 +199,7 @@ func (s *Server) publicCatalogFilesAll(c *gin.Context, artifactID string) ([]pub
 	for _, file := range files {
 		result = append(result, publicCatalogFile{
 			ID: file.ID, OriginalFilename: file.OriginalFilename,
-			SizeBytes: file.SizeBytes, MediaType: file.MediaType, CreatedAt: file.CreatedAt,
+			SizeBytes: file.SizeBytes, MediaType: file.MediaType, Description: file.Description, CreatedAt: file.CreatedAt,
 		})
 	}
 	return result, nil
@@ -240,6 +241,7 @@ func (s *Server) publicCatalogFiles(
 			OriginalFilename: file.OriginalFilename,
 			SizeBytes:        file.SizeBytes,
 			MediaType:        file.MediaType,
+			Description:      file.Description,
 			CreatedAt:        file.CreatedAt,
 		})
 	}
@@ -270,4 +272,46 @@ func (s *Server) publicCatalogFileCount(
 	).Scan(&total).Error
 
 	return total, err
+}
+
+type publicFileDetail struct {
+	ID string `json:"id"`
+	ArtifactID string `json:"artifact_id"`
+	ArtifactTitle string `json:"artifact_title"`
+	OriginalFilename string `json:"original_filename"`
+	SizeBytes int64 `json:"size_bytes"`
+	MediaType *string `json:"media_type,omitempty"`
+	Description *string `json:"description,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// getPublicFile returns metadata only for a file that is currently eligible for public distribution.
+func (s *Server) getPublicFile(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := uuid.Parse(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "public file not found"})
+		return
+	}
+	cutoff := time.Now().UTC().Add(-2 * time.Minute)
+	var item publicFileDetail
+	err := s.db.WithContext(c.Request.Context()).Raw(`
+		SELECT DISTINCT f.id, f.artifact_id, a.title AS artifact_title, f.original_filename,
+			f.size_bytes, f.media_type, f.description, f.created_at
+		FROM file_objects f
+		JOIN artifacts a ON a.id = f.artifact_id
+		JOIN placements p ON p.file_object_id = f.id AND p.status = 'verified'
+		JOIN nodes n ON n.id = p.node_id AND n.status = 'online' AND n.last_seen_at >= ?
+		WHERE f.id = ? AND f.deleted_at IS NULL AND f.public_download_enabled = TRUE
+			AND f.redistribution_policy = 'allowed' AND f.preservation_status = 'verified'
+			AND f.sha256 ~ '^[0-9a-fA-F]{64}$' AND f.size_bytes >= 0
+		LIMIT 1`, cutoff, id).Scan(&item).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load public file"})
+		return
+	}
+	if item.ID == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "public file not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"item": item})
 }

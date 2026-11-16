@@ -25,6 +25,7 @@ type FileObject struct {
 	Representative          *string        `gorm:"column:representative;type:uuid" json:"representative"`
 	PublicDownloadEnabled   bool           `gorm:"column:public_download_enabled;type:boolean;not null" json:"public_download_enabled"`
 	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
+	Description             *string        `gorm:"column:description;type:text" json:"description"`
 	SourceURL               *string        `gorm:"column:source_url;type:text" json:"source_url"`
 	DeletionRequestedAt     *time.Time     `gorm:"column:deletion_requested_at;type:timestamp with time zone" json:"deletion_requested_at"`
 	DeletedAt               gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp with time zone;index:file_objects_deleted_at_idx,priority:1" json:"deleted_at"`

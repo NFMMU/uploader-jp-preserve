@@ -9,6 +9,7 @@ import {
 } from "./legal/LegalPages";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
+import { PublicFileDetail } from "./pages/PublicFileDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
@@ -22,6 +23,7 @@ function PublicSite() {
 				<Routes>
 					<Route path="/" element={<PublicCatalog />} />
 					<Route path="/artifacts/:id" element={<PublicArtifactDetail />} />
+					<Route path="/files/:id" element={<PublicFileDetail />} />
 					<Route path="/requests" element={<PublicRequest />} />
 					<Route
 						path="/preservation-requests"

@@ -74,9 +74,10 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		OriginalFilename *string `json:"original_filename" binding:"omitempty,max=500"`
 		MediaType        *string `json:"media_type" binding:"omitempty,max=255"`
 		SourceURL        *string `json:"source_url" binding:"omitempty,max=4096"`
+		Description      *string `json:"description" binding:"omitempty,max=20000"`
 		Reason           string  `json:"reason" binding:"required,min=3,max=2000"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || (req.OriginalFilename == nil && req.MediaType == nil && req.SourceURL == nil) {
+	if err := c.ShouldBindJSON(&req); err != nil || (req.OriginalFilename == nil && req.MediaType == nil && req.SourceURL == nil && req.Description == nil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one file metadata field and a reason are required"})
 		return
 	}
@@ -90,6 +91,9 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 	}
 	if req.MediaType != nil {
 		updates["media_type"] = trimOptional(req.MediaType)
+	}
+	if req.Description != nil {
+		updates["description"] = trimOptional(req.Description)
 	}
 	if req.SourceURL != nil {
 		if strings.TrimSpace(*req.SourceURL) == "" {

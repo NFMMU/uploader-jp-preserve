@@ -6,6 +6,10 @@ const DEFAULT_DESCRIPTION =
 	"uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。";
 const DEFAULT_IMAGE = `${SITE_URL}/ogp/default.png`;
 
+type FileResponse = {
+	item?: { id?: string; original_filename?: string; description?: string };
+};
+
 type ArtifactResponse = {
 	item?: {
 		id?: string;
@@ -121,6 +125,30 @@ export async function data(pageContext: PageContextServer) {
 		}
 	}
 
+	const fileMatch = pathname.match(/^\/files\/([^/]+)\/?$/);
+	if (fileMatch) {
+		metadata.type = "article";
+		try {
+			const apiOrigin = (process.env.API_ORIGIN || "http://api:8080").replace(/\/$/, "");
+			const response = await fetch(`${apiOrigin}/api/v1/public/files/${encodeURIComponent(decodeURIComponent(fileMatch[1]))}`, {
+				headers: { Accept: "application/json" },
+				signal: AbortSignal.timeout(5000),
+				credentials: "same-origin",
+			});
+			if (response.ok) {
+				const body = (await response.json()) as FileResponse;
+				if (body.item) {
+					const fileTitle = escapeMetadata(body.item.original_filename, "ファイル詳細");
+					metadata.title = `${fileTitle} - ${SITE_NAME}`;
+					ogpTitle = fileTitle;
+					metadata.description = escapeMetadata(body.item.description, `${fileTitle}のファイル情報。`).slice(0, 300);
+					metadata.url = `${SITE_URL}/files/${encodeURIComponent(body.item.id || fileMatch[1])}`;
+				}
+			}
+		} catch (error) {
+			console.error("Failed to fetch public file metadata for SSR:", error);
+		}
+	}
 	metadata.image =
 		`${SITE_URL}/og.png?title=${encodeURIComponent(ogpTitle)}` +
 		`&description=${encodeURIComponent(metadata.description)}`;

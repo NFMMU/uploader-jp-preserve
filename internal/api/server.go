@@ -46,6 +46,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	v1.GET("/public/config", s.publicConfig)
 	v1.GET("/public/artifacts", s.listPublicArtifacts)
 	v1.GET("/public/artifacts/:id", s.getPublicArtifact)
+	v1.GET("/public/files/:id", s.getPublicFile)
 	v1.POST("/public-requests", s.submitPublicRequest)
 	v1.POST("/public/redistribution-assistance", s.rateLimitPublicIntake(), s.submitRedistributionAssistance)
 	v1.POST("/public/node-enrollment-requests", s.rateLimitNodeEnrollment(), s.submitNodeEnrollmentRequest)
