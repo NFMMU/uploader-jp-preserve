@@ -195,6 +195,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 type publicRequestListItem struct {
 	model.PublicRequest
 	HasSourcePassword   bool   `json:"has_source_password"`
+	AuthorAssigned      bool   `json:"author_assigned"`
 	LinkedFileName      string `json:"linked_file_name,omitempty"`
 	LinkedArtifactTitle string `json:"linked_artifact_title,omitempty"`
 }
@@ -301,6 +302,22 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "could not load linked file",
 			})
+			return
+		}
+	}
+
+	if request.RequestType == "preservation" {
+		if err := db.Model(&model.AuditLog{}).
+			Where(
+				"target_type = ? AND target_id = ? AND action = ? AND result = ?",
+				"public_request",
+				request.ID,
+				"public_request.author_assigned",
+				"success",
+			).
+			Select("count(*) > 0").
+			Scan(&item.AuthorAssigned).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load author assignment state"})
 			return
 		}
 	}
@@ -534,138 +551,138 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 			// An author assignment is a one-time operation per preservation request.
 			if priorAssignmentCount == 0 {
-			if req.AuthorMode != "existing" && req.AuthorMode != "create" {
-				return errors.New("author assignment is required when accepting a preservation request")
-			}
-
-			// A request may reference only a file. Reuse that file's artifact
-			// rather than creating a new artifact and assigning the author to it.
-			if targetFileID != nil {
-				var targetFile model.FileObject
-				if err := tx.
-					Select("id", "artifact_id").
-					First(&targetFile, "id = ?", *targetFileID).Error; err != nil {
-					if errors.Is(err, gorm.ErrRecordNotFound) {
+				if req.AuthorMode != "existing" && req.AuthorMode != "create" {
+					return errors.New("author assignment is required when accepting a preservation request")
+				}
+	
+				// A request may reference only a file. Reuse that file's artifact
+				// rather than creating a new artifact and assigning the author to it.
+				if targetFileID != nil {
+					var targetFile model.FileObject
+					if err := tx.
+						Select("id", "artifact_id").
+						First(&targetFile, "id = ?", *targetFileID).Error; err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return errInvalidFile
+						}
+						return err
+					}
+					if strings.TrimSpace(targetFile.ArtifactID) == "" {
 						return errInvalidFile
 					}
-					return err
+					if targetArtifactID != nil && *targetArtifactID != targetFile.ArtifactID {
+						return errInvalidFile
+					}
+					if targetArtifactID == nil {
+						targetArtifactID = &targetFile.ArtifactID
+						assignedArtifactID = targetFile.ArtifactID
+					}
 				}
-				if strings.TrimSpace(targetFile.ArtifactID) == "" {
-					return errInvalidFile
-				}
-				if targetArtifactID != nil && *targetArtifactID != targetFile.ArtifactID {
-					return errInvalidFile
-				}
+	
 				if targetArtifactID == nil {
-					targetArtifactID = &targetFile.ArtifactID
-					assignedArtifactID = targetFile.ArtifactID
+					if publicRequest.SourceURL == nil {
+						return errors.New("preservation request has no source URL")
+					}
+					artifactDescription := publicRequest.Details
+					if req.Details != nil {
+						artifactDescription = *req.Details
+					}
+					artifact := model.Artifact{
+						Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
+						CreatorName: publicRequest.CreatorName,
+						SourceURL:   *publicRequest.SourceURL,
+						Description: &artifactDescription,
+					}
+					if req.Title != nil {
+						artifact.Title = strings.TrimSpace(*req.Title)
+					}
+					if req.CreatorName != nil {
+						artifact.CreatorName = req.CreatorName
+					}
+					if req.SourceURL != nil {
+						artifact.SourceURL = *req.SourceURL
+					}
+					if err := tx.Create(&artifact).Error; err != nil {
+						return err
+					}
+					targetArtifactID = &artifact.ID
+					assignedArtifactID = artifact.ID
 				}
-			}
-
-			if targetArtifactID == nil {
-				if publicRequest.SourceURL == nil {
-					return errors.New("preservation request has no source URL")
+	
+				if req.AuthorMode == "existing" {
+					if _, err := uuid.Parse(req.AuthorUserID); err != nil {
+						return errors.New("a valid existing author must be selected")
+					}
+					var author model.User
+					if err := tx.
+						Clauses(clause.Locking{Strength: "UPDATE"}).
+						Select("id", "role", "disabled_at").
+						First(&author, "id = ?", req.AuthorUserID).Error; err != nil {
+						return errors.New("selected author was not found")
+					}
+					if author.Role != "author" || author.DisabledAt != nil {
+						return errors.New("selected user is not an active author")
+					}
+					assignedAuthorID = author.ID
+				} else {
+					email := strings.ToLower(strings.TrimSpace(req.AuthorEmail))
+					parsedEmail, emailErr := mail.ParseAddress(email)
+					if emailErr != nil || parsedEmail.Address != email || len(email) > 320 {
+						return errors.New("a valid email address is required to create an author")
+					}
+	
+					passwordBytes := make([]byte, 24)
+					if _, err := rand.Read(passwordBytes); err != nil {
+						return err
+					}
+					generatedAuthorPassword = base64.RawURLEncoding.EncodeToString(passwordBytes)
+					hash, err := bcrypt.GenerateFromPassword([]byte(generatedAuthorPassword), bcrypt.DefaultCost)
+					if err != nil {
+						return err
+					}
+	
+					displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
+					if displayName == "" {
+						displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title))
+					}
+					if displayName == "" {
+						displayName = strings.Split(email, "@")[0]
+					}
+					displayName = limitAuthorDisplayName(displayName)
+	
+					author := model.User{
+						Email:        email,
+						PasswordHash: string(hash),
+						DisplayName:  displayName,
+						Role:         "author",
+					}
+					if err := tx.Create(&author).Error; err != nil {
+						return fmt.Errorf("could not create author account: %w", err)
+					}
+					assignedAuthorID = author.ID
 				}
-				artifactDescription := publicRequest.Details
-				if req.Details != nil {
-					artifactDescription = *req.Details
-				}
-				artifact := model.Artifact{
-					Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
-					CreatorName: publicRequest.CreatorName,
-					SourceURL:   *publicRequest.SourceURL,
-					Description: &artifactDescription,
-				}
-				if req.Title != nil {
-					artifact.Title = strings.TrimSpace(*req.Title)
-				}
-				if req.CreatorName != nil {
-					artifact.CreatorName = req.CreatorName
-				}
-				if req.SourceURL != nil {
-					artifact.SourceURL = *req.SourceURL
-				}
-				if err := tx.Create(&artifact).Error; err != nil {
+	
+				if err := tx.Exec(
+					"INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+					assignedAuthorID,
+					*targetArtifactID,
+				).Error; err != nil {
 					return err
 				}
-				targetArtifactID = &artifact.ID
-				assignedArtifactID = artifact.ID
-			}
-
-			if req.AuthorMode == "existing" {
-				if _, err := uuid.Parse(req.AuthorUserID); err != nil {
-					return errors.New("a valid existing author must be selected")
+				updates["artifact_id"] = *targetArtifactID
+	
+				assignmentAudit := model.AuditLog{
+					ActorID:    &actor.ID,
+					ActorLabel: actor.Email,
+					TargetType: "public_request",
+					TargetID:   &publicRequest.ID,
+					Action:     "public_request.author_assigned",
+					Result:     "success",
+					Reason:     trimOptional(&req.Reason),
 				}
-				var author model.User
-				if err := tx.
-					Clauses(clause.Locking{Strength: "UPDATE"}).
-					Select("id", "role", "disabled_at").
-					First(&author, "id = ?", req.AuthorUserID).Error; err != nil {
-					return errors.New("selected author was not found")
-				}
-				if author.Role != "author" || author.DisabledAt != nil {
-					return errors.New("selected user is not an active author")
-				}
-				assignedAuthorID = author.ID
-			} else {
-				email := strings.ToLower(strings.TrimSpace(req.AuthorEmail))
-				parsedEmail, emailErr := mail.ParseAddress(email)
-				if emailErr != nil || parsedEmail.Address != email || len(email) > 320 {
-					return errors.New("a valid email address is required to create an author")
-				}
-
-				passwordBytes := make([]byte, 24)
-				if _, err := rand.Read(passwordBytes); err != nil {
+				if err := tx.Create(&assignmentAudit).Error; err != nil {
 					return err
 				}
-				generatedAuthorPassword = base64.RawURLEncoding.EncodeToString(passwordBytes)
-				hash, err := bcrypt.GenerateFromPassword([]byte(generatedAuthorPassword), bcrypt.DefaultCost)
-				if err != nil {
-					return err
-				}
-
-				displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
-				if displayName == "" {
-					displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title))
-				}
-				if displayName == "" {
-					displayName = strings.Split(email, "@")[0]
-				}
-				displayName = limitAuthorDisplayName(displayName)
-
-				author := model.User{
-					Email:        email,
-					PasswordHash: string(hash),
-					DisplayName:  displayName,
-					Role:         "author",
-				}
-				if err := tx.Create(&author).Error; err != nil {
-					return fmt.Errorf("could not create author account: %w", err)
-				}
-				assignedAuthorID = author.ID
-			}
-
-			if err := tx.Exec(
-				"INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
-				assignedAuthorID,
-				*targetArtifactID,
-			).Error; err != nil {
-				return err
-			}
-			updates["artifact_id"] = *targetArtifactID
-
-			assignmentAudit := model.AuditLog{
-				ActorID:    &actor.ID,
-				ActorLabel: actor.Email,
-				TargetType: "public_request",
-				TargetID:   &publicRequest.ID,
-				Action:     "public_request.author_assigned",
-				Result:     "success",
-				Reason:     trimOptional(&req.Reason),
-			}
-			if err := tx.Create(&assignmentAudit).Error; err != nil {
-				return err
-			}
 			}
 		}
 
@@ -1092,7 +1109,11 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			"Accepted deletion requests enqueue node-agent deletion tasks; " +
 			"the catalog entry is hidden after all placements report deletion success.",
 	}
-	if assignedAuthorID != "" { response["author_id"] = assignedAuthorID }
-	if generatedAuthorPassword != "" { response["initial_password"] = generatedAuthorPassword }
+	if assignedAuthorID != "" {
+		response["author_id"] = assignedAuthorID
+	}
+	if generatedAuthorPassword != "" {
+		response["initial_password"] = generatedAuthorPassword
+	}
 	c.JSON(http.StatusOK, response)
 }
