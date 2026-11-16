@@ -98,7 +98,7 @@ async function getPublicUrls(): Promise<string[]> {
 		throw new Error("Failed to retrieve all public artifacts");
 	}
 
-	return [
+	return [...new Set([
 		...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
 		...Array.from(
 			new Set(artifactIds),
@@ -108,7 +108,7 @@ async function getPublicUrls(): Promise<string[]> {
 			new Set(fileIds),
 			(id) => `${SITE_URL}/files/${encodeURIComponent(id)}`,
 		),
-	];
+	])].sort();
 }
 
 function renderUrlset(urls: string[]) {
@@ -124,18 +124,26 @@ function renderUrlset(urls: string[]) {
 	].join("\n");
 }
 
-function renderSitemapIndex(pageCount: number) {
+function renderSitemapIndex(urls: string[]) {
+	const pageCount = Math.max(1, Math.ceil(urls.length / MAX_URLS));
 	const entries = Array.from({ length: pageCount }, (_, index) => {
-		const loc = `${SITE_URL}/sitemap.xml?page=${index + 1}`;
-		return `  <sitemap>\n    <loc>${escapeXml(loc)}</loc>\n  </sitemap>`;
-	}).join("\n");
+		const start = index * MAX_URLS;
+		const end = Math.min(start + MAX_URLS, urls.length);
+		const params = new URLSearchParams({
+			page: String(index + 1),
+			through: urls[end - 1] || "",
+		});
+		if (start > 0) params.set("after", urls[start - 1]);
+		const loc = `${SITE_URL}/sitemap.xml?${params.toString()}`;
+		return `  <sitemap>\\n    <loc>${escapeXml(loc)}</loc>\\n  </sitemap>`;
+	}).join("\\n");
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
 		'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
 		entries,
 		"</sitemapindex>",
 		"",
-	].join("\n");
+	].join("\\n");
 }
 
 export async function onRenderHtml(pageContext: PageContextServer) {
@@ -145,23 +153,26 @@ export async function onRenderHtml(pageContext: PageContextServer) {
 		throw new Error("Invalid sitemap page");
 	}
 
-	// Cache collection work, but keep published page URLs independent of cache state.
-	// Legacy generation parameters are accepted and serve the current public URLs.
-	if (!snapshot || snapshot.expiresAt <= Date.now()) {
-		const urls = await getPublicUrls();
-		snapshot = { urls, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
+	// The index publishes immutable URL boundaries. Page requests use those
+	// boundaries against a freshly collected list, so process-local cache expiry
+	// and requests routed to another process cannot shift page membership.
+	if (requestedPage === 0) {
+		const urls = [...new Set(await getPublicUrls())].sort();
+		pageContext.content = renderSitemapIndex(urls);
+	} else {
+		const after = requestURL.searchParams.get("after") || "";
+		const through = requestURL.searchParams.get("through");
+		if (through === null || (after && after >= through)) {
+			throw new Error("Invalid sitemap page boundaries");
+		}
+
+		const urls = [...new Set(await getPublicUrls())].sort();
+		const pageURLs = urls.filter((url) => url > after && url <= through);
+		if (pageURLs.length > MAX_URLS) {
+			throw new Error("Sitemap page URL limit exceeded; refresh the sitemap index");
+		}
+		pageContext.content = renderUrlset(pageURLs);
 	}
-
-	const urls = snapshot.urls;
-	const pageCount = Math.max(1, Math.ceil(urls.length / MAX_URLS));
-	// A previously published page can become empty when the public catalog shrinks.
-
-	pageContext.content =
-		requestedPage === 0
-			? renderSitemapIndex(pageCount)
-			: renderUrlset(
-					urls.slice((requestedPage - 1) * MAX_URLS, requestedPage * MAX_URLS),
-				);
 
 	pageContext.headersResponse.set(
 		"Cache-Control",
