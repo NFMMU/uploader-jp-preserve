@@ -519,13 +519,28 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			*req.Status == "accepted" &&
 			originalStatus != "accepted" &&
 			publicRequest.RequestType == "preservation" {
+			var priorAssignmentCount int64
+			if err := tx.Model(&model.AuditLog{}).
+				Where(
+					"target_type = ? AND target_id = ? AND action = ? AND result = ?",
+					"public_request",
+					publicRequest.ID,
+					"public_request.author_assigned",
+					"success",
+				).
+				Count(&priorAssignmentCount).Error; err != nil {
+				return err
+			}
+
+			// An author assignment is a one-time operation per preservation request.
+			if priorAssignmentCount == 0 {
 			if req.AuthorMode != "existing" && req.AuthorMode != "create" {
 				return errors.New("author assignment is required when accepting a preservation request")
 			}
 
 			// A request may reference only a file. Reuse that file's artifact
 			// rather than creating a new artifact and assigning the author to it.
-			if targetArtifactID == nil && targetFileID != nil {
+			if targetFileID != nil {
 				var targetFile model.FileObject
 				if err := tx.
 					Select("id", "artifact_id").
@@ -538,19 +553,28 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				if strings.TrimSpace(targetFile.ArtifactID) == "" {
 					return errInvalidFile
 				}
-				targetArtifactID = &targetFile.ArtifactID
-				assignedArtifactID = targetFile.ArtifactID
+				if targetArtifactID != nil && *targetArtifactID != targetFile.ArtifactID {
+					return errInvalidFile
+				}
+				if targetArtifactID == nil {
+					targetArtifactID = &targetFile.ArtifactID
+					assignedArtifactID = targetFile.ArtifactID
+				}
 			}
 
 			if targetArtifactID == nil {
 				if publicRequest.SourceURL == nil {
 					return errors.New("preservation request has no source URL")
 				}
+				artifactDescription := publicRequest.Details
+				if req.Details != nil {
+					artifactDescription = *req.Details
+				}
 				artifact := model.Artifact{
-					Title:        strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
-					CreatorName:  publicRequest.CreatorName,
-					SourceURL:    *publicRequest.SourceURL,
-					Description:  new(publicRequest.Details),
+					Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
+					CreatorName: publicRequest.CreatorName,
+					SourceURL:   *publicRequest.SourceURL,
+					Description: &artifactDescription,
 				}
 				if req.Title != nil {
 					artifact.Title = strings.TrimSpace(*req.Title)
@@ -629,6 +653,20 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				return err
 			}
 			updates["artifact_id"] = *targetArtifactID
+
+			assignmentAudit := model.AuditLog{
+				ActorID:    &actor.ID,
+				ActorLabel: actor.Email,
+				TargetType: "public_request",
+				TargetID:   &publicRequest.ID,
+				Action:     "public_request.author_assigned",
+				Result:     "success",
+				Reason:     trimOptional(&req.Reason),
+			}
+			if err := tx.Create(&assignmentAudit).Error; err != nil {
+				return err
+			}
+			}
 		}
 
 		sourceURLChanged := false
