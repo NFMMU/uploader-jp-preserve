@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: up down logs test test-all test-unit test-integration test-web test-surplus-cleanup build migrate-diff migrate-apply migrate-hash generate check
+.PHONY: up down logs test test-all test-unit test-integration test-web build migrate-diff migrate-apply migrate-hash generate check
 
 up:
 	docker compose up --build -d
@@ -20,8 +20,6 @@ test-unit:
 
 test-integration:
 	sh ./scripts/test-integration.sh
-
-test-surplus-cleanup: test-integration
 
 test-web:
 	cd web && npm test

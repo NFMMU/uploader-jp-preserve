@@ -63,11 +63,14 @@ docker compose down
 # 再ビルドして起動
 docker compose up --build -d
 
-# Go のテストを実行
-go test ./...
+# テスト全体（DB統合テストを除く）
+make test
 
-# Web をビルド
-cd web && npm install && npm run build
+# DB統合テスト
+make test-integration
+
+# Web の開発サーバー
+cd web && npm ci && npm run dev
 ```
 
 通常の `docker compose down` は名前付きボリュームを削除しません。`docker compose down -v` は DB や保存データを削除するため、必要性を確認せず実行しないでください。

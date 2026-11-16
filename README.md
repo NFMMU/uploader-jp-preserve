@@ -4,41 +4,12 @@ uploader.jp などの配布ファイルと説明・権利情報を記録し、�
 
 **保全することと、一般公開・再配布することは別です。** 公開条件を確認できないファイルは、確認が済むまで公開しません。
 
-## どの手順を読めばよいですか？
+## はじめに
 
-- **中央サービスを動かす運営者**：このページの「ローカル起動」と、[運営・開発ガイド](docs/DEVELOPMENT_JA.md)
+- **運営者・開発者**：[運営・開発ガイド](docs/DEVELOPMENT_JA.md)
 - **保存容量を提供する参加者**：[参加ノードの始め方](docs/PARTICIPATING_NODE_JA.md)
-- **システムの概要を知りたい人**：[システム概要](docs/SYSTEM_OVERVIEW_JA.md)
+- **システムの概要**：[システム概要](docs/SYSTEM_OVERVIEW_JA.md)
 - **すべての文書**：[ドキュメント一覧](docs/README.md)
-
-## 運営者向け：ローカル起動
-
-必要なもの：Docker Engine と Docker Compose v2。
-
-```sh
-cp .env.example .env
-cp docker-compose.example.yml docker-compose.yml
-```
-
-`.env` の `JWT_SECRET` と `BOOTSTRAP_ADMIN_PASSWORD` を変更してから起動します。ローカル開発では Turnstile のキーを空欄にすると CAPTCHA は無効になります。本番では Cloudflare ダッシュボードで Turnstile ウィジェットを作成し、`TURNSTILE_SITE_KEY` と `TURNSTILE_SECRET_KEY` を設定してください。
-
-```sh
-docker compose up --build -d
-docker compose logs -f api
-```
-
-- Web：<http://localhost:3000>
-- API ヘルスチェック：<http://localhost:8080/healthz>
-
-
-## 設定ファイルは2種類あります
-
-| ファイル                       | 使う人         | 用途                                              |
-| ------------------------------ | -------------- | ------------------------------------------------- |
-| ルートの `.env`                | 運営者・開発者 | 中央 API、DB、管理者初期設定、ローカル確認用設定  |
-| `deploy/participant-node/.env` | ノード参加者   | 参加するノード1台の接続先、登録トークン、容量など |
-
-**運営者の `.env` を参加者に渡さないでください。** 参加者には参加ノード用の設定ファイルだけを使ってもらいます。
 
 ## 主な機能
 
@@ -46,8 +17,8 @@ docker compose logs -f api
 - 保存タスクの配布、複数ノードへの保存、ハッシュ検証
 - 公開条件を確認したファイルだけのダウンロード配信
 - ノード参加申請、削除・公開停止申請の管理
-- 公開フォームへの Cloudflare Turnstile によるボット対策（本番環境で必須）
-- URL候補の収集と重複排除
+- 公開フォームへの Cloudflare Turnstile によるボット対策
+- URL 候補の収集と重複排除
 - 管理操作の記録
 
 ## 注意
@@ -60,7 +31,3 @@ docker compose logs -f api
 ## ライセンス
 
 ソースコードと付属ドキュメントには MIT License を適用します。第三者の作品・ファイル・商標などには適用されません。
-
-## 再配布相談・配布代行
-
-公開サイトには、手元にあるファイルの再配布相談（`/redistribution-support`）と、配布元・権利者向けの配布代行相談（`/publisher-support`）があります。申請ファイルは最大100 MiBで、権利確認のために一時保管されます。申請の送信だけで公開・再配布されることはありません。権利者の許諾が確認できない場合は公開・再配布しません。申請が却下・終了になると、添付ファイルは削除されます。
