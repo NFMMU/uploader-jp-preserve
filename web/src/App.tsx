@@ -417,7 +417,7 @@ function App() {
 								path="/admin/artifacts"
 								element={
 									user.role === "author" ? (
-										<AuthorArtifacts api={api} refresh={refresh} />
+										<AuthorArtifacts api={api} refresh={refresh} notify={notify} />
 									) : (
 										<ReviewWorkspace
 											api={api}
