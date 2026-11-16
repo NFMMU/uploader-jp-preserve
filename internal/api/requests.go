@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -506,7 +507,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		// Assign the artifact to an author as part of preservation approval.
-		if req.Status != nil && *req.Status == "accepted" && publicRequest.RequestType == "preservation" {
+		if req.Status != nil && *req.Status == "accepted" && originalStatus != "accepted" && publicRequest.RequestType == "preservation" {
 			if req.AuthorMode != "existing" && req.AuthorMode != "create" { return errors.New("author assignment is required when accepting a preservation request") }
 			if targetArtifactID == nil {
 				if publicRequest.SourceURL == nil { return errors.New("preservation request has no source URL") }
@@ -526,7 +527,8 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				assignedAuthorID = author.ID
 			} else {
 				email := strings.ToLower(strings.TrimSpace(req.AuthorEmail))
-				if len(email) > 320 || !strings.Contains(email, "@") { return errors.New("a valid email address is required to create an author") }
+				parsedEmail, emailErr := mail.ParseAddress(email)
+				if emailErr != nil || parsedEmail.Address != email || len(email) > 320 { return errors.New("a valid email address is required to create an author") }
 				passwordBytes := make([]byte, 24)
 				if _, err := rand.Read(passwordBytes); err != nil { return err }
 				generatedAuthorPassword = base64.RawURLEncoding.EncodeToString(passwordBytes)
@@ -797,10 +799,6 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		}
 
 		switch {
-		case strings.Contains(err.Error(), "author") || strings.Contains(err.Error(), "email address"):
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-
 		case strings.Contains(err.Error(), "author") || strings.Contains(err.Error(), "email address"):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
