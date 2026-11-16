@@ -35,6 +35,7 @@ func (s *Server) listOidcProviders(c *gin.Context) {
 			oidcProviderQuery.DiscoveryEndpoint,
 			oidcProviderQuery.ClientID,
 			oidcProviderQuery.ServiceIcon,
+			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
 			oidcProviderQuery.GoogleHd,
