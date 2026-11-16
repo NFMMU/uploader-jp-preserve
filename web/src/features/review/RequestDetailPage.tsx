@@ -8,7 +8,7 @@ import { useData } from "@/hooks/useData";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { ConversationLinks } from "./ConversationLinks";
-import { includeSelectedAuthor } from "./authorSelection";
+import { includeSelectedAuthor } from "./authorSelection.js";
 
 export function RequestDetailPage({
 	api,
