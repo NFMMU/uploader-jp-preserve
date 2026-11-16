@@ -412,3 +412,27 @@ func TestExtractUploaderDescriptionsIgnoresMissingFields(t *testing.T) {
 		t.Fatalf("expected empty descriptions, got artifact=%q file=%q", artifactDescription, fileDescription)
 	}
 }
+
+func TestMergeUploaderDescriptionsUsesPostSubmitValuesWhenInitialPageIsEmpty(t *testing.T) {
+	artifactDescription, fileDescription := mergeUploaderDescriptions(
+		"",
+		"",
+		"作品の説明",
+		"ファイルの説明",
+	)
+	if artifactDescription != "作品の説明" || fileDescription != "ファイルの説明" {
+		t.Fatalf("unexpected post-submit descriptions: artifact=%q file=%q", artifactDescription, fileDescription)
+	}
+}
+
+func TestMergeUploaderDescriptionsKeepsInitialValues(t *testing.T) {
+	artifactDescription, fileDescription := mergeUploaderDescriptions(
+		"最初の作品説明",
+		"最初のファイル説明",
+		"確認ページの作品説明",
+		"確認ページのファイル説明",
+	)
+	if artifactDescription != "最初の作品説明" || fileDescription != "最初のファイル説明" {
+		t.Fatalf("initial descriptions must take precedence: artifact=%q file=%q", artifactDescription, fileDescription)
+	}
+}

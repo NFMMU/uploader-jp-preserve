@@ -468,7 +468,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			if (policy !== "allowed") {
 				// The API disables publication whenever redistribution is not allowed.
 				setPub(false);
-			} else if (pub !== detail.public_download_enabled && (role === "admin" || role === "author")) {
+			} else if (role === "admin" || role === "author") {
 				await api(`/catalog/files/${detail.id}/publication`, {
 					method: "PATCH",
 					body: JSON.stringify({ enabled: pub, reason: reason.trim() }),
