@@ -223,8 +223,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		refresh + unused,
 	);
 	useEffect(() => {
-		if (linkedArtifactID && artifactData.data.artifact) {
-			setArtifactRecord(artifactData.data.artifact);
+		const fetchedArtifact = artifactData.data.artifact;
+		if (
+			linkedArtifactID &&
+			fetchedArtifact &&
+			String(fetchedArtifact.id) === String(linkedArtifactID)
+		) {
+			setArtifactRecord(fetchedArtifact);
+		} else {
+			setArtifactRecord(null);
 		}
 	}, [linkedArtifactID, artifactData.data.artifact]);
 
@@ -250,6 +257,33 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			live = false;
 		};
 	}, [linkedFileID, f.loading, f.data.items]);
+
+	function resetAddFileForm() {
+		setPendingFileId("");
+		setUpload(null);
+		if (fileInputRef.current) fileInputRef.current.value = "";
+		setSourceURL("");
+		setFileDescription("");
+		setAcceptSourceTerms(false);
+		setListingURL("");
+		setAcceptListingTerms(false);
+		setDiscovering(false);
+		setCandidates([]);
+		setSelectedCandidates([]);
+		setBatchStatus("");
+		setPriority("3");
+		setPolicy("pending");
+	}
+
+	function openAddFile(targetArtifact: Obj) {
+		resetAddFileForm();
+		setArtifact(targetArtifact);
+	}
+
+	function closeAddFile() {
+		setArtifact(null);
+		resetAddFileForm();
+	}
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Reset selection whenever the artifact context changes.
 	useEffect(() => {
@@ -426,8 +460,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			notify("作品を登録しました");
 			setModal(false);
 			setForm({ title: "", creator_name: "", source_url: "", description: "" });
-			setArtifact(a);
-			setPendingFileId("");
+			openAddFile(a);
 			setRefreshDummy((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -494,17 +527,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						? `登録しました。保存タスク ${createdTasks} 件を作成しました。`
 						: "登録しました。保全処理を受け付けました。",
 			);
-			setArtifact(null);
-			setPendingFileId("");
-			setUpload(null);
-			setSourceURL("");
-			setFileDescription("");
-			setAcceptSourceTerms(false);
-			setListingURL("");
-			setAcceptListingTerms(false);
-			setCandidates([]);
-			setSelectedCandidates([]);
-			setBatchStatus("");
+			closeAddFile();
 			setRefreshDummy((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -666,7 +689,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button className="primary" onClick={() => setArtifact(artifactRecord)} type="button">
+							<button className="primary" onClick={() => openAddFile(artifactRecord)} type="button">
 								<Plus size={16} /> ファイルを追加
 							</button>
 						)}
@@ -944,16 +967,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			{artifact && (
 				<Modal
 					title="ファイルを追加・保全"
-					close={() => {
-						setArtifact(null);
-						setPendingFileId("");
-						setFileDescription("");
-						setListingURL("");
-						setAcceptListingTerms(false);
-						setCandidates([]);
-						setSelectedCandidates([]);
-						setBatchStatus("");
-					}}
+					close={closeAddFile}
 				>
 					<form className="form-stack" onSubmit={addFile}>
 						<p className="muted">
