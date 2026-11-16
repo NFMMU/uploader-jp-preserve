@@ -57,7 +57,37 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": artifacts, "page": page, "limit": limit, "total": total})
+	type artifactListItem struct {
+		model.Artifact
+		FileCount int64 `json:"file_count"`
+	}
+	items := make([]artifactListItem, 0, len(artifacts))
+	artifactIDs := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		artifactIDs = append(artifactIDs, artifact.ID)
+		items = append(items, artifactListItem{Artifact: artifact})
+	}
+	if len(artifactIDs) > 0 {
+		var counts []struct {
+			ArtifactID string
+			Count      int64
+		}
+		if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).
+			Select("artifact_id, COUNT(*) AS count").
+			Where("artifact_id IN ? AND deleted_at IS NULL", artifactIDs).
+			Group("artifact_id").Scan(&counts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count artifact files"})
+			return
+		}
+		countByArtifact := make(map[string]int64, len(counts))
+		for _, count := range counts {
+			countByArtifact[count.ArtifactID] = count.Count
+		}
+		for i := range items {
+			items[i].FileCount = countByArtifact[items[i].ID]
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
 }
 
 func (s *Server) createArtifact(c *gin.Context) {
