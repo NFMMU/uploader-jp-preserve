@@ -234,6 +234,7 @@ export function RequestDetailPage({
 			return;
 		const assigningAuthor =
 			request.status !== "accepted" &&
+			!request.author_assigned &&
 			request.request_type === "preservation" &&
 			status === "accepted";
 		if (assigningAuthor) {
@@ -895,7 +896,7 @@ export function RequestDetailPage({
 										<option value="closed">終了</option>
 									</select>
 								</label>
-								{request.request_type === "preservation" && request.status !== "accepted" && status === "accepted" && (
+								{request.request_type === "preservation" && !request.author_assigned && request.status !== "accepted" && status === "accepted" && (
 									<>
 										<label>作品のauthor
 											<select value={authorMode} onChange={(e) => setAuthorMode(e.target.value as "existing" | "create")}>
