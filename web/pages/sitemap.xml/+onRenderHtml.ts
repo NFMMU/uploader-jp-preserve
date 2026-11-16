@@ -135,15 +135,15 @@ function renderSitemapIndex(urls: string[]) {
 		});
 		if (start > 0) params.set("after", urls[start - 1]);
 		const loc = `${SITE_URL}/sitemap.xml?${params.toString()}`;
-		return `  <sitemap>\\n    <loc>${escapeXml(loc)}</loc>\\n  </sitemap>`;
-	}).join("\\n");
+		return `  <sitemap>\n    <loc>${escapeXml(loc)}</loc>\n  </sitemap>`;
+	}).join("\n");
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
 		'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
 		entries,
 		"</sitemapindex>",
 		"",
-	].join("\\n");
+	].join("\n");
 }
 
 export async function onRenderHtml(pageContext: PageContextServer) {
