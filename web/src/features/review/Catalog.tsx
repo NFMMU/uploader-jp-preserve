@@ -64,18 +64,24 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	return (
 		<>
 			<Heading
-				eyebrow="CATALOG MANAGEMENT"
-				title="作品一覧"
-				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
+				eyebrow={role === "author" ? "MY WORKSPACE" : "CATALOG MANAGEMENT"}
+				title={role === "author" ? "割り当てられた作品" : "作品一覧"}
+				desc={
+					role === "author"
+						? "担当する作品を選択すると、作品情報の編集やファイルの管理を行えます。"
+						: "作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
+				}
 				actions={
 					<>
-						<button
-							className="secondary"
-							type="button"
-							onClick={() => downloadExport("csv", notify)}
-						>
-							<Download size={16} /> CSV出力
-						</button>
+						{role !== "author" && (
+							<button
+								className="secondary"
+								type="button"
+								onClick={() => downloadExport("csv", notify)}
+							>
+								<Download size={16} /> CSV出力
+							</button>
+						)}
 						{role === "admin" && (
 							<button
 								className="primary"
