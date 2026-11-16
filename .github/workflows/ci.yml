@@ -9,8 +9,25 @@ permissions:
 
 jobs:
   go-test:
-    name: Go tests
+    name: Go unit and integration tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: archive_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d archive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      RUN_CATALOG_DB_INTEGRATION: "1"
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:55432/archive_test?sslmode=disable
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -19,11 +36,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run tests
-        run: go test ./...
+      - name: Run unit and database integration tests
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Report package coverage
+        run: go tool cover -func=coverage.out
 
-  web-build:
-    name: Web build
+  web-test:
+    name: Web tests, lint, and build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -31,14 +50,19 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund
-      - name: Test author selection behavior
+        run: npm ci --no-audit --no-fund
+      - name: Run all Web tests
         working-directory: web
-        run: npm run test:author-selection
-      - name: Build web application
+        run: npm test
+      - name: Check formatting and lint
+        working-directory: web
+        run: npm run lint:check
+      - name: Build Web application
         working-directory: web
         run: npm run build
 
@@ -53,6 +77,8 @@ jobs:
           cp .env.example .env
           cp deploy/participant-node/.env.example deploy/participant-node/.env
       - name: Validate main Compose file
-        run: docker compose -f docker-compose.example.yml  config --quiet
+        run: docker compose -f docker-compose.example.yml config --quiet
+      - name: Validate test Compose file
+        run: docker compose -f compose.test.yaml config --quiet
       - name: Validate participant node Compose file
         run: docker compose -f deploy/participant-node/compose.yaml config --quiet
