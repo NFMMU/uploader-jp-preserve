@@ -344,6 +344,10 @@ func sameOptionalRequestTarget(left, right *string) bool {
 	return *left == *right
 }
 
+func shouldRejectRequestTargetChange(status string, priorAssignments int64, targetsChanged bool) bool {
+	return targetsChanged && (status == "accepted" || priorAssignments > 0)
+}
+
 func limitAuthorDisplayName(value string) string {
 	value = strings.TrimSpace(value)
 	runes := []rune(value)
@@ -478,7 +482,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		targetsChanged := (req.ArtifactID != nil && !sameOptionalRequestTarget(req.ArtifactID, publicRequest.ArtifactID)) ||
 			(req.FileObjectID != nil && !sameOptionalRequestTarget(req.FileObjectID, publicRequest.FileObjectID))
-		if targetsChanged && (originalStatus == "accepted" || priorAssignmentCount > 0) {
+		if shouldRejectRequestTargetChange(originalStatus, priorAssignmentCount, targetsChanged) {
 			return errAcceptedTargetsImmutable
 		}
 
