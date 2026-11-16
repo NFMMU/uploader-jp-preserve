@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { PageContextServer } from "vike/types";
 
 const SITE_URL = "https://uploaderjp.udonya.moe";
@@ -26,7 +25,7 @@ const MAX_ARTIFACTS = 1_000_000;
 const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
 
 type SitemapSnapshot = { urls: string[]; expiresAt: number };
-const snapshots = new Map<string, SitemapSnapshot>();
+let snapshot: SitemapSnapshot | undefined;
 
 type Artifact = { id: string; files?: { id: string }[] };
 type ApiResponse = {
@@ -70,7 +69,9 @@ async function getPublicUrls(): Promise<string[]> {
 		if (typeof body.total === "number") {
 			total = body.total;
 			if (total > MAX_ARTIFACTS) {
-				throw new Error("Public artifact count exceeds sitemap collection limit");
+				throw new Error(
+					"Public artifact count exceeds sitemap collection limit",
+				);
 			}
 		}
 
@@ -99,8 +100,14 @@ async function getPublicUrls(): Promise<string[]> {
 
 	return [
 		...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
-		...Array.from(new Set(artifactIds), (id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`),
-		...Array.from(new Set(fileIds), (id) => `${SITE_URL}/files/${encodeURIComponent(id)}`),
+		...Array.from(
+			new Set(artifactIds),
+			(id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`,
+		),
+		...Array.from(
+			new Set(fileIds),
+			(id) => `${SITE_URL}/files/${encodeURIComponent(id)}`,
+		),
 	];
 }
 
@@ -117,9 +124,9 @@ function renderUrlset(urls: string[]) {
 	].join("\n");
 }
 
-function renderSitemapIndex(pageCount: number, generation: string) {
+function renderSitemapIndex(pageCount: number) {
 	const entries = Array.from({ length: pageCount }, (_, index) => {
-		const loc = `${SITE_URL}/sitemap.xml?page=${index + 1}&generation=${encodeURIComponent(generation)}`;
+		const loc = `${SITE_URL}/sitemap.xml?page=${index + 1}`;
 		return `  <sitemap>\n    <loc>${escapeXml(loc)}</loc>\n  </sitemap>`;
 	}).join("\n");
 	return [
@@ -138,31 +145,23 @@ export async function onRenderHtml(pageContext: PageContextServer) {
 		throw new Error("Invalid sitemap page");
 	}
 
-	let generation = requestURL.searchParams.get("generation") || "";
-	let snapshot: SitemapSnapshot | undefined;
-	if (requestedPage === 0) {
+	// Cache collection work, but keep published page URLs independent of cache state.
+	// Legacy generation parameters are accepted and serve the current public URLs.
+	if (!snapshot || snapshot.expiresAt <= Date.now()) {
 		const urls = await getPublicUrls();
-		generation = randomUUID();
 		snapshot = { urls, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
-		snapshots.set(generation, snapshot);
-		for (const [key, value] of snapshots) {
-			if (value.expiresAt <= Date.now()) snapshots.delete(key);
-		}
-	} else {
-		snapshot = snapshots.get(generation);
-		if (!snapshot || snapshot.expiresAt <= Date.now()) {
-			snapshots.delete(generation);
-			throw new Error("Sitemap snapshot expired; reload the sitemap index");
-		}
 	}
 
 	const urls = snapshot.urls;
 	const pageCount = Math.max(1, Math.ceil(urls.length / MAX_URLS));
-	if (requestedPage > pageCount) throw new Error("Invalid sitemap page");
+	// A previously published page can become empty when the public catalog shrinks.
 
-	pageContext.content = requestedPage === 0
-		? renderSitemapIndex(pageCount, generation)
-		: renderUrlset(urls.slice((requestedPage - 1) * MAX_URLS, requestedPage * MAX_URLS));
+	pageContext.content =
+		requestedPage === 0
+			? renderSitemapIndex(pageCount)
+			: renderUrlset(
+					urls.slice((requestedPage - 1) * MAX_URLS, requestedPage * MAX_URLS),
+				);
 
 	pageContext.headersResponse.set(
 		"Cache-Control",
