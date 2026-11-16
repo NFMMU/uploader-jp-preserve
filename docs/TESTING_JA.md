@@ -10,7 +10,7 @@
 | Go の DB 統合テスト | `internal/api/*_integration_test.go` | `make test-integration` | Docker、PostgreSQL |
 | Go の配置・再試行統合テスト | `internal/api/*_integration_test.go` | `make test-integration` | Docker、PostgreSQL、Atlas migrations |
 | Web のテスト | `web/**/*.test.mjs` 等 | `make test-web` | Node.js |
-| Web の静的検査 | `web/src` 等 | `cd web && npm run lint:check` | Node.js |
+| Web の静的検査 | `web/src` 等 | `cd web && npm run lint:check:local` / `npm run format:check:local` | Node.js |
 
 Web は Node.js 組み込みの `node:test` と `node:assert` を使用します。現状のテスト規模では、Vitest/Jest 等の追加依存を導入するより、Node.js 標準機能で統一する方が軽量です。ブラウザー DOM や React コンポーネントの統合テストが必要になった時点で、対象に応じた環境を追加します。
 
