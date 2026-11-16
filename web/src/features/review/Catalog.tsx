@@ -37,6 +37,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		original_filename: "",
 		media_type: "",
 		source_url: "",
+		file_description: x.description || "",
 	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
 	const [pendingFileId, setPendingFileId] = useState("");
@@ -152,6 +153,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					original_filename: metaForm.original_filename,
 					media_type: metaForm.media_type,
 					source_url: metaForm.source_url,
+					description: metaForm.file_description,
 					reason: reason.trim(),
 				}),
 			});
