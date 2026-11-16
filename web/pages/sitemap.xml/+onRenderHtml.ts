@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PageContextServer } from "vike/types";
 
 const SITE_URL = "https://uploaderjp.udonya.moe";
@@ -22,6 +23,10 @@ const STATIC_PATHS = [
 const PAGE_SIZE = 100;
 const MAX_URLS = 50_000;
 const MAX_ARTIFACTS = 1_000_000;
+const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
+
+type SitemapSnapshot = { urls: string[]; expiresAt: number };
+const snapshots = new Map<string, SitemapSnapshot>();
 
 type Artifact = { id: string; files?: { id: string }[] };
 type ApiResponse = {
@@ -112,9 +117,9 @@ function renderUrlset(urls: string[]) {
 	].join("\n");
 }
 
-function renderSitemapIndex(pageCount: number) {
+function renderSitemapIndex(pageCount: number, generation: string) {
 	const entries = Array.from({ length: pageCount }, (_, index) => {
-		const loc = `${SITE_URL}/sitemap.xml?page=${index + 1}`;
+		const loc = `${SITE_URL}/sitemap.xml?page=${index + 1}&generation=${encodeURIComponent(generation)}`;
 		return `  <sitemap>\n    <loc>${escapeXml(loc)}</loc>\n  </sitemap>`;
 	}).join("\n");
 	return [
@@ -127,18 +132,36 @@ function renderSitemapIndex(pageCount: number) {
 }
 
 export async function onRenderHtml(pageContext: PageContextServer) {
-	const urls = await getPublicUrls();
-	const pageCount = Math.max(1, Math.ceil(urls.length / MAX_URLS));
-	const requestedPage = Number(
-		new URL(pageContext.urlOriginal, SITE_URL).searchParams.get("page") || "0",
-	);
-
-	if (!Number.isInteger(requestedPage) || requestedPage < 0 || requestedPage > pageCount) {
+	const requestURL = new URL(pageContext.urlOriginal, SITE_URL);
+	const requestedPage = Number(requestURL.searchParams.get("page") || "0");
+	if (!Number.isInteger(requestedPage) || requestedPage < 0) {
 		throw new Error("Invalid sitemap page");
 	}
 
+	let generation = requestURL.searchParams.get("generation") || "";
+	let snapshot: SitemapSnapshot | undefined;
+	if (requestedPage === 0) {
+		const urls = await getPublicUrls();
+		generation = randomUUID();
+		snapshot = { urls, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
+		snapshots.set(generation, snapshot);
+		for (const [key, value] of snapshots) {
+			if (value.expiresAt <= Date.now()) snapshots.delete(key);
+		}
+	} else {
+		snapshot = snapshots.get(generation);
+		if (!snapshot || snapshot.expiresAt <= Date.now()) {
+			snapshots.delete(generation);
+			throw new Error("Sitemap snapshot expired; reload the sitemap index");
+		}
+	}
+
+	const urls = snapshot.urls;
+	const pageCount = Math.max(1, Math.ceil(urls.length / MAX_URLS));
+	if (requestedPage > pageCount) throw new Error("Invalid sitemap page");
+
 	pageContext.content = requestedPage === 0
-		? renderSitemapIndex(pageCount)
+		? renderSitemapIndex(pageCount, generation)
 		: renderUrlset(urls.slice((requestedPage - 1) * MAX_URLS, requestedPage * MAX_URLS));
 
 	pageContext.headersResponse.set(
