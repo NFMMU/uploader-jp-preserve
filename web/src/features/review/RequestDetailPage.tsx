@@ -932,12 +932,12 @@ export function RequestDetailPage({
 													<option value="">選択してください</option>
 													{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
 												</select>
+										</label>
 											{authorsHasMore && (
 												<button type="button" className="small-btn" disabled={authorsLoadingMore} onClick={loadMoreAuthors}>
 													{authorsLoadingMore ? "読み込み中…" : "さらに100件読み込む"}
 												</button>
 											)}
-											</label>
 										) : (
 											<label>新しいauthorのメールアドレス
 												<input type="email" value={authorEmail} onChange={(e) => setAuthorEmail(e.target.value)} maxLength={320} required placeholder="author@example.jp" autoComplete="email" />
