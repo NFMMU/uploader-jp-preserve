@@ -22,7 +22,7 @@ const STATIC_PATHS = [
 const PAGE_SIZE = 100;
 const MAX_URLS = 50_000;
 
-type Artifact = { id: string };
+type Artifact = { id: string; files?: { id: string }[] };
 type ApiResponse = {
 	items?: Artifact[];
 	total?: number;
@@ -37,8 +37,9 @@ function escapeXml(value: string) {
 		.replace(/'/g, "&apos;");
 }
 
-async function getArtifactIds(): Promise<string[]> {
+async function getArtifactIds(): Promise<{ artifactIds: string[]; fileIds: string[] }> {
 	const ids: string[] = [];
+	const fileIds: string[] = [];
 	let total: number | undefined;
 
 	for (let page = 1; page <= MAX_URLS / PAGE_SIZE; page++) {
@@ -72,6 +73,9 @@ async function getArtifactIds(): Promise<string[]> {
 		for (const item of body.items) {
 			if (typeof item.id === "string" && item.id.length > 0) {
 				ids.push(item.id);
+				for (const file of item.files || []) {
+					if (typeof file.id === "string" && file.id.length > 0) fileIds.push(file.id);
+				}
 			}
 		}
 
@@ -88,17 +92,16 @@ async function getArtifactIds(): Promise<string[]> {
 		throw new Error("Failed to retrieve all public artifacts");
 	}
 
-	return [...new Set(ids)];
+	return { artifactIds: [...new Set(ids)], fileIds: [...new Set(fileIds)] };
 }
 
 export async function onRenderHtml(pageContext: PageContextServer) {
-	const artifactIds = await getArtifactIds();
+	const { artifactIds, fileIds } = await getArtifactIds();
 
 	const urls = [
 		...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
-		...artifactIds.map(
-			(id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`,
-		),
+		...artifactIds.map((id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`),
+		...fileIds.map((id) => `${SITE_URL}/files/${encodeURIComponent(id)}`),
 	];
 
 	if (urls.length > MAX_URLS) {
