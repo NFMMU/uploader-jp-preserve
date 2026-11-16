@@ -136,6 +136,9 @@ export function RequestDetailPage({
 	const [authorUserID, setAuthorUserID] = useState("");
 	const [authorEmail, setAuthorEmail] = useState("");
 	const [authors, setAuthors] = useState<Obj[]>([]);
+	const [authorsPage, setAuthorsPage] = useState(1);
+	const [authorsHasMore, setAuthorsHasMore] = useState(false);
+	const [authorsLoadingMore, setAuthorsLoadingMore] = useState(false);
 	const [createdCredentialsByRequestID, setCreatedCredentialsByRequestID] = useState<
 		Record<string, { email: string; password: string }>
 	>({});
@@ -172,14 +175,33 @@ export function RequestDetailPage({
 	useEffect(() => {
 		if (status !== "accepted" || request?.request_type !== "preservation") return;
 		let cancelled = false;
-		api("/moderation/authors").then((result: Obj) => {
+		api("/moderation/authors?page=1").then((result: Obj) => {
 			if (cancelled) return;
 			const items: Obj[] = result.items || [];
 			setAuthors(items);
+			setAuthorsPage(Number(result.page) || 1);
+			setAuthorsHasMore(Boolean(result.has_more));
 			if (items.length) setAuthorUserID((prev) => prev || String(items[0].id));
 		}).catch((e: Error) => notify(e.message));
 		return () => { cancelled = true; };
 	}, [status, request?.id, request?.request_type]);
+
+	async function loadMoreAuthors() {
+		if (authorsLoadingMore || !authorsHasMore) return;
+		setAuthorsLoadingMore(true);
+		try {
+			const nextPage = authorsPage + 1;
+			const result: Obj = await api(`/moderation/authors?page=${nextPage}`);
+			const items: Obj[] = result.items || [];
+			setAuthors((current) => [...current, ...items]);
+			setAuthorsPage(Number(result.page) || nextPage);
+			setAuthorsHasMore(Boolean(result.has_more));
+		} catch (e) {
+			notify((e as Error).message);
+		} finally {
+			setAuthorsLoadingMore(false);
+		}
+	}
 
 	async function ingestAcceptedUpload() {
 		if (!request) return;
@@ -858,7 +880,7 @@ export function RequestDetailPage({
 						<p>初期パスワードはこの画面でのみ表示されます。安全な方法で本人に共有してください。</p>
 						<label>メールアドレス<input readOnly value={createdCredentials.email} /></label>
 						<label>初期パスワード<input readOnly value={createdCredentials.password} /></label>
-						<button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(`メールアドレス: ${createdCredentials.email}\\n初期パスワード: ${createdCredentials.password}`)}>認証情報をコピー</button>
+						<button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(`メールアドレス: ${createdCredentials.email}\n初期パスワード: ${createdCredentials.password}`)}>認証情報をコピー</button>
 						<button type="button" className="small-btn" onClick={() => setCreatedCredentialsByRequestID((current) => {
 											const next = { ...current };
 											delete next[request.id];
@@ -910,6 +932,11 @@ export function RequestDetailPage({
 													<option value="">選択してください</option>
 													{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
 												</select>
+											{authorsHasMore && (
+												<button type="button" className="small-btn" disabled={authorsLoadingMore} onClick={loadMoreAuthors}>
+													{authorsLoadingMore ? "読み込み中…" : "さらに100件読み込む"}
+												</button>
+											)}
 											</label>
 										) : (
 											<label>新しいauthorのメールアドレス
