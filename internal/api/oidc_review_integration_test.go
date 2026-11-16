@@ -359,6 +359,11 @@ func TestOidcProviderUpdateIsEnabledOptionalAndExplicit(t *testing.T) {
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatal(err)
 	}
+	// GORM applies the model's default=true tag when creating a zero-value bool.
+	// Force the persisted initial state to false so the omitted-field case is real.
+	if err := db.Model(&model.OidcProvider{}).Where("id = ?", provider.ID).UpdateColumn("is_enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
 	router := gin.New()
 	router.PUT("/:id", func(c *gin.Context) {
 		c.Set("currentUser", model.User{ID: uuid.NewString()})
