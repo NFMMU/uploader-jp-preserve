@@ -13,8 +13,8 @@
 		"format": "biome format",
 		"test": "node --test",
 		"test:watch": "node --watch --test",
-		"lint:check": "biome check src/features/review/authorSelection.js src/features/review/authorSelection.test.mjs",
-		"format:check": "biome format src"
+		"lint:check": "biome check --changed",
+		"format:check": "biome format --changed"
 	},
 	"dependencies": {
 		"@fontsource/noto-sans-jp": "^5.3.1",
