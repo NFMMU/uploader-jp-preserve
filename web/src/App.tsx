@@ -179,7 +179,9 @@ function App() {
 					"/admin/tasks",
 					"/admin/preference",
 					"/admin/requests",
-				].includes(path) || path.startsWith("/admin/requests/")
+				].includes(path) ||
+				path.startsWith("/admin/requests/") ||
+				/^\/admin\/artifacts\/[^/]+$/.test(path)
 			);
 		}
 		if (role === "author")
