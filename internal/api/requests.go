@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -352,6 +356,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		Reason       string  `json:"reason" binding:"required,min=3,max=2000"`
 		ArtifactID   *string `json:"artifact_id" binding:"omitempty,uuid"`
 		FileObjectID *string `json:"file_object_id" binding:"omitempty,uuid"`
+		AuthorMode string `json:"author_mode"`
+		AuthorUserID string `json:"author_user_id"`
+		AuthorEmail string `json:"author_email"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -403,6 +410,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	now := time.Now().UTC()
 	var intakeFilePathToRemove string
+	var generatedAuthorPassword string
+	var assignedAuthorID string
+	var assignedArtifactID string
 
 	err := db.Transaction(func(tx *gorm.DB) error {
 		// Lock the request row before reading its state.
@@ -494,6 +504,44 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		updates := map[string]any{
 			"updated_at": now,
+		}
+
+		// Assign the artifact to an author as part of preservation approval.
+		if req.Status != nil && *req.Status == "accepted" && publicRequest.RequestType == "preservation" {
+			if req.AuthorMode != "existing" && req.AuthorMode != "create" { return errors.New("author assignment is required when accepting a preservation request") }
+			if targetArtifactID == nil {
+				if publicRequest.SourceURL == nil { return errors.New("preservation request has no source URL") }
+				artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(publicRequest.Title)), CreatorName: publicRequest.CreatorName, SourceURL: *publicRequest.SourceURL, Description: new(publicRequest.Details)}
+				if req.Title != nil { artifact.Title = strings.TrimSpace(*req.Title) }
+				if req.CreatorName != nil { artifact.CreatorName = req.CreatorName }
+				if req.SourceURL != nil { artifact.SourceURL = *req.SourceURL }
+				if err := tx.Create(&artifact).Error; err != nil { return err }
+				targetArtifactID = &artifact.ID
+				assignedArtifactID = artifact.ID
+			}
+			if req.AuthorMode == "existing" {
+				if _, err := uuid.Parse(req.AuthorUserID); err != nil { return errors.New("a valid existing author must be selected") }
+				var author model.User
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "role", "disabled_at").First(&author, "id = ?", req.AuthorUserID).Error; err != nil { return errors.New("selected author was not found") }
+				if author.Role != "author" || author.DisabledAt != nil { return errors.New("selected user is not an active author") }
+				assignedAuthorID = author.ID
+			} else {
+				email := strings.ToLower(strings.TrimSpace(req.AuthorEmail))
+				if len(email) > 320 || !strings.Contains(email, "@") { return errors.New("a valid email address is required to create an author") }
+				passwordBytes := make([]byte, 24)
+				if _, err := rand.Read(passwordBytes); err != nil { return err }
+				generatedAuthorPassword = base64.RawURLEncoding.EncodeToString(passwordBytes)
+				hash, err := bcrypt.GenerateFromPassword([]byte(generatedAuthorPassword), bcrypt.DefaultCost)
+				if err != nil { return err }
+				displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
+				if displayName == "" { displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title)) }
+				if displayName == "" { displayName = strings.Split(email, "@")[0] }
+				author := model.User{Email: email, PasswordHash: string(hash), DisplayName: displayName, Role: "author"}
+				if err := tx.Create(&author).Error; err != nil { return fmt.Errorf("could not create author account: %w", err) }
+				assignedAuthorID = author.ID
+			}
+			if err := tx.Exec("INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?) ON CONFLICT DO NOTHING", assignedAuthorID, *targetArtifactID).Error; err != nil { return err }
+			updates["artifact_id"] = *targetArtifactID
 		}
 
 		sourceURLChanged := false
@@ -850,6 +898,8 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	if req.ArtifactID != nil {
 		publicRequest.ArtifactID = req.ArtifactID
+	} else if assignedArtifactID != "" {
+		publicRequest.ArtifactID = &assignedArtifactID
 	}
 
 	if req.FileObjectID != nil {
@@ -911,10 +961,13 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"request": publicRequest,
 		"note": "Accepted takedown requests disable public downloads. " +
 			"Accepted deletion requests enqueue node-agent deletion tasks; " +
 			"the catalog entry is hidden after all placements report deletion success.",
-	})
+	}
+	if assignedAuthorID != "" { response["author_id"] = assignedAuthorID }
+	if generatedAuthorPassword != "" { response["initial_password"] = generatedAuthorPassword }
+	c.JSON(http.StatusOK, response)
 }
