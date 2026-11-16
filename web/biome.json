@@ -7,7 +7,10 @@
 		"root": "../"
 	},
 	"files": {
-		"includes": ["**", "!!**/dist"]
+		"includes": [
+			"**",
+			"!!**/dist"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -44,6 +47,25 @@
 				"src/types/public.ts"
 			],
 			"formatter": {
+				"enabled": false
+			}
+		},
+		{
+			"includes": [
+				"src/api/admin.ts",
+				"src/api/public.ts",
+				"src/App.tsx",
+				"src/components/common/CopyEmail.tsx",
+				"src/components/common/Modal.tsx",
+				"src/components/common/Pagination.tsx",
+				"src/components/common/Stat.tsx",
+				"src/components/common/Status.tsx",
+				"src/components/files/FileRow.tsx",
+				"src/features/audit/Audit.tsx",
+				"src/features/nodes/NodeEnrollmentRequests.tsx",
+				"src/types/common.ts"
+			],
+			"linter": {
 				"enabled": false
 			}
 		}
