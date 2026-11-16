@@ -329,6 +329,12 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
+	// Authors may only make an explicit, affirmative policy decision.
+	// They cannot move a file into an unconfirmed or otherwise intermediate state.
+	if actor.Role == "author" && req.RedistributionPolicy != "allowed" && req.RedistributionPolicy != "restricted" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "authors may only set redistribution_policy to allowed or restricted"})
+		return
+	}
 	if req.Representative != nil {
 		var reviewer model.User
 		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
