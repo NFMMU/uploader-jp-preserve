@@ -41,7 +41,14 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
-		query = query.Where("title ILIKE ? OR creator_name ILIKE ? OR source_url ILIKE ?", pattern, pattern, pattern)
+		query = query.Where(`(
+			CAST(id AS TEXT) ILIKE ? OR title ILIKE ? OR COALESCE(creator_name, '') ILIKE ? OR source_url ILIKE ?
+			OR id IN (
+				SELECT artifact_id FROM file_objects
+				WHERE deleted_at IS NULL
+				AND (CAST(id AS TEXT) ILIKE ? OR original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ?)
+			)
+		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -57,7 +64,37 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": artifacts, "page": page, "limit": limit, "total": total})
+	type artifactListItem struct {
+		model.Artifact
+		FileCount int64 `json:"file_count"`
+	}
+	items := make([]artifactListItem, 0, len(artifacts))
+	artifactIDs := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		artifactIDs = append(artifactIDs, artifact.ID)
+		items = append(items, artifactListItem{Artifact: artifact})
+	}
+	if len(artifactIDs) > 0 {
+		var counts []struct {
+			ArtifactID string
+			Count      int64
+		}
+		if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).
+			Select("artifact_id, COUNT(*) AS count").
+			Where("artifact_id IN ? AND deleted_at IS NULL", artifactIDs).
+			Group("artifact_id").Scan(&counts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count artifact files"})
+			return
+		}
+		countByArtifact := make(map[string]int64, len(counts))
+		for _, count := range counts {
+			countByArtifact[count.ArtifactID] = count.Count
+		}
+		for i := range items {
+			items[i].FileCount = countByArtifact[items[i].ID]
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
 }
 
 func (s *Server) createArtifact(c *gin.Context) {
@@ -188,16 +225,17 @@ func (s *Server) listFiles(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-    	CAST(id AS TEXT) ILIKE ?
-    	OR original_filename ILIKE ?
-    	OR COALESCE(sha256, '') ILIKE ?
-    	OR artifact_id IN (
-    	    SELECT id FROM artifacts
-    	    WHERE CAST(id AS TEXT) ILIKE ?
-    	       OR title ILIKE ?
-    	       OR COALESCE(creator_name, '') ILIKE ?
-    	)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern)
+			CAST(id AS TEXT) ILIKE ?
+			OR original_filename ILIKE ?
+			OR COALESCE(sha256, '') ILIKE ?
+			OR artifact_id IN (
+				SELECT id FROM artifacts
+				WHERE CAST(id AS TEXT) ILIKE ?
+				OR title ILIKE ?
+				OR COALESCE(creator_name, '') ILIKE ?
+				OR source_url ILIKE ?
+			)
+		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {

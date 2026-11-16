@@ -1,7 +1,7 @@
-import { CloudUpload, Download, LockKeyhole, Plus, Search } from "lucide-react";
+import { ArrowUpRight, CloudUpload, Download, Files, FolderOpen, LockKeyhole, Plus, Search } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { downloadExport } from "@/api/admin";
 import { Heading } from "@/components/common/Heading";
 import { Modal } from "@/components/common/Modal";
@@ -10,6 +10,143 @@ import { Table } from "@/components/common/Table";
 import { FileRow } from "@/components/files/FileRow";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
+
+function ArtifactCatalog({ api, refresh, notify, role }: any) {
+	const nav = useNavigate();
+	const loc = useLocation();
+	const initialQuery = new URLSearchParams(loc.search).get("q") || "";
+	const [query, setQuery] = useState(initialQuery);
+	const [page, setPage] = useState(1);
+	const [limit, setLimit] = useState(20);
+	const [createOpen, setCreateOpen] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [form, setForm] = useState({ title: "", creator_name: "", source_url: "", description: "" });
+	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
+	const data = useData(api, path, refresh);
+	const items: Obj[] = data.data.items || [];
+	const total = Number(data.data.total || 0);
+
+	useEffect(() => {
+		setPage(1);
+	}, [query, limit]);
+
+	async function createArtifact(event: React.FormEvent) {
+		event.preventDefault();
+		setBusy(true);
+		try {
+			const artifact = await api("/catalog/artifacts", {
+				method: "POST",
+				body: JSON.stringify(form),
+			});
+			notify("作品を登録しました");
+			nav(`/admin/artifacts/${encodeURIComponent(artifact.id)}`);
+		} catch (error) {
+			notify((error as Error).message);
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	return (
+		<>
+			<Heading
+				eyebrow="CATALOG MANAGEMENT"
+				title="作品一覧"
+				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
+				actions={
+					<>
+						<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
+							<Download size={16} /> CSV出力
+						</button>
+						{role === "admin" && (
+							<button className="primary" type="button" onClick={() => setCreateOpen(true)}>
+								<Plus size={16} /> 作品を登録
+							</button>
+						)}
+					</>
+				}
+			/>
+			<section className="panel artifact-catalog-toolbar">
+				<div className="filter-bar file-filter-bar">
+					<div className="search-box">
+						<Search size={17} />
+						<input
+							value={query}
+							onChange={(event) => setQuery(event.target.value)}
+							placeholder="作品名・作者・作品ID・元ページURLで検索"
+							aria-label="作品を検索"
+						/>
+					</div>
+					<span className="result-count" aria-live="polite">
+						{data.loading ? "読み込み中…" : `${total.toLocaleString()} 作品`}
+					</span>
+				</div>
+			</section>
+			{data.loading ? (
+				<section className="panel empty">作品一覧を読み込んでいます…</section>
+			) : data.error ? (
+				<section className="panel policy-warning">作品一覧を取得できませんでした: {data.error}</section>
+			) : items.length === 0 ? (
+				<section className="panel empty">
+					<FolderOpen size={28} />
+					<b>{query ? "一致する作品がありません" : "登録された作品がありません"}</b>
+					<span>{query ? "検索語を変更してください。" : "作品を登録すると、ここからファイルを管理できます。"}</span>
+					{query && <button className="secondary" type="button" onClick={() => setQuery("")}>検索をクリア</button>}
+				</section>
+			) : (
+				<div className="artifact-catalog-grid">
+					{items.map((item) => (
+						<NavLink
+							className="panel artifact-catalog-card"
+							to={{
+								pathname: `/admin/artifacts/${encodeURIComponent(item.id)}`,
+								search: query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "",
+							}}
+							key={item.id}
+						>
+							<div className="artifact-catalog-card-head">
+								<span className="artifact-catalog-icon"><FolderOpen size={19} /></span>
+								<span className="artifact-catalog-count"><Files size={14} /> {Number(item.file_count || 0).toLocaleString()} ファイル</span>
+							</div>
+							<div className="artifact-catalog-card-body">
+								<b>{item.title || "名称未設定"}</b>
+								<span>{item.creator_name || "作者不明"}</span>
+								{item.description && <p>{item.description}</p>}
+								<small><code>{item.id}</code></small>
+							</div>
+							<div className="artifact-catalog-card-footer">
+								<span>作品内のファイルを管理</span>
+								<ArrowUpRight size={17} />
+							</div>
+						</NavLink>
+					))}
+				</div>
+			)}
+			<Pagination
+				page={page}
+				limit={limit}
+				total={total}
+				loading={data.loading}
+				onPageChange={setPage}
+				onLimitChange={setLimit}
+			/>
+			{createOpen && (
+				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
+					<form className="form-stack" onSubmit={createArtifact}>
+						<label>作品名 *<input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label>
+						<label>作者・配布者<input value={form.creator_name} onChange={(event) => setForm({ ...form, creator_name: event.target.value })} /></label>
+						<label>元ページURL *<input required type="url" placeholder="https://www.uploader.jp/..." value={form.source_url} onChange={(event) => setForm({ ...form, source_url: event.target.value })} /></label>
+						<label>説明<textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+						<div className="modal-actions">
+							<button type="button" className="secondary" onClick={() => setCreateOpen(false)}>キャンセル</button>
+							<button className="primary" disabled={busy}>{busy ? "登録中…" : "登録してファイルを追加"}</button>
+						</div>
+					</form>
+				</Modal>
+			)}
+		</>
+	);
+}
 
 export function Catalog({ api, refresh, notify, role }: any) {
 	const [unused, setRefreshDummy] = useState(0);
@@ -40,6 +177,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		file_description: "",
 	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
+	const [artifactRecord, setArtifactRecord] = useState<Obj | null>(null);
 	const [pendingFileId, setPendingFileId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [upload, setUpload] = useState<File | null>(null);
@@ -79,6 +217,23 @@ export function Catalog({ api, refresh, notify, role }: any) {
 
 	const f = useData(api, filePath, refresh + unused);
 	const files: Obj[] = f.data.items || [];
+	const artifactData = useData(
+		api,
+		linkedArtifactID ? `/catalog/artifacts/${encodeURIComponent(linkedArtifactID)}` : "/catalog/artifacts?limit=1",
+		refresh + unused,
+	);
+	useEffect(() => {
+		const fetchedArtifact = artifactData.data.artifact;
+		if (
+			linkedArtifactID &&
+			fetchedArtifact &&
+			String(fetchedArtifact.id) === String(linkedArtifactID)
+		) {
+			setArtifactRecord(fetchedArtifact);
+		} else {
+			setArtifactRecord(null);
+		}
+	}, [linkedArtifactID, artifactData.data.artifact]);
 
 	useEffect(() => {
 		if (role === "author" || !linkedFileID || f.loading) return;
@@ -102,6 +257,33 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			live = false;
 		};
 	}, [linkedFileID, f.loading, f.data.items]);
+
+	function resetAddFileForm() {
+		setPendingFileId("");
+		setUpload(null);
+		if (fileInputRef.current) fileInputRef.current.value = "";
+		setSourceURL("");
+		setFileDescription("");
+		setAcceptSourceTerms(false);
+		setListingURL("");
+		setAcceptListingTerms(false);
+		setDiscovering(false);
+		setCandidates([]);
+		setSelectedCandidates([]);
+		setBatchStatus("");
+		setPriority("3");
+		setPolicy("pending");
+	}
+
+	function openAddFile(targetArtifact: Obj) {
+		resetAddFileForm();
+		setArtifact(targetArtifact);
+	}
+
+	function closeAddFile() {
+		setArtifact(null);
+		resetAddFileForm();
+	}
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Reset selection whenever the artifact context changes.
 	useEffect(() => {
@@ -278,8 +460,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			notify("作品を登録しました");
 			setModal(false);
 			setForm({ title: "", creator_name: "", source_url: "", description: "" });
-			setArtifact(a);
-			setPendingFileId("");
+			openAddFile(a);
 			setRefreshDummy((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -346,17 +527,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						? `登録しました。保存タスク ${createdTasks} 件を作成しました。`
 						: "登録しました。保全処理を受け付けました。",
 			);
-			setArtifact(null);
-			setPendingFileId("");
-			setUpload(null);
-			setSourceURL("");
-			setFileDescription("");
-			setAcceptSourceTerms(false);
-			setListingURL("");
-			setAcceptListingTerms(false);
-			setCandidates([]);
-			setSelectedCandidates([]);
-			setBatchStatus("");
+			closeAddFile();
 			setRefreshDummy((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -482,26 +653,28 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}
 
+	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID && !detail && !metadata && !modal && !artifact) {
+		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} role={role} />;
+	}
+
 	return (
 		<>
 			<Heading
 				eyebrow=""
-				title={
-					linkedArtifactID && role === "author"
-						? "作品内のファイル"
-						: "作品・ファイル"
-				}
+				title={linkedArtifactID ? "作品内のファイル" : "作品・ファイル"}
 				desc={
 					role === "author"
 						? "割り当てられた作品のファイルを確認・削除"
-						: "メタデータ、保全状態、公開条件を検索・一括管理"
+						: linkedArtifactID
+							? "この作品に属するファイルの保全状態・公開条件を管理"
+							: "作品を選択して、作品単位でファイルを管理"
 				}
 				actions={
 					<>
-						{linkedArtifactID && role === "author" && (
+						{linkedArtifactID && (
 							<button
 								className="secondary"
-								onClick={() => nav("/admin/artifacts")}
+								onClick={() => nav(role === "author" ? "/admin/artifacts" : "/admin/review?tab=files")}
 								type="button"
 							>
 								作品一覧へ戻る
@@ -515,8 +688,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<Download size={16} /> CSV出力
 							</button>
 						)}
-						{role === "admin" && (
-							<button className="primary" onClick={() => setModal(true)}>
+						{linkedArtifactID && role === "admin" && artifactRecord && (
+							<button className="primary" onClick={() => openAddFile(artifactRecord)} type="button">
+								<Plus size={16} /> ファイルを追加
+							</button>
+						)}
+						{role === "admin" && !linkedArtifactID && (
+							<button className="primary" onClick={() => setModal(true)} type="button">
 								<Plus size={16} /> 作品を登録
 							</button>
 						)}
@@ -803,16 +981,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			{artifact && (
 				<Modal
 					title="ファイルを追加・保全"
-					close={() => {
-						setArtifact(null);
-						setPendingFileId("");
-						setFileDescription("");
-						setListingURL("");
-						setAcceptListingTerms(false);
-						setCandidates([]);
-						setSelectedCandidates([]);
-						setBatchStatus("");
-					}}
+					close={closeAddFile}
 				>
 					<form className="form-stack" onSubmit={addFile}>
 						<p className="muted">
@@ -1021,14 +1190,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								type="button"
 								className="secondary"
 								onClick={() => {
-									setArtifact(null);
-									setPendingFileId("");
-									setFileDescription("");
-									setListingURL("");
-									setAcceptListingTerms(false);
-									setCandidates([]);
-									setSelectedCandidates([]);
-									setBatchStatus("");
+									closeAddFile();
 								}}
 							>
 								キャンセル
