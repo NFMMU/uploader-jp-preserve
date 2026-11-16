@@ -13,7 +13,9 @@ import type { Obj } from "@/types/common";
 
 function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const nav = useNavigate();
-	const [query, setQuery] = useState("");
+	const loc = useLocation();
+	const initialQuery = new URLSearchParams(loc.search).get("q") || "";
+	const [query, setQuery] = useState(initialQuery);
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
 	const [createOpen, setCreateOpen] = useState(false);
@@ -96,7 +98,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 					{items.map((item) => (
 						<NavLink
 							className="panel artifact-catalog-card"
-							to={`/admin/artifacts/${encodeURIComponent(item.id)}`}
+							to={{
+								pathname: `/admin/artifacts/${encodeURIComponent(item.id)}`,
+								search: query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "",
+							}}
 							key={item.id}
 						>
 							<div className="artifact-catalog-card-head">
