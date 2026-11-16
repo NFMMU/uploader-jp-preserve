@@ -18,7 +18,7 @@ import (
 // refuses non-local hosts and databases other than archive_test.
 func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 	if os.Getenv("RUN_SURPLUS_DB_INTEGRATION") != "1" {
-		t.Skip("set RUN_SURPLUS_DB_INTEGRATION=1 via scripts/test-surplus-cleanup.sh")
+		t.Skip("set RUN_SURPLUS_DB_INTEGRATION=1 via scripts/test-integration.sh")
 	}
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	parsed, err := url.Parse(dsn)
