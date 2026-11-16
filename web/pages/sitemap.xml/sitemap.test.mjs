@@ -92,7 +92,7 @@ test("invalid pages and API failures still fail without publishing partial resul
 	}
 	globalThis.fetch = async () => new Response(null, { status: 503 });
 	await assert.rejects(
-		request("/sitemap.xml?page=1"),
+		request("/sitemap.xml?page=1&through=https%3A%2F%2Fuploaderjp.udonya.moe%2Ffiles%2Ffile"),
 		/Artifact API: HTTP 503/,
 	);
 });
