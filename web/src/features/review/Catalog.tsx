@@ -128,6 +128,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			original_filename: x.original_filename || "",
 			media_type: x.media_type || "",
 			source_url: x.source_url || "",
+			file_description: x.description || "",
 		});
 	}
 	async function saveMetadata(e: React.FormEvent) {
@@ -1148,6 +1149,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									})
 								}
 							/>
+						</label>
+						<label>
+							ファイルの説明
+							<textarea rows={3} value={metaForm.file_description || ""} onChange={(e) => setMetaForm({ ...metaForm, file_description: e.target.value })} />
 						</label>
 						<label>
 							MIME タイプ
