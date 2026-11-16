@@ -173,8 +173,11 @@ export function RequestDetailPage({
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
 	useEffect(() => {
-		if (status !== "accepted" || request?.request_type !== "preservation") return;
+		if (request?.request_type !== "preservation") return;
 		let cancelled = false;
+		setAuthors([]);
+		setAuthorsPage(1);
+		setAuthorsHasMore(false);
 		api("/moderation/authors?page=1").then((result: Obj) => {
 			if (cancelled) return;
 			const items: Obj[] = result.items || [];
@@ -184,7 +187,7 @@ export function RequestDetailPage({
 			if (items.length) setAuthorUserID((prev) => prev || String(items[0].id));
 		}).catch((e: Error) => notify(e.message));
 		return () => { cancelled = true; };
-	}, [status, request?.id, request?.request_type]);
+	}, [request?.id, request?.request_type]);
 
 	async function loadMoreAuthors() {
 		if (authorsLoadingMore || !authorsHasMore) return;
