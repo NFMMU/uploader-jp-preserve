@@ -43,44 +43,44 @@ function locations(xml) {
 	);
 }
 
-test("published split URLs regenerate after ten minutes without another index request", async () => {
+test("URL cursor boundaries keep later pages stable after earlier URLs are deleted and cache expires", async () => {
 	items[0].files = Array.from({ length: 50_001 }, (_, id) => ({
-		id: String(id),
+		id: String(id).padStart(5, "0"),
 	}));
 	const pages = locations(await request("/sitemap.xml"));
 	assert.equal(pages.length, 2);
-	assert.equal(pages[1], "https://uploaderjp.udonya.moe/sitemap.xml?page=2");
 	const first = locations(await request(pages[0]));
-	const second = locations(await request(pages[1]));
+	const secondBeforeMutation = locations(await request(pages[1]));
 	assert.equal(first.length, 50_000);
-	assert.equal(
-		new Set([...first, ...second]).size,
-		first.length + second.length,
-	);
-	assert.equal(requests, 1);
+	assert.equal(secondBeforeMutation.length, 10);
+	assert.equal(requests, 3);
+
+	// Remove an entry from the first page and force the ten-minute cache window
+	// to elapse. The second page must still use the original URL boundaries.
+	items[0].files = items[0].files.filter((file) => file.id !== "00000");
 	now += 11 * 60 * 1000;
-	assert.deepEqual(locations(await request(pages[1])), second);
-	assert.equal(requests, 2);
+	const secondAfterMutation = locations(await request(pages[1]));
+	assert.deepEqual(secondAfterMutation, secondBeforeMutation);
+	assert.equal(requests, 4);
 });
 
-test("split requests work in a fresh process cache, including legacy generations", async () => {
-	const xml = await request("/sitemap.xml?page=1&generation=previous-process");
-	assert.ok(
-		locations(xml).includes("https://uploaderjp.udonya.moe/files/file"),
-	);
-	assert.equal(requests, 1);
-});
-
-test("previously published pages still return XML after the catalog shrinks", async () => {
+test("URL cursor boundaries work across independent module instances", async () => {
 	items[0].files = Array.from({ length: 50_001 }, (_, id) => ({
-		id: String(id),
+		id: String(id).padStart(5, "0"),
 	}));
 	const pages = locations(await request("/sitemap.xml"));
-	items = [];
-	now += 11 * 60 * 1000;
-	const xml = await request(pages[1]);
-	assert.match(xml, /<urlset /);
-	assert.deepEqual(locations(xml), []);
+	const first = locations(await request(pages[0]));
+	items[0].files = items[0].files.filter((file) => file.id !== "00000");
+
+	const freshModule = await import(`./+onRenderHtml.ts?fresh-process=${Math.random()}`);
+	const context = {
+		urlOriginal: new URL(pages[1]).pathname + new URL(pages[1]).search,
+		headersResponse: new Headers(),
+	};
+	await freshModule.onRenderHtml(context);
+	const second = locations(context.content);
+	assert.ok(second.includes("https://uploaderjp.udonya.moe/files/50000"));
+	assert.equal(new Set([...first, ...second]).size, first.length + second.length);
 });
 
 test("invalid pages and API failures still fail without publishing partial results", async () => {
