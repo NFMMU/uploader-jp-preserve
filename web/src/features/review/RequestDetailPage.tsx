@@ -157,6 +157,12 @@ export function RequestDetailPage({
 		}
 	}, [request?.id, request?.status]);
 	useEffect(() => {
+		setAuthorMode("existing");
+		setAuthorUserID("");
+		setAuthorEmail("");
+		setCreatedCredentials(null);
+	}, [request?.id]);
+	useEffect(() => {
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
 	useEffect(() => {
@@ -166,7 +172,7 @@ export function RequestDetailPage({
 			if (cancelled) return;
 			const items: Obj[] = result.items || [];
 			setAuthors(items);
-			if (!authorUserID && items.length) setAuthorUserID(String(items[0].id));
+			if (items.length) setAuthorUserID((prev) => prev || String(items[0].id));
 		}).catch((e: Error) => notify(e.message));
 		return () => { cancelled = true; };
 	}, [status, request?.id, request?.request_type]);
@@ -222,7 +228,11 @@ export function RequestDetailPage({
 			)
 		)
 			return;
-		if (request.request_type === "preservation" && status === "accepted") {
+		const assigningAuthor =
+			request.status !== "accepted" &&
+			request.request_type === "preservation" &&
+			status === "accepted";
+		if (assigningAuthor) {
 			if (authorMode === "existing" && !authorUserID) { notify("紐付けるauthorを選択してください"); return; }
 			if (authorMode === "create" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
 		}
@@ -232,7 +242,7 @@ export function RequestDetailPage({
 				method: "PATCH",
 				body: JSON.stringify({
 					status, reason: reason.trim(),
-					...(request.request_type === "preservation" && status === "accepted" ? {
+					...(assigningAuthor ? {
 						author_mode: authorMode,
 						...(authorMode === "existing" ? { author_user_id: authorUserID } : { author_email: authorEmail.trim() }),
 					} : {}),
@@ -868,7 +878,7 @@ export function RequestDetailPage({
 										<option value="closed">終了</option>
 									</select>
 								</label>
-								{request.request_type === "preservation" && status === "accepted" && (
+								{request.request_type === "preservation" && request.status !== "accepted" && status === "accepted" && (
 									<>
 										<label>作品のauthor
 											<select value={authorMode} onChange={(e) => setAuthorMode(e.target.value as "existing" | "create")}>
