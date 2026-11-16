@@ -111,7 +111,7 @@ export function FileMetadataModal({
 					<button type="button" className="secondary" onClick={close}>
 						キャンセル
 					</button>
-					<button className="primary" disabled={busy}>
+					<button type="submit" className="primary" disabled={busy}>
 						{busy ? "保存中…" : "ファイル情報を保存"}
 					</button>
 				</div>

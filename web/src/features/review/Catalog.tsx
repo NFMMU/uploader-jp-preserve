@@ -749,6 +749,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="secondary"
 								type="button"
+								disabled={busy}
 								onClick={() => setArtifactMetadataOpen(true)}
 							>
 								作品情報を編集
@@ -1387,7 +1388,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					notify={notify}
 					busy={busy}
 					setBusy={setBusy}
-					close={() => setMetadata(null)}
+					close={() => {
+						if (busy) return;
+						setMetadata(null);
+					}}
 					onSaved={() => {
 						setMetadata(null);
 						setRefreshDummy((x) => x + 1);
@@ -1401,7 +1405,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					notify={notify}
 					busy={busy}
 					setBusy={setBusy}
-					close={() => setArtifactMetadataOpen(false)}
+					close={() => {
+						if (busy) return;
+						setArtifactMetadataOpen(false);
+					}}
 					onSaved={() => {
 						setArtifactMetadataOpen(false);
 						setRefreshDummy((x) => x + 1);
