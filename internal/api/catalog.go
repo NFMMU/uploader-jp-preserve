@@ -214,6 +214,10 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("preservation_status = ?", status)
 	}
 	if policy := c.Query("redistribution_policy"); policy != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && policy != "allowed" && policy != "restricted" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only allowed or restricted redistribution policies"})
+			return
+		}
 		if !redistributionPolicies[policy] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
 			return
@@ -221,6 +225,10 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("redistribution_policy = ?", policy)
 	}
 	if publication := c.Query("publication"); publication != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && publication != "public" && publication != "private" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only public or private files"})
+			return
+		}
 		switch publication {
 		case "public":
 			cutoff := time.Now().UTC().Add(-2 * time.Minute)
