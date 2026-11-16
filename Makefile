@@ -19,7 +19,7 @@ test-unit:
 	go test ./...
 
 test-integration:
-	./scripts/test-integration.sh
+	sh ./scripts/test-integration.sh
 
 test-surplus-cleanup: test-integration
 
