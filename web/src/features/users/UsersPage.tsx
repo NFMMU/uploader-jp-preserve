@@ -23,6 +23,9 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 	const [editModal, setEditModal] = useState(false);
 	const [editingUser, setEditingUser] = useState<Obj | null>(null);
 	const [authorArtifactIDs, setAuthorArtifactIDs] = useState<string[]>([]);
+	const [initialAuthorArtifactIDs, setInitialAuthorArtifactIDs] = useState<
+		string[]
+	>([]);
 	const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 	const [assignmentsError, setAssignmentsError] = useState("");
 
@@ -61,6 +64,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		setEditModal(false);
 		setEditingUser(null);
 		setAuthorArtifactIDs([]);
+		setInitialAuthorArtifactIDs([]);
 		setAssignmentsError("");
 		setAssignmentsLoading(false);
 		setEditForm({
@@ -112,6 +116,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 			);
 			if (editSessionId.current === sessionId) {
 				setAuthorArtifactIDs(result.artifact_ids || []);
+				setInitialAuthorArtifactIDs(result.artifact_ids || []);
 			}
 		} catch (error) {
 			if (editSessionId.current === sessionId) {
@@ -128,6 +133,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		editSessionId.current++;
 		setEditingUser(user);
 		setAuthorArtifactIDs([]);
+		setInitialAuthorArtifactIDs([]);
 		setAssignmentsError("");
 		const sessionId = editSessionId.current;
 		void loadAuthorAssignments(user.id, sessionId);
@@ -154,9 +160,12 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 
 		if (!editingUser || saving) return;
 
-		const savesAssignments = editForm.role === "author";
+		const savesAssignments =
+			editingUser.role !== "author" ||
+			authorArtifactIDs.length !== initialAuthorArtifactIDs.length ||
+			authorArtifactIDs.some((id) => !initialAuthorArtifactIDs.includes(id));
 		if (
-			savesAssignments &&
+			editForm.role === "author" &&
 			(assignmentsLoading ||
 				artifactsData.loading ||
 				assignmentsError ||
@@ -180,7 +189,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 				body.reason = editForm.reason.trim();
 			}
 
-			if (editForm.role === "author") {
+			if (editForm.role === "author" && savesAssignments) {
 				body.artifact_ids = authorArtifactIDs;
 			}
 
