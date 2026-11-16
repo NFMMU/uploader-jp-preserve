@@ -590,10 +590,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					</div>
 					<div className="bulk-toolbar-controls">
 						<label>
-							ファイルの説明
-							<textarea rows={3} value={fileDescription} onChange={(e) => setFileDescription(e.target.value)} placeholder="このファイルの内容や用途など" />
-						</label>
-						<label>
 							公開条件
 							<select
 								value={bulkPolicy}
@@ -957,6 +953,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								</button>
 							</div>
 						)}
+						{!listingURL.trim() && <label>
+							ファイルの説明
+							<textarea rows={3} value={fileDescription} onChange={(e) => setFileDescription(e.target.value)} placeholder="このファイルの内容や用途など" />
+						</label>}
 						<label>
 							公開条件
 							<select
