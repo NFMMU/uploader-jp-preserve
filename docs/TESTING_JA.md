@@ -25,11 +25,7 @@ Web は Node.js 組み込みの `node:test` と `node:assert` を使用します
 go test ./...
 
 # Web
-cd web
-npm ci
-npm test
-npm run lint:check
-npm run build
+(cd web && npm ci && npm test && npm run lint:check && npm run build)
 ```
 
 または `make test` で Go 単体テストと Web テストを実行できます。
