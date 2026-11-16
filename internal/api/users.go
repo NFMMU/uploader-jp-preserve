@@ -185,7 +185,7 @@ func (s *Server) updateUser(c *gin.Context) {
 		if req.Role != nil {
 			finalRole = *req.Role
 		}
-		if finalRole == "author" && req.Role != nil && *req.Role == "author" && req.ArtifactIDs == nil {
+		if finalRole == "author" && lockedTarget.Role != "author" && req.ArtifactIDs == nil {
 			return errAuthorAssignmentsRequired
 		}
 		if req.ArtifactIDs != nil && finalRole != "author" {

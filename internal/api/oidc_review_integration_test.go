@@ -54,6 +54,12 @@ func TestUpdateUserRoleAndAuthorAssignmentsAreAtomic(t *testing.T) {
 		s.updateUser(c)
 	})
 
+	responseWithoutAssignments := httptest.NewRecorder()
+	router.ServeHTTP(responseWithoutAssignments, httptest.NewRequest(http.MethodPut, "/"+target.ID, strings.NewReader(`{"display_name":"promotion","role":"author","disabled":false}`)))
+	if responseWithoutAssignments.Code != http.StatusBadRequest {
+		t.Fatalf("promotion without assignments should fail: %d %s", responseWithoutAssignments.Code, responseWithoutAssignments.Body.String())
+	}
+
 	missingArtifactID := uuid.NewString()
 	body := `{"display_name":"after","role":"author","disabled":false,"artifact_ids":["` + missingArtifactID + `"]}`
 	response := httptest.NewRecorder()
@@ -117,6 +123,27 @@ func TestUpdateUserRoleAndAuthorAssignmentsAreAtomic(t *testing.T) {
 	if len(assignedIDs) != 1 || assignedIDs[0] != artifact.ID {
 		t.Fatalf("unexpected author assignments: %v", assignedIDs)
 	}
+	for index, body := range []string{
+		`{"display_name":"renamed","role":"author","disabled":false}`,
+		`{"display_name":"renamed again"}`,
+	} {
+		if index == 1 {
+			actor = stored // Self updates may omit role and disabled.
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPut, "/"+target.ID, strings.NewReader(body)))
+		if response.Code != http.StatusOK {
+			t.Fatalf("existing author update failed: %d %s", response.Code, response.Body.String())
+		}
+		assignedIDs = nil
+		if err := db.Table("author_artifact").Where("user_id = ?", target.ID).Pluck("artifact_id", &assignedIDs).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(assignedIDs) != 1 || assignedIDs[0] != artifact.ID {
+			t.Fatalf("existing assignments changed: %v", assignedIDs)
+		}
+	}
+
 }
 
 func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {

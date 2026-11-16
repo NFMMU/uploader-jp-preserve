@@ -178,6 +178,7 @@ function App() {
 					"/admin/nodes",
 					"/admin/tasks",
 					"/admin/preference",
+					"/admin/requests",
 				].includes(path) || path.startsWith("/admin/requests/")
 			);
 		}

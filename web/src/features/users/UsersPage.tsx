@@ -12,10 +12,11 @@ import type { Obj } from "../../types/common";
 export function UsersPage({ api, refresh, notify, role }: any) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/admin/users", refresh + localRefresh);
+	const [artifactsRefresh, setArtifactsRefresh] = useState(0);
 	const artifactsData = useData(
 		api,
 		"/catalog/artifacts?all=true",
-		refresh + localRefresh,
+		refresh + localRefresh + artifactsRefresh,
 	);
 
 	const [modal, setModal] = useState(false);
@@ -156,7 +157,10 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 		const savesAssignments = editForm.role === "author";
 		if (
 			savesAssignments &&
-			(assignmentsLoading || assignmentsError || artifactsData.error)
+			(assignmentsLoading ||
+				artifactsData.loading ||
+				assignmentsError ||
+				artifactsData.error)
 		) {
 			return;
 		}
@@ -527,10 +531,25 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 												再試行
 											</button>
 										</div>
+									) : artifactsData.loading ? (
+										<p>作品一覧を読み込み中...</p>
 									) : artifactsData.error ? (
-										<p className="policy-warning">
-											作品一覧を取得できませんでした: {artifactsData.error}
-										</p>
+										<div className="policy-warning">
+											<p>
+												作品一覧を取得できませんでした: {artifactsData.error}
+											</p>
+											<button
+												type="button"
+												className="secondary"
+												onClick={() =>
+													setArtifactsRefresh((current) => current + 1)
+												}
+											>
+												作品一覧を再取得
+											</button>
+										</div>
+									) : !(artifactsData.data.items || []).length ? (
+										<p>作品がありません。</p>
 									) : (
 										(artifactsData.data.items || []).map((artifact: Obj) => (
 											<label key={artifact.id} className="check-label">
@@ -593,6 +612,7 @@ export function UsersPage({ api, refresh, notify, role }: any) {
 										saving ||
 										(editForm.role === "author" &&
 											(assignmentsLoading ||
+												artifactsData.loading ||
 												!!assignmentsError ||
 												!!artifactsData.error))
 									}

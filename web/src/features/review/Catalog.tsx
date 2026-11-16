@@ -101,6 +101,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		};
 	}, [linkedFileID, f.loading, f.data.items]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: Reset selection whenever the artifact context changes.
+	useEffect(() => {
+		setSelectedIDs([]);
+	}, [linkedArtifactID]);
+
 	useEffect(() => {
 		setPage(1);
 	}, [
@@ -222,6 +227,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			await api(`/catalog/files/${encodeURIComponent(id)}`, {
 				method: "DELETE",
 			});
+			setSelectedIDs((current) =>
+				current.filter((selectedID) => selectedID !== id),
+			);
 			notify("ファイルを削除しました");
 			setRefreshDummy((x) => x + 1);
 		} catch (error) {

@@ -75,9 +75,11 @@ export function Tasks({ api, refresh, notify, role }: any) {
 				desc="処理状況と失敗理由"
 				actions={
 					<>
-						<button className="secondary" onClick={() => clearFailedTasks()}>
-							<DeleteIcon size={16} /> 失敗レコードの削除
-						</button>
+						{role === "admin" && (
+							<button className="secondary" onClick={() => clearFailedTasks()}>
+								<DeleteIcon size={16} /> 失敗レコードの削除
+							</button>
+						)}
 						<button
 							className="secondary"
 							onClick={() => setLocalRefresh((x) => x + 1)}

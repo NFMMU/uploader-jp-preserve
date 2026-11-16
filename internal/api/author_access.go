@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	errAuthorArtifactAccessDenied     = errors.New("author artifact access denied")
+	errAuthorArtifactAccessDenied   = errors.New("author artifact access denied")
 	errFileDeletionAlreadyRequested = errors.New("file deletion has already been requested")
 )
 
@@ -55,6 +55,8 @@ func (s *Server) requireAuthorArtifactAccess() gin.HandlerFunc {
 	}
 }
 
+// deleteFileObject hides the file from the catalog using soft deletion and retains
+// stored copies. Physical deletion belongs to the approved deletion-request flow.
 func (s *Server) deleteFileObject(c *gin.Context) {
 	actor, ok := hooks.CurrentUser(c)
 	if !ok {
