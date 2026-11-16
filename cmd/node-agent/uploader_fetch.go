@@ -20,17 +20,19 @@ import (
 )
 
 const (
-	uploaderFetcherVersion          = "2026-10-30-password-form-2"
+	uploaderFetcherVersion          = "2026-11-16-description-import-1"
 	maxAgentUploaderHTMLBytes       = 8 << 20
 	maxAgentSourceBytes       int64 = 5 << 30
 )
 
 type fetchedUploaderFile struct {
-	Body      io.ReadCloser
-	Filename  string
-	MediaType string
-	Size      int64
-	FinalURL  string
+	Body                io.ReadCloser
+	Filename            string
+	MediaType           string
+	ArtifactDescription string
+	FileDescription     string
+	Size                int64
+	FinalURL            string
 }
 
 type uploaderForm struct {
@@ -91,6 +93,7 @@ func fetchUploaderFileWithLimiter(ctx context.Context, sourceURL string, acceptT
 	currentURL := sourceURL
 	var referer string
 	seenURLs := make(map[string]struct{})
+	var artifactDescription, fileDescription string
 fetchLoop:
 	for range 4 {
 		loopKey := normalizedUploaderLoopKey(currentURL)
@@ -127,7 +130,7 @@ fetchLoop:
 			if filename == "" {
 				filename = safeSourceFilename(path.Base(resp.Request.URL.Path))
 			}
-			return &fetchedUploaderFile{Body: resp.Body, Filename: filename, MediaType: contentType, Size: resp.ContentLength, FinalURL: resp.Request.URL.String()}, nil
+			return &fetchedUploaderFile{Body: resp.Body, Filename: filename, MediaType: contentType, Size: resp.ContentLength, FinalURL: resp.Request.URL.String(), ArtifactDescription: artifactDescription, FileDescription: fileDescription}, nil
 		}
 
 		pageURL := resp.Request.URL
@@ -140,6 +143,9 @@ fetchLoop:
 		if parseErr != nil {
 			return nil, errors.New("uploader.jpのダウンロードページを解析できませんでした")
 		}
+		pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(doc)
+		if artifactDescription == "" { artifactDescription = pageArtifactDescription }
+		if fileDescription == "" { fileDescription = pageFileDescription }
 		pageText := strings.ToLower(htmlText(doc))
 		hasPassword := hasPasswordInput(doc) || strings.Contains(pageText, "ダウンロードパスワードの認証が必要") || strings.Contains(pageText, "パスワードを入力")
 		if hasPassword && password == "" {
@@ -223,6 +229,8 @@ fetchLoop:
 					MediaType: contentType,
 					Size:      resp.ContentLength,
 					FinalURL:  resp.Request.URL.String(),
+					ArtifactDescription: artifactDescription,
+					FileDescription: fileDescription,
 				}, nil
 			}
 
@@ -361,6 +369,62 @@ func htmlText(node *xhtml.Node) string {
 	}
 	walk(node)
 	return b.String()
+}
+
+
+const maxUploaderDescriptionRunes = 20_000
+
+func normalizedUploaderText(node *xhtml.Node) string {
+	return strings.Join(strings.Fields(htmlText(node)), " ")
+}
+
+func limitUploaderDescription(value string) string {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) > maxUploaderDescriptionRunes {
+		runes = runes[:maxUploaderDescriptionRunes]
+	}
+	return string(runes)
+}
+
+func extractUploaderDescriptions(root *xhtml.Node) (artifactDescription, fileDescription string) {
+	if root == nil {
+		return "", ""
+	}
+	var walk func(*xhtml.Node)
+	walk = func(node *xhtml.Node) {
+		if node.Type == xhtml.ElementNode {
+			if artifactDescription == "" {
+				for _, className := range strings.Fields(attr(node, "class")) {
+					if className == "lead" {
+						artifactDescription = normalizedUploaderText(node)
+						break
+					}
+				}
+			}
+			if node.Data == "tr" && fileDescription == "" {
+				var heading, value string
+				for child := node.FirstChild; child != nil; child = child.NextSibling {
+					if child.Type != xhtml.ElementNode {
+						continue
+					}
+					switch child.Data {
+					case "th":
+						heading = normalizedUploaderText(child)
+					case "td":
+						value = normalizedUploaderText(child)
+					}
+				}
+				if heading == "コメント" {
+					fileDescription = value
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return limitUploaderDescription(artifactDescription), limitUploaderDescription(fileDescription)
 }
 
 func attr(node *xhtml.Node, key string) string {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -526,7 +527,7 @@ func (s *Server) ingestFile(c *gin.Context) {
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
 	}
-	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, priority, file.SourceURL, "", "", "")
+	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, priority, file.SourceURL, "", "", "", "", "")
 }
 
 func (s *Server) clearFailedTasks(c *gin.Context) {
@@ -552,7 +553,7 @@ func (s *Server) clearFailedTasks(c *gin.Context) {
 
 // queueStagedIngest takes a verified temporary file and queues its storage on two nodes.
 // The temporary file is removed on every exit path.
-func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
+func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpName string, written int64, sha, mediaType, filename string, priority int, sourceURL *string, artifactDescription, fileDescription, sourceFetchTaskID, sourceFetchNodeID, sourceFetchLease string) bool {
 	defer os.Remove(tmpName)
 	nodes, err := s.selectNodesForCapacity(c, written, 2)
 	if err != nil {
@@ -596,6 +597,16 @@ func (s *Server) queueStagedIngest(c *gin.Context, file model.FileObject, tmpNam
 			"original_filename": filename, "size_bytes": written, "sha256": sha, "media_type": mediaType, "preservation_status": "queued", "public_download_enabled": false,
 		}).Error; err != nil {
 			return err
+		}
+		if strings.TrimSpace(fileDescription) != "" {
+			if err := tx.Model(&model.FileObject{}).Where("id = ? AND (description IS NULL OR btrim(description) = '')", file.ID).Update("description", fileDescription).Error; err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(artifactDescription) != "" {
+			if err := tx.Model(&model.Artifact{}).Where("id = ? AND (description IS NULL OR btrim(description) = '')", file.ArtifactID).Update("description", artifactDescription).Error; err != nil {
+				return err
+			}
 		}
 		if sourceURL != nil {
 			if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Update("source_url", *sourceURL).Error; err != nil {
@@ -1400,6 +1411,27 @@ func (s *Server) receiveSourceFetchContent(c *gin.Context) {
 		return
 	}
 	lease := c.Query("lease_token")
+	decodeDescription := func(header string) (string, error) {
+		raw := strings.TrimSpace(c.GetHeader(header))
+		if raw == "" {
+			return "", nil
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(raw)
+		if err != nil || len(decoded) > 80_000 {
+			return "", fmt.Errorf("invalid %s header", header)
+		}
+		return strings.TrimSpace(string(decoded)), nil
+	}
+	artifactDescription, err := decodeDescription("X-Source-Artifact-Description")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	fileDescription, err := decodeDescription("X-Source-File-Description")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if _, err := uuid.Parse(lease); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid lease_token is required"})
 		return
@@ -1466,7 +1498,7 @@ func (s *Server) receiveSourceFetchContent(c *gin.Context) {
 	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
 	sourceURL := file.SourceURL
-	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, int(task.Priority), sourceURL, task.ID, node.ID, lease)
+	s.queueStagedIngest(c, file, tmpName, written, sha, mediaType, filename, int(task.Priority), sourceURL, artifactDescription, fileDescription, task.ID, node.ID, lease)
 }
 
 func (s *Server) replicaContent(c *gin.Context) {

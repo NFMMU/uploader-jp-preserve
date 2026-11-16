@@ -375,7 +375,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		return
 	}
 
-	if !s.queueStagedIngest(c, file, tmpName, written, sha, "application/octet-stream", *request.IntakeFileName, 3, fileSourceURL, "", "", "") {
+	if !s.queueStagedIngest(c, file, tmpName, written, sha, "application/octet-stream", *request.IntakeFileName, 3, fileSourceURL, "", "", "", "", "") {
 		_ = db.Model(&model.PublicRequest{}).Where("id = ?", request.ID).Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()}).Error
 		if err := db.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
 			s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "error", err)

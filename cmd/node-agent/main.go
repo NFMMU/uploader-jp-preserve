@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,7 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const agentVersion = "0.5.2"
+const agentVersion = "0.5.3"
 
 type config struct {
 	APIURL              string
@@ -393,6 +394,12 @@ func (a *agent) fetchAndUploadSource(ctx context.Context, t task) error {
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Source-Filename", safeSourceFilename(fetched.Filename))
 	req.Header.Set("X-Source-Media-Type", fetched.MediaType)
+	if fetched.ArtifactDescription != "" {
+		req.Header.Set("X-Source-Artifact-Description", base64.RawURLEncoding.EncodeToString([]byte(fetched.ArtifactDescription)))
+	}
+	if fetched.FileDescription != "" {
+		req.Header.Set("X-Source-File-Description", base64.RawURLEncoding.EncodeToString([]byte(fetched.FileDescription)))
+	}
 	if fetched.Size >= 0 {
 		req.ContentLength = fetched.Size
 	}
