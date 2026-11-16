@@ -98,17 +98,19 @@ async function getPublicUrls(): Promise<string[]> {
 		throw new Error("Failed to retrieve all public artifacts");
 	}
 
-	return [...new Set([
-		...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
-		...Array.from(
-			new Set(artifactIds),
-			(id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`,
-		),
-		...Array.from(
-			new Set(fileIds),
-			(id) => `${SITE_URL}/files/${encodeURIComponent(id)}`,
-		),
-	])].sort();
+	return [
+		...new Set([
+			...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
+			...Array.from(
+				new Set(artifactIds),
+				(id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`,
+			),
+			...Array.from(
+				new Set(fileIds),
+				(id) => `${SITE_URL}/files/${encodeURIComponent(id)}`,
+			),
+		]),
+	].sort();
 }
 
 function renderUrlset(urls: string[]) {
@@ -169,7 +171,9 @@ export async function onRenderHtml(pageContext: PageContextServer) {
 		const urls = [...new Set(await getPublicUrls())].sort();
 		const pageURLs = urls.filter((url) => url > after && url <= through);
 		if (pageURLs.length > MAX_URLS) {
-			throw new Error("Sitemap page URL limit exceeded; refresh the sitemap index");
+			throw new Error(
+				"Sitemap page URL limit exceeded; refresh the sitemap index",
+			);
 		}
 		pageContext.content = renderUrlset(pageURLs);
 	}

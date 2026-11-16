@@ -22,7 +22,10 @@ test("does not duplicate a selected author already in the refreshed list", () =>
 	const selected = author("author-2");
 	const refreshedPage = [author("author-1"), selected];
 
-	assert.deepEqual(includeSelectedAuthor(refreshedPage, selected), refreshedPage);
+	assert.deepEqual(
+		includeSelectedAuthor(refreshedPage, selected),
+		refreshedPage,
+	);
 });
 
 test("returns the refreshed list when no author is selected", () => {

@@ -155,12 +155,15 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{FrontendURL: "http://canonical.example:8080", SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
 	id, other := uuid.NewString(), uuid.NewString()
 	for _, row := range []model.OidcProvider{
-		{ID: id, DisplayName: "original", DiscoveryEndpoint: "https://issuer.example", ClientID: "client", ClientSecret: "keep-secret"},
+		{ID: id, DisplayName: "original", DiscoveryEndpoint: "https://issuer.example", ClientID: "client", ClientSecret: "keep-secret", IsEnabled: true},
 		{ID: other, DisplayName: "other", DiscoveryEndpoint: "https://issuer.example", ClientID: "other", ClientSecret: "other-secret"},
 	} {
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := db.Model(&model.OidcProvider{}).Where("id = ?", other).UpdateColumn("is_enabled", false).Error; err != nil {
+		t.Fatal(err)
 	}
 	router := gin.New()
 	router.PUT("/:id", func(c *gin.Context) { c.Set("currentUser", model.User{ID: uuid.NewString()}); s.putOidcProvider(c) })
@@ -193,6 +196,9 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 		if stored != expected || row.DisplayName != "updated" {
 			t.Fatalf("unexpected provider: %s", row.ID)
 		}
+		if !row.IsEnabled {
+			t.Fatal("omitting is_enabled should preserve the existing enabled state")
+		}
 	}
 	var count int64
 	db.Model(&model.OidcProvider{}).Count(&count)
@@ -209,6 +215,7 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	var result struct {
 		Items []struct {
 			ID          string `json:"id"`
+			IsEnabled   bool   `json:"is_enabled"`
 			CallbackURL string `json:"callback_url"`
 		} `json:"items"`
 	}
@@ -221,6 +228,10 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	for _, item := range result.Items {
 		if item.CallbackURL != "http://canonical.example:8080/api/v1/auth/oidc/callback/"+item.ID {
 			t.Fatal("incorrect canonical callback")
+		}
+		wantEnabled := item.ID == id
+		if item.IsEnabled != wantEnabled {
+			t.Errorf("provider %s is_enabled = %v, want %v", item.ID, item.IsEnabled, wantEnabled)
 		}
 	}
 }
@@ -339,5 +350,56 @@ func TestOidcMissingProviderResponses(t *testing.T) {
 		if rec.Code != http.StatusNotFound || rec.Body.String() != `{"error":"provider not found"}` {
 			t.Fatalf("%s: %d %s", method, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestOidcProviderUpdateIsEnabledOptionalAndExplicit(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.OidcProvider{}, &model.AuditLog{}); err != nil {
+		t.Fatal(err)
+	}
+	query.SetDefault(db)
+	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
+	provider := model.OidcProvider{
+		ID: uuid.NewString(), DisplayName: "initial", DiscoveryEndpoint: "https://issuer.example",
+		ClientID: "client", ClientSecret: "keep-secret", IsEnabled: false,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	// GORM applies the model's default=true tag when creating a zero-value bool.
+	// Force the persisted initial state to false so the omitted-field case is real.
+	if err := db.Model(&model.OidcProvider{}).Where("id = ?", provider.ID).UpdateColumn("is_enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.PUT("/:id", func(c *gin.Context) {
+		c.Set("currentUser", model.User{ID: uuid.NewString()})
+		s.putOidcProvider(c)
+	})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "omitted preserves false", body: `{"display_name":"omitted"}`, want: false},
+		{name: "explicit true", body: `{"display_name":"enabled","is_enabled":true}`, want: true},
+		{name: "explicit false", body: `{"display_name":"disabled","is_enabled":false}`, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/"+provider.ID, strings.NewReader(tc.body)))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+			}
+			var stored model.OidcProvider
+			if err := db.First(&stored, "id = ?", provider.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.IsEnabled != tc.want {
+				t.Fatalf("is_enabled = %v, want %v", stored.IsEnabled, tc.want)
+			}
+		})
 	}
 }

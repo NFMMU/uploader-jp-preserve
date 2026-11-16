@@ -44,12 +44,18 @@ export function AuthorArtifacts({ api, refresh }: any) {
 						/>
 					</div>
 					<span className="result-count" aria-live="polite">
-						{data.loading ? "読み込み中…" : `${filtered.length} / ${items.length} 作品`}
+						{data.loading
+							? "読み込み中…"
+							: `${filtered.length} / ${items.length} 作品`}
 					</span>
 				</div>
 				{query && (
 					<div>
-						<button className="small-btn" type="button" onClick={() => setQuery("")}>
+						<button
+							className="small-btn"
+							type="button"
+							onClick={() => setQuery("")}
+						>
 							検索条件をクリア
 						</button>
 					</div>
@@ -57,7 +63,9 @@ export function AuthorArtifacts({ api, refresh }: any) {
 			</section>
 
 			{data.loading ? (
-				<section className="panel empty">割り当てられた作品を読み込んでいます…</section>
+				<section className="panel empty">
+					割り当てられた作品を読み込んでいます…
+				</section>
 			) : data.error ? (
 				<section className="panel policy-warning">
 					作品一覧を取得できませんでした: {data.error}
@@ -65,7 +73,11 @@ export function AuthorArtifacts({ api, refresh }: any) {
 			) : filtered.length === 0 ? (
 				<section className="panel empty">
 					<Archive size={28} />
-					<b>{items.length ? "一致する作品がありません" : "まだ作品が割り当てられていません"}</b>
+					<b>
+						{items.length
+							? "一致する作品がありません"
+							: "まだ作品が割り当てられていません"}
+					</b>
 					<span>
 						{items.length
 							? "検索語を変えるか、検索条件をクリアしてください。"
@@ -86,9 +98,13 @@ export function AuthorArtifacts({ api, refresh }: any) {
 							</div>
 							<div className="quick-card-content">
 								<b>{artifact.title || "名称未設定"}</b>
-								<small><UserRound size={13} /> {artifact.creator_name || "作者不明"}</small>
+								<small>
+									<UserRound size={13} /> {artifact.creator_name || "作者不明"}
+								</small>
 								{artifact.description && <small>{artifact.description}</small>}
-								<small className="muted"><code>{artifact.id}</code></small>
+								<small className="muted">
+									<code>{artifact.id}</code>
+								</small>
 							</div>
 							<ArrowUpRight size={18} />
 						</NavLink>

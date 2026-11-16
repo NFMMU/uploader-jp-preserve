@@ -72,7 +72,9 @@ test("URL cursor boundaries work across independent module instances", async () 
 	const first = locations(await request(pages[0]));
 	items[0].files = items[0].files.filter((file) => file.id !== "00000");
 
-	const freshModule = await import(`./+onRenderHtml.ts?fresh-process=${Math.random()}`);
+	const freshModule = await import(
+		`./+onRenderHtml.ts?fresh-process=${Math.random()}`
+	);
 	const context = {
 		urlOriginal: new URL(pages[1]).pathname + new URL(pages[1]).search,
 		headersResponse: new Headers(),
@@ -80,7 +82,10 @@ test("URL cursor boundaries work across independent module instances", async () 
 	await freshModule.onRenderHtml(context);
 	const second = locations(context.content);
 	assert.ok(second.includes("https://uploaderjp.udonya.moe/files/50000"));
-	assert.equal(new Set([...first, ...second]).size, first.length + second.length);
+	assert.equal(
+		new Set([...first, ...second]).size,
+		first.length + second.length,
+	);
 });
 
 test("invalid pages and API failures still fail without publishing partial results", async () => {
@@ -92,7 +97,9 @@ test("invalid pages and API failures still fail without publishing partial resul
 	}
 	globalThis.fetch = async () => new Response(null, { status: 503 });
 	await assert.rejects(
-		request("/sitemap.xml?page=1&through=https%3A%2F%2Fuploaderjp.udonya.moe%2Ffiles%2Ffile"),
+		request(
+			"/sitemap.xml?page=1&through=https%3A%2F%2Fuploaderjp.udonya.moe%2Ffiles%2Ffile",
+		),
 		/Artifact API: HTTP 503/,
 	);
 });

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   go-test:
-    name: Go tests
+    name: Go unit and integration tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -19,26 +19,63 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Run tests
-        run: go test ./...
+      - name: Run unit and PostgreSQL integration tests
+        run: sh ./scripts/test-integration.sh
+      - name: Report package coverage
+        run: go tool cover -func=coverage.out
 
-  web-build:
-    name: Web build
+  web-test:
+    name: Web tests, lint, and build
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Set Biome comparison base
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            base_ref="$EVENT_BASE"
+          elif [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            base_ref="$EVENT_BEFORE"
+          else
+            if ! base_ref=$(git merge-base HEAD "refs/remotes/origin/$DEFAULT_BRANCH"); then
+              echo "::error::Cannot determine the Biome comparison base from the default branch."
+              exit 1
+            fi
+            if [ "$base_ref" = "$(git rev-parse HEAD)" ]; then
+              echo "::error::The initial push has no comparison range against the default branch."
+              exit 1
+            fi
+          fi
+          if ! base_commit=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}"); then
+            echo "::error::The Biome comparison base is not an available commit."
+            exit 1
+          fi
+          echo "BIOME_BASE_REF=$base_commit" >> "$GITHUB_ENV"
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund
-      - name: Test author selection behavior
+        run: npm ci --no-audit --no-fund
+      - name: Run all Web tests
         working-directory: web
-        run: npm run test:author-selection
-      - name: Build web application
+        run: npm test
+      - name: Check formatting
+        working-directory: web
+        run: npm run format:check
+      - name: Check lint
+        working-directory: web
+        run: npm run lint:check
+      - name: Build Web application
         working-directory: web
         run: npm run build
 
@@ -53,6 +90,8 @@ jobs:
           cp .env.example .env
           cp deploy/participant-node/.env.example deploy/participant-node/.env
       - name: Validate main Compose file
-        run: docker compose -f docker-compose.example.yml  config --quiet
+        run: docker compose -f docker-compose.example.yml config --quiet
+      - name: Validate test Compose file
+        run: docker compose -f docker-compose.test.yml config --quiet
       - name: Validate participant node Compose file
         run: docker compose -f deploy/participant-node/compose.yaml config --quiet

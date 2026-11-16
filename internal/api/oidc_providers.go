@@ -149,7 +149,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		DisplayName  string  `json:"display_name" binding:"required,max=255"`
 		ServiceIcon  *string `json:"service_icon" binding:"omitempty,max=255"`
 		ClientSecret *string `json:"client_secret" binding:"omitempty,max=255"`
-		IsEnabled    bool    `json:"is_enabled" binding:"omitempty,default=true"`
+		IsEnabled    *bool   `json:"is_enabled"`
 	}
 	id := c.Param("id")
 	if id == "" {
@@ -169,7 +169,6 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 			oidcProviderQuery.DiscoveryEndpoint,
 			oidcProviderQuery.ClientID,
 			oidcProviderQuery.ServiceIcon,
-			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
 		).First()
@@ -184,8 +183,10 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 	updates := map[string]any{
 		"display_name": req.DisplayName,
 		"service_icon": req.ServiceIcon,
-		"is_enabled":   req.IsEnabled,
 		"updated_at":   time.Now(),
+	}
+	if req.IsEnabled != nil {
+		updates["is_enabled"] = *req.IsEnabled
 	}
 	if req.ClientSecret != nil {
 		encrypted, err := s.encryptSourcePassword(*req.ClientSecret)

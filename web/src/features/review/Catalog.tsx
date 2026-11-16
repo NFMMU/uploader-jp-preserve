@@ -1,4 +1,13 @@
-import { ArrowUpRight, CloudUpload, Download, Files, FolderOpen, LockKeyhole, Plus, Search } from "lucide-react";
+import {
+	ArrowUpRight,
+	CloudUpload,
+	Download,
+	Files,
+	FolderOpen,
+	LockKeyhole,
+	Plus,
+	Search,
+} from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -20,7 +29,12 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const [limit, setLimit] = useState(20);
 	const [createOpen, setCreateOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const [form, setForm] = useState({ title: "", creator_name: "", source_url: "", description: "" });
+	const [form, setForm] = useState({
+		title: "",
+		creator_name: "",
+		source_url: "",
+		description: "",
+	});
 	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
 	const data = useData(api, path, refresh);
 	const items: Obj[] = data.data.items || [];
@@ -55,11 +69,19 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
 				actions={
 					<>
-						<button className="secondary" type="button" onClick={() => downloadExport("csv", notify)}>
+						<button
+							className="secondary"
+							type="button"
+							onClick={() => downloadExport("csv", notify)}
+						>
 							<Download size={16} /> CSV出力
 						</button>
 						{role === "admin" && (
-							<button className="primary" type="button" onClick={() => setCreateOpen(true)}>
+							<button
+								className="primary"
+								type="button"
+								onClick={() => setCreateOpen(true)}
+							>
 								<Plus size={16} /> 作品を登録
 							</button>
 						)}
@@ -85,13 +107,29 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 			{data.loading ? (
 				<section className="panel empty">作品一覧を読み込んでいます…</section>
 			) : data.error ? (
-				<section className="panel policy-warning">作品一覧を取得できませんでした: {data.error}</section>
+				<section className="panel policy-warning">
+					作品一覧を取得できませんでした: {data.error}
+				</section>
 			) : items.length === 0 ? (
 				<section className="panel empty">
 					<FolderOpen size={28} />
-					<b>{query ? "一致する作品がありません" : "登録された作品がありません"}</b>
-					<span>{query ? "検索語を変更してください。" : "作品を登録すると、ここからファイルを管理できます。"}</span>
-					{query && <button className="secondary" type="button" onClick={() => setQuery("")}>検索をクリア</button>}
+					<b>
+						{query ? "一致する作品がありません" : "登録された作品がありません"}
+					</b>
+					<span>
+						{query
+							? "検索語を変更してください。"
+							: "作品を登録すると、ここからファイルを管理できます。"}
+					</span>
+					{query && (
+						<button
+							className="secondary"
+							type="button"
+							onClick={() => setQuery("")}
+						>
+							検索をクリア
+						</button>
+					)}
 				</section>
 			) : (
 				<div className="artifact-catalog-grid">
@@ -100,19 +138,28 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							className="panel artifact-catalog-card"
 							to={{
 								pathname: `/admin/artifacts/${encodeURIComponent(item.id)}`,
-								search: query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "",
+								search: query.trim()
+									? `?q=${encodeURIComponent(query.trim())}`
+									: "",
 							}}
 							key={item.id}
 						>
 							<div className="artifact-catalog-card-head">
-								<span className="artifact-catalog-icon"><FolderOpen size={19} /></span>
-								<span className="artifact-catalog-count"><Files size={14} /> {Number(item.file_count || 0).toLocaleString()} ファイル</span>
+								<span className="artifact-catalog-icon">
+									<FolderOpen size={19} />
+								</span>
+								<span className="artifact-catalog-count">
+									<Files size={14} />{" "}
+									{Number(item.file_count || 0).toLocaleString()} ファイル
+								</span>
 							</div>
 							<div className="artifact-catalog-card-body">
 								<b>{item.title || "名称未設定"}</b>
 								<span>{item.creator_name || "作者不明"}</span>
 								{item.description && <p>{item.description}</p>}
-								<small><code>{item.id}</code></small>
+								<small>
+									<code>{item.id}</code>
+								</small>
 							</div>
 							<div className="artifact-catalog-card-footer">
 								<span>作品内のファイルを管理</span>
@@ -133,13 +180,58 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 			{createOpen && (
 				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
 					<form className="form-stack" onSubmit={createArtifact}>
-						<label>作品名 *<input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label>
-						<label>作者・配布者<input value={form.creator_name} onChange={(event) => setForm({ ...form, creator_name: event.target.value })} /></label>
-						<label>元ページURL *<input required type="url" placeholder="https://www.uploader.jp/..." value={form.source_url} onChange={(event) => setForm({ ...form, source_url: event.target.value })} /></label>
-						<label>説明<textarea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+						<label>
+							作品名 *
+							<input
+								required
+								value={form.title}
+								onChange={(event) =>
+									setForm({ ...form, title: event.target.value })
+								}
+							/>
+						</label>
+						<label>
+							作者・配布者
+							<input
+								value={form.creator_name}
+								onChange={(event) =>
+									setForm({ ...form, creator_name: event.target.value })
+								}
+							/>
+						</label>
+						<label>
+							元ページURL *
+							<input
+								required
+								type="url"
+								placeholder="https://www.uploader.jp/..."
+								value={form.source_url}
+								onChange={(event) =>
+									setForm({ ...form, source_url: event.target.value })
+								}
+							/>
+						</label>
+						<label>
+							説明
+							<textarea
+								rows={3}
+								value={form.description}
+								onChange={(event) =>
+									setForm({ ...form, description: event.target.value })
+								}
+							/>
+						</label>
 						<div className="modal-actions">
-							<button type="button" className="secondary" onClick={() => setCreateOpen(false)}>キャンセル</button>
-							<button className="primary" disabled={busy}>{busy ? "登録中…" : "登録してファイルを追加"}</button>
+							<button
+								type="button"
+								className="secondary"
+								onClick={() => setCreateOpen(false)}
+							>
+								キャンセル
+							</button>
+							<button className="primary" disabled={busy}>
+								{busy ? "登録中…" : "登録してファイルを追加"}
+							</button>
 						</div>
 					</form>
 				</Modal>
@@ -219,7 +311,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const files: Obj[] = f.data.items || [];
 	const artifactData = useData(
 		api,
-		linkedArtifactID ? `/catalog/artifacts/${encodeURIComponent(linkedArtifactID)}` : "/catalog/artifacts?limit=1",
+		linkedArtifactID
+			? `/catalog/artifacts/${encodeURIComponent(linkedArtifactID)}`
+			: "/catalog/artifacts?limit=1",
 		refresh + unused,
 	);
 	useEffect(() => {
@@ -653,8 +747,23 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}
 
-	if ((role === "admin" || role === "reviewer") && !linkedArtifactID && !linkedFileID && !detail && !metadata && !modal && !artifact) {
-		return <ArtifactCatalog api={api} refresh={refresh + unused} notify={notify} role={role} />;
+	if (
+		(role === "admin" || role === "reviewer") &&
+		!linkedArtifactID &&
+		!linkedFileID &&
+		!detail &&
+		!metadata &&
+		!modal &&
+		!artifact
+	) {
+		return (
+			<ArtifactCatalog
+				api={api}
+				refresh={refresh + unused}
+				notify={notify}
+				role={role}
+			/>
+		);
 	}
 
 	return (
@@ -674,7 +783,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						{linkedArtifactID && (
 							<button
 								className="secondary"
-								onClick={() => nav(role === "author" ? "/admin/artifacts" : "/admin/review?tab=files")}
+								onClick={() =>
+									nav(
+										role === "author"
+											? "/admin/artifacts"
+											: "/admin/review?tab=files",
+									)
+								}
 								type="button"
 							>
 								作品一覧へ戻る
@@ -689,12 +804,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button className="primary" onClick={() => openAddFile(artifactRecord)} type="button">
+							<button
+								className="primary"
+								onClick={() => openAddFile(artifactRecord)}
+								type="button"
+							>
 								<Plus size={16} /> ファイルを追加
 							</button>
 						)}
 						{role === "admin" && !linkedArtifactID && (
-							<button className="primary" onClick={() => setModal(true)} type="button">
+							<button
+								className="primary"
+								onClick={() => setModal(true)}
+								type="button"
+							>
 								<Plus size={16} /> 作品を登録
 							</button>
 						)}
@@ -732,18 +855,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<option value="">すべての公開条件</option>
 					{(role === "author"
 						? [
-							{ value: "allowed", label: "再配布可" },
-							{ value: "restricted", label: "制限付き" },
-						]
+								{ value: "allowed", label: "再配布可" },
+								{ value: "restricted", label: "制限付き" },
+							]
 						: [
-							{ value: "allowed", label: "再配布可" },
-							{ value: "restricted", label: "制限付き" },
-							{ value: "in_progress", label: "確認中" },
-							{ value: "pending", label: "未確認" },
-							{ value: "unknown", label: "不明" },
-						]
+								{ value: "allowed", label: "再配布可" },
+								{ value: "restricted", label: "制限付き" },
+								{ value: "in_progress", label: "確認中" },
+								{ value: "pending", label: "未確認" },
+								{ value: "unknown", label: "不明" },
+							]
 					).map(({ value, label }) => (
-						<option key={value} value={value}>{label}</option>
+						<option key={value} value={value}>
+							{label}
+						</option>
 					))}
 				</select>
 				<select
@@ -979,10 +1104,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				</Modal>
 			)}
 			{artifact && (
-				<Modal
-					title="ファイルを追加・保全"
-					close={closeAddFile}
-				>
+				<Modal title="ファイルを追加・保全" close={closeAddFile}>
 					<form className="form-stack" onSubmit={addFile}>
 						<p className="muted">
 							作品: <b>{artifact.title}</b>
@@ -1145,16 +1267,18 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								</button>
 							</div>
 						)}
-						{!listingURL.trim() && <label>
-							ファイルの説明
-							<textarea
-								rows={3}
-								value={fileDescription}
-								disabled={busy || !!pendingFileId}
-								onChange={(e) => setFileDescription(e.target.value)}
-								placeholder="このファイルの内容や用途など"
-							/>
-						</label>}
+						{!listingURL.trim() && (
+							<label>
+								ファイルの説明
+								<textarea
+									rows={3}
+									value={fileDescription}
+									disabled={busy || !!pendingFileId}
+									onChange={(e) => setFileDescription(e.target.value)}
+									placeholder="このファイルの内容や用途など"
+								/>
+							</label>
+						)}
 						<label>
 							公開条件
 							<select
@@ -1250,11 +1374,18 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								value={policy}
 								onChange={(e) => setPolicy(e.target.value)}
 							>
-								{role === "author" && !["allowed", "restricted"].includes(policy) && (
-									<option value={policy} disabled>
-										{policy === "unknown" ? "不明" : policy === "pending" ? "未確認" : policy === "in_progress" ? "確認中" : "現在の設定"}
-									</option>
-								)}
+								{role === "author" &&
+									!["allowed", "restricted"].includes(policy) && (
+										<option value={policy} disabled>
+											{policy === "unknown"
+												? "不明"
+												: policy === "pending"
+													? "未確認"
+													: policy === "in_progress"
+														? "確認中"
+														: "現在の設定"}
+										</option>
+									)}
 								<option value="allowed">再配布可</option>
 								<option value="restricted">制限付き</option>
 								{role !== "author" && (
@@ -1285,7 +1416,12 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="primary"
 								onClick={savePolicy}
-								disabled={!!detail.deleted_at || !!detail.deletion_requested_at || (role === "author" && !["allowed", "restricted"].includes(policy))}
+								disabled={
+									!!detail.deleted_at ||
+									!!detail.deletion_requested_at ||
+									(role === "author" &&
+										!["allowed", "restricted"].includes(policy))
+								}
 							>
 								設定を保存
 							</button>
@@ -1361,7 +1497,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</label>
 						<label>
 							ファイルの説明
-							<textarea rows={3} value={metaForm.file_description || ""} onChange={(e) => setMetaForm({ ...metaForm, file_description: e.target.value })} />
+							<textarea
+								rows={3}
+								value={metaForm.file_description || ""}
+								onChange={(e) =>
+									setMetaForm({ ...metaForm, file_description: e.target.value })
+								}
+							/>
 						</label>
 						<label>
 							MIME タイプ

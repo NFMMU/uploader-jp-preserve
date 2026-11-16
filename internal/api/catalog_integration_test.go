@@ -41,6 +41,17 @@ func catalogTestDB(t *testing.T) (*gorm.DB, *catalogQueryCounter) {
 	if err != nil || parsed == nil || parsed.Path != "/archive_test" || parsed.Port() != "55432" || (parsed.Hostname() != "localhost" && parsed.Hostname() != "127.0.0.1") {
 		t.Fatal("refusing integration test database; expected localhost:55432 database /archive_test")
 	}
+	if parsed.User == nil || parsed.User.Username() != "archive_test" {
+		t.Fatal("refusing integration test database; expected dedicated archive_test user")
+	}
+	password, hasPassword := parsed.User.Password()
+	if !hasPassword || password != "archive_test_password" {
+		t.Fatal("refusing integration test database; expected dedicated test password")
+	}
+	if parsed.RawQuery == "" || !strings.Contains(parsed.RawQuery, "sslmode=disable") {
+		t.Fatal("refusing integration test database; expected explicit sslmode=disable")
+	}
+
 	counter := &catalogQueryCounter{Interface: logger.Default.LogMode(logger.Silent)}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: counter})
 	if err != nil {
