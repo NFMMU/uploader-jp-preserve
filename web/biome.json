@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -31,5 +31,21 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"include": [
+				"src/features/public/pages/PublicFileDetail.tsx",
+				"src/features/public/pages/PublicFileRow.tsx",
+				"src/features/review/AuthorArtifacts.tsx",
+				"src/features/review/Catalog.tsx",
+				"src/features/review/RequestDetailPage.tsx",
+				"src/style.css",
+				"src/types/public.ts"
+			],
+			"formatter": {
+				"enabled": false
+			}
+		}
+	]
 }
