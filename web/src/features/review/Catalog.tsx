@@ -552,11 +552,21 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					onChange={(e) => setPolicyFilter(e.target.value)}
 				>
 					<option value="">すべての公開条件</option>
-					<option value="allowed">再配布可</option>
-					<option value="restricted">制限付き</option>
-					<option value="in_progress">確認中</option>
-					<option value="pending">未確認</option>
-					<option value="unknown">不明</option>
+					{(role === "author"
+						? [
+							{ value: "allowed", label: "再配布可" },
+							{ value: "restricted", label: "制限付き" },
+						]
+						: [
+							{ value: "allowed", label: "再配布可" },
+							{ value: "restricted", label: "制限付き" },
+							{ value: "in_progress", label: "確認中" },
+							{ value: "pending", label: "未確認" },
+							{ value: "unknown", label: "不明" },
+						]
+					).map(({ value, label }) => (
+						<option key={value} value={value}>{label}</option>
+					))}
 				</select>
 				<select
 					aria-label="公開状態で絞り込み"
@@ -566,9 +576,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<option value="">公開状態：すべて</option>
 					<option value="public">公開中</option>
 					<option value="private">非公開</option>
-					<option value="restricted">制限付き</option>
-					<option value="pending">未確認</option>
-					<option value="unknown">条件不明</option>
+					{role !== "author" && (
+						<>
+							<option value="restricted">制限付き</option>
+							<option value="pending">未確認</option>
+							<option value="unknown">条件不明</option>
+						</>
+					)}
 				</select>
 				<span className="result-count">{f.data.total ?? files.length} 件</span>
 			</div>
@@ -1074,11 +1088,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								value={policy}
 								onChange={(e) => setPolicy(e.target.value)}
 							>
-								<option value="unknown">不明</option>
-								<option value="pending">未確認（保全不可）</option>
-								<option value="in_progress">確認中</option>
-								<option value="allowed">許可済み</option>
-								<option value="restricted">制限あり</option>
+								{role === "author" && !["allowed", "restricted"].includes(policy) && (
+									<option value={policy} disabled>
+										{policy === "unknown" ? "不明" : policy === "pending" ? "未確認" : policy === "in_progress" ? "確認中" : "現在の設定"}
+									</option>
+								)}
+								<option value="allowed">再配布可</option>
+								<option value="restricted">制限付き</option>
+								{role !== "author" && (
+									<>
+										<option value="unknown">不明</option>
+										<option value="pending">未確認（保全不可）</option>
+										<option value="in_progress">確認中</option>
+									</>
+								)}
 							</select>
 						</label>
 						<label className="check-label">
@@ -1100,7 +1123,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="primary"
 								onClick={savePolicy}
-								disabled={!!detail.deleted_at || !!detail.deletion_requested_at}
+								disabled={!!detail.deleted_at || !!detail.deletion_requested_at || (role === "author" && !["allowed", "restricted"].includes(policy))}
 							>
 								設定を保存
 							</button>

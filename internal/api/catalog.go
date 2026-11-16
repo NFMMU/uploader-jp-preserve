@@ -214,6 +214,10 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("preservation_status = ?", status)
 	}
 	if policy := c.Query("redistribution_policy"); policy != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && policy != "allowed" && policy != "restricted" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only allowed or restricted redistribution policies"})
+			return
+		}
 		if !redistributionPolicies[policy] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
 			return
@@ -221,6 +225,10 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("redistribution_policy = ?", policy)
 	}
 	if publication := c.Query("publication"); publication != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && publication != "public" && publication != "private" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only public or private files"})
+			return
+		}
 		switch publication {
 		case "public":
 			cutoff := time.Now().UTC().Add(-2 * time.Minute)
@@ -329,6 +337,12 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
+	// Authors may only make an explicit, affirmative policy decision.
+	// They cannot move a file into an unconfirmed or otherwise intermediate state.
+	if actor.Role == "author" && req.RedistributionPolicy != "allowed" && req.RedistributionPolicy != "restricted" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "authors may only set redistribution_policy to allowed or restricted"})
+		return
+	}
 	if req.Representative != nil {
 		var reviewer model.User
 		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
