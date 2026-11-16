@@ -508,7 +508,27 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		// Assign the artifact to an author as part of preservation approval.
 		if req.Status != nil && *req.Status == "accepted" && originalStatus != "accepted" && publicRequest.RequestType == "preservation" {
-			if req.AuthorMode != "existing" && req.AuthorMode != "create" { return errors.New("author assignment is required when accepting a preservation request") }
+			if req.AuthorMode != "existing" && req.AuthorMode != "create" {
+				return errors.New("author assignment is required when accepting a preservation request")
+			}
+
+			// A request may reference only a file. Reuse that file's artifact
+			// rather than creating a new artifact and assigning the author to it.
+			if targetArtifactID == nil && targetFileID != nil {
+				var targetFile model.FileObject
+				if err := tx.Select("id", "artifact_id").First(&targetFile, "id = ?", *targetFileID).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return errInvalidFile
+					}
+					return err
+				}
+				if strings.TrimSpace(targetFile.ArtifactID) == "" {
+					return errInvalidFile
+				}
+				targetArtifactID = &targetFile.ArtifactID
+				assignedArtifactID = targetFile.ArtifactID
+			}
+
 			if targetArtifactID == nil {
 				if publicRequest.SourceURL == nil { return errors.New("preservation request has no source URL") }
 				artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(publicRequest.Title)), CreatorName: publicRequest.CreatorName, SourceURL: *publicRequest.SourceURL, Description: new(publicRequest.Details)}
@@ -537,6 +557,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				displayName := strings.TrimSpace(valueOrEmpty(publicRequest.CreatorName))
 				if displayName == "" { displayName = strings.TrimSpace(valueOrEmpty(publicRequest.Title)) }
 				if displayName == "" { displayName = strings.Split(email, "@")[0] }
+				if runes := []rune(displayName); len(runes) > 120 {
+					displayName = string(runes[:120])
+				}
 				author := model.User{Email: email, PasswordHash: string(hash), DisplayName: displayName, Role: "author"}
 				if err := tx.Create(&author).Error; err != nil { return fmt.Errorf("could not create author account: %w", err) }
 				assignedAuthorID = author.ID
