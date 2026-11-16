@@ -130,7 +130,15 @@ fetchLoop:
 			if filename == "" {
 				filename = safeSourceFilename(path.Base(resp.Request.URL.Path))
 			}
-			return &fetchedUploaderFile{Body: resp.Body, Filename: filename, MediaType: contentType, Size: resp.ContentLength, FinalURL: resp.Request.URL.String(), ArtifactDescription: artifactDescription, FileDescription: fileDescription}, nil
+			return &fetchedUploaderFile{
+				Body:                resp.Body,
+				Filename:            filename,
+				MediaType:           contentType,
+				ArtifactDescription: artifactDescription,
+				FileDescription:     fileDescription,
+				Size:                resp.ContentLength,
+				FinalURL:            resp.Request.URL.String(),
+			}, nil
 		}
 
 		pageURL := resp.Request.URL
@@ -228,13 +236,13 @@ fetchLoop:
 				}
 
 				return &fetchedUploaderFile{
-					Body:      resp.Body,
-					Filename:  filename,
-					MediaType: contentType,
-					Size:      resp.ContentLength,
-					FinalURL:  resp.Request.URL.String(),
+					Body:                resp.Body,
+					Filename:            filename,
+					MediaType:           contentType,
 					ArtifactDescription: artifactDescription,
-					FileDescription: fileDescription,
+					FileDescription:     fileDescription,
+					Size:                resp.ContentLength,
+					FinalURL:            resp.Request.URL.String(),
 				}, nil
 			}
 
@@ -382,7 +390,6 @@ func htmlText(node *xhtml.Node) string {
 	walk(node)
 	return b.String()
 }
-
 
 const maxUploaderDescriptionRunes = 20_000
 
