@@ -4,6 +4,7 @@ import { publicAPI } from "@/api/public";
 import { PageMeta } from "@/components/common/PageMeta";
 import { formatBytes } from "@/lib/format";
 import type { PublicFileDetail as PublicFileDetailType } from "@/types/public";
+import { PublicFileRow } from "./PublicFileRow";
 
 export function PublicFileDetail() {
  const { id = "" } = useParams();
@@ -27,6 +28,7 @@ export function PublicFileDetail() {
   <h1 className="public-detail-title">{item.original_filename}</h1>
   <dl className="public-metadata"><dt>作品</dt><dd><Link to={`/artifacts/${item.artifact_id}`}>{item.artifact_title}</Link></dd><dt>ファイルサイズ</dt><dd>{formatBytes(item.size_bytes)}</dd>{item.media_type && <><dt>MIME タイプ</dt><dd>{item.media_type}</dd></>}</dl>
   {item.description ? <p className="public-detail-description">{item.description}</p> : <p className="public-muted">このファイルの説明はまだ登録されていません。</p>}
-  <p className="public-footnote">ダウンロードは作品ページのファイル一覧から行えます。公開条件と保存状態を確認できたファイルのみ表示されます。</p>
+  <PublicFileRow file={item} artifactId={item.artifact_id} />
+  <p className="public-footnote">公開条件と保存状態を確認できたファイルのみダウンロードできます。</p>
  </>;
 }
