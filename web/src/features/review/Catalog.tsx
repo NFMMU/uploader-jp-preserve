@@ -552,11 +552,14 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					onChange={(e) => setPolicyFilter(e.target.value)}
 				>
 					<option value="">すべての公開条件</option>
-					<option value="allowed">再配布可</option>
-					<option value="restricted">制限付き</option>
-					<option value="in_progress">確認中</option>
-					<option value="pending">未確認</option>
-					<option value="unknown">不明</option>
+					{(role === "author"
+						? ["allowed", "restricted"]
+						: ["allowed", "restricted", "in_progress", "pending", "unknown"]
+					).map((value) => (
+						<option key={value} value={value}>
+							{{allowed:"再配布可",restricted:"制限付き",in_progress:"確認中",pending:"未確認",unknown:"不明"}[value]}
+						</option>
+					))}
 				</select>
 				<select
 					aria-label="公開状態で絞り込み"
@@ -1074,11 +1077,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								value={policy}
 								onChange={(e) => setPolicy(e.target.value)}
 							>
-								<option value="unknown">不明</option>
-								<option value="pending">未確認（保全不可）</option>
-								<option value="in_progress">確認中</option>
-								<option value="allowed">許可済み</option>
-								<option value="restricted">制限あり</option>
+								{role === "author" && !["allowed", "restricted"].includes(policy) && (
+									<option value={policy} disabled>
+										{({unknown:"不明",pending:"未確認",in_progress:"確認中"})[policy] || "現在の設定"}
+									</option>
+								)}
+								<option value="allowed">再配布可</option>
+								<option value="restricted">制限付き</option>
+								{role !== "author" && (
+									<>
+										<option value="unknown">不明</option>
+										<option value="pending">未確認（保全不可）</option>
+										<option value="in_progress">確認中</option>
+									</>
+								)}
 							</select>
 						</label>
 						<label className="check-label">
@@ -1100,7 +1112,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="primary"
 								onClick={savePolicy}
-								disabled={!!detail.deleted_at || !!detail.deletion_requested_at}
+								disabled={!!detail.deleted_at || !!detail.deletion_requested_at || (role === "author" && !["allowed", "restricted"].includes(policy))}
 							>
 								設定を保存
 							</button>
