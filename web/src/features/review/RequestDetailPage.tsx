@@ -132,6 +132,11 @@ export function RequestDetailPage({
 	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
 
 	const [status, setStatus] = useState("in_review");
+	const [authorMode, setAuthorMode] = useState<"existing" | "create">("existing");
+	const [authorUserID, setAuthorUserID] = useState("");
+	const [authorEmail, setAuthorEmail] = useState("");
+	const [authors, setAuthors] = useState<Obj[]>([]);
+	const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
 	const [reason, setReason] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [password, setPassword] = useState("");
@@ -154,6 +159,18 @@ export function RequestDetailPage({
 	useEffect(() => {
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
+	useEffect(() => {
+		if (status !== "accepted" || request?.request_type !== "preservation") return;
+		let cancelled = false;
+		api("/moderation/authors").then((result: Obj) => {
+			if (cancelled) return;
+			const items: Obj[] = result.items || [];
+			setAuthors(items);
+			if (!authorUserID && items.length) setAuthorUserID(String(items[0].id));
+		}).catch((e: Error) => notify(e.message));
+		return () => { cancelled = true; };
+	}, [status, request?.id, request?.request_type]);
+
 	async function ingestAcceptedUpload() {
 		if (!request) return;
 		if (
@@ -205,12 +222,24 @@ export function RequestDetailPage({
 			)
 		)
 			return;
+		if (request.request_type === "preservation" && status === "accepted") {
+			if (authorMode === "existing" && !authorUserID) { notify("紐付けるauthorを選択してください"); return; }
+			if (authorMode === "create" && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(authorEmail.trim())) { notify("有効なメールアドレスを入力してください"); return; }
+		}
 		setSaving(true);
 		try {
-			await api(`/moderation/public-requests/${request.id}`, {
+			const result = await api(`/moderation/public-requests/${request.id}`, {
 				method: "PATCH",
-				body: JSON.stringify({ status, reason: reason.trim() }),
+				body: JSON.stringify({
+					status, reason: reason.trim(),
+					...(request.request_type === "preservation" && status === "accepted" ? {
+						author_mode: authorMode,
+						...(authorMode === "existing" ? { author_user_id: authorUserID } : { author_email: authorEmail.trim() }),
+					} : {}),
+				}),
 			});
+			if (result.initial_password) setCreatedCredentials({ email: authorEmail.trim(), password: result.initial_password });
+			else setCreatedCredentials(null);
 			notify("申請ステータスを更新しました");
 			setReason("");
 			setLocalRefresh((x) => x + 1);
@@ -799,6 +828,17 @@ export function RequestDetailPage({
 						</section>
 					)}
 				</div>
+				{createdCredentials && (
+					<section className="panel request-action-panel">
+						<h2>Authorアカウントを作成しました</h2>
+						<p>初期パスワードはこの画面でのみ表示されます。安全な方法で本人に共有してください。</p>
+						<label>メールアドレス<input readOnly value={createdCredentials.email} /></label>
+						<label>初期パスワード<input readOnly value={createdCredentials.password} /></label>
+						<button type="button" className="secondary" onClick={() => navigator.clipboard.writeText(`メールアドレス: ${createdCredentials.email}\\n初期パスワード: ${createdCredentials.password}`)}>認証情報をコピー</button>
+						<button type="button" className="small-btn" onClick={() => setCreatedCredentials(null)}>表示を閉じる</button>
+					</section>
+				)}
+
 				<aside className="request-page-sidebar">
 					{role !== "viewer" && (
 						<section className="panel request-action-panel">
@@ -828,6 +868,29 @@ export function RequestDetailPage({
 										<option value="closed">終了</option>
 									</select>
 								</label>
+								{request.request_type === "preservation" && status === "accepted" && (
+									<>
+										<label>作品のauthor
+											<select value={authorMode} onChange={(e) => setAuthorMode(e.target.value as "existing" | "create")}>
+												<option value="existing">既存authorに紐付ける</option>
+												<option value="create">新しいauthorを作成する</option>
+											</select>
+										</label>
+										{authorMode === "existing" ? (
+											<label>紐付け先author
+												<select value={authorUserID} onChange={(e) => setAuthorUserID(e.target.value)} required>
+													<option value="">選択してください</option>
+													{authors.map((author) => <option key={author.id} value={author.id}>{author.display_name}（{author.email}）</option>)}
+												</select>
+											</label>
+										) : (
+											<label>新しいauthorのメールアドレス
+												<input type="email" value={authorEmail} onChange={(e) => setAuthorEmail(e.target.value)} maxLength={320} required placeholder="author@example.jp" autoComplete="email" />
+												<small>初期パスワードは安全な乱数で自動生成し、作成後に一度だけ表示します。</small>
+											</label>
+										)}
+									</>
+								)}
 								<label>
 									対応理由 *
 									<textarea
