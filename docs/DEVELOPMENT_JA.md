@@ -81,6 +81,10 @@ cd web && npm install && npm run build
 
 この2つを混ぜたり、**運営者用 `.env` を参加者へ配布したりしないでください**。ノード参加の手順は[参加ノードの始め方](PARTICIPATING_NODE_JA.md)を参照してください。
 
-## 7. 詳細な開発手順
+## 7. テストの実行
+
+テストの種類、追加ルール、CI の実行内容は[テストガイド](TESTING_JA.md)を参照してください。
+
+## 8. 詳細な開発手順
 
 DB マイグレーション、API一覧、配置動作、テストの詳細は[開発詳細リファレンス](reference/DEVELOPMENT_DETAILS_JA.md)を参照してください。
