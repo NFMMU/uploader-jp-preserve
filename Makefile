@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: up down logs test test-surplus-cleanup build migrate-diff migrate-apply migrate-hash generate check
+.PHONY: up down logs test test-unit test-integration test-web test-surplus-cleanup build migrate-diff migrate-apply migrate-hash generate check
 
 up:
 	docker compose up --build -d
@@ -11,8 +11,17 @@ down:
 logs:
 	docker compose logs -f api postgres
 
-test:
+test: test-unit test-web
+
+test-unit:
 	go test ./...
+
+test-integration:
+	RUN_CATALOG_DB_INTEGRATION=1 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/archive_test?sslmode=disable go test ./internal/api
+
+test-web:
+	cd web && npm test
+
 
 test-surplus-cleanup:
 	./scripts/test-surplus-cleanup.sh
