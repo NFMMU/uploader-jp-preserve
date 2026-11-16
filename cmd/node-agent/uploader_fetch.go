@@ -255,6 +255,14 @@ fetchLoop:
 				)
 			}
 
+			pageArtifactDescription, pageFileDescription := extractUploaderDescriptions(nextDoc)
+			if artifactDescription == "" {
+				artifactDescription = pageArtifactDescription
+			}
+			if fileDescription == "" {
+				fileDescription = pageFileDescription
+			}
+
 			nextPageText := strings.ToLower(htmlText(nextDoc))
 
 			// パスワード認証が完了していない場合。
