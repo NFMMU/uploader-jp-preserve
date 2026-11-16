@@ -802,6 +802,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 
+		case strings.Contains(err.Error(), "author") || strings.Contains(err.Error(), "email address"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+
 		case errors.Is(err, errInvalidArtifact):
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
