@@ -379,3 +379,36 @@ func TestUploaderRateLimitPersistsPerAgent(t *testing.T) {
 		t.Fatal("new agent instance did not load persisted fetch timestamp")
 	}
 }
+
+func TestExtractUploaderDescriptions(t *testing.T) {
+	doc, err := xhtml.Parse(strings.NewReader(`
+		<html><body>
+			<p class="lead">創作の説明文です。 <em>複数の要素</em> を含みます。</p>
+			<table><tbody>
+				<tr><th>ファイル</th><td>glitch.zip</td></tr>
+				<tr><!-- active? --><th>コメント</th><td><strong>グリッチエフェクト</strong></td></tr>
+				<tr><th>オリジナル</th><td>glitch.zip</td></tr>
+			</tbody></table>
+		</body></html>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDescription, fileDescription := extractUploaderDescriptions(doc)
+	if artifactDescription != "創作の説明文です。 複数の要素 を含みます。" {
+		t.Fatalf("unexpected artifact description: %q", artifactDescription)
+	}
+	if fileDescription != "グリッチエフェクト" {
+		t.Fatalf("unexpected file description: %q", fileDescription)
+	}
+}
+
+func TestExtractUploaderDescriptionsIgnoresMissingFields(t *testing.T) {
+	doc, err := xhtml.Parse(strings.NewReader(`<html><body><table><tr><th>ファイル</th><td>glitch.zip</td></tr></table></body></html>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDescription, fileDescription := extractUploaderDescriptions(doc)
+	if artifactDescription != "" || fileDescription != "" {
+		t.Fatalf("expected empty descriptions, got artifact=%q file=%q", artifactDescription, fileDescription)
+	}
+}
