@@ -17,27 +17,35 @@ Go の変更：
 ```sh
 gofmt -w <変更したGoファイル>
 go test ./...
-golangci-lint run --fix
-golangci-lint fmt
 ```
 
 Web の変更：
 
 ```sh
 cd web
-npm install
-npm run lint
+npm ci
+npm test
+npm run lint:check:local
+npm run format:check:local
 npm run build
+```
+
+DB 統合テスト：
+
+```sh
+make test-integration
 ```
 
 Compose 設定の変更：
 
 ```sh
 cp .env.example .env
-docker compose config --quiet
+docker compose -f docker-compose.example.yml config --quiet
+docker compose -f docker-compose.test.yml config --quiet
+docker compose -f deploy/participant-node/compose.yaml config --quiet
 ```
 
-環境依存の統合テストは `docs` と `scripts` の説明を読み、使い捨てテスト用データベースで実行してください。実データや参加者の保存ボリュームをテストに使わないでください。
+統合テストは使い捨てテスト用データベースで実行してください。実データや参加者の保存ボリュームをテストに使わないでください。詳細は [テストガイド](docs/TESTING_JA.md) を参照してください。
 
 ## Pull Request に含める内容
 
