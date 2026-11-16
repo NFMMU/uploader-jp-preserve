@@ -9,8 +9,8 @@ import {
 } from "./legal/LegalPages";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
-import { PublicFileDetail } from "./pages/PublicFileDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
+import { PublicFileDetail } from "./pages/PublicFileDetail";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
 import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";

@@ -7,8 +7,8 @@ import { Status } from "@/components/common/Status";
 import { useData } from "@/hooks/useData";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
-import { ConversationLinks } from "./ConversationLinks";
 import { includeSelectedAuthor } from "./authorSelection.js";
+import { ConversationLinks } from "./ConversationLinks";
 
 export function RequestDetailPage({
 	api,
