@@ -20,19 +20,19 @@ import (
 )
 
 const (
-	uploaderFetcherVersion          = "2026-10-30-password-form-2"
+	uploaderFetcherVersion          = "2026-11-16-description-import-1"
 	maxAgentUploaderHTMLBytes       = 8 << 20
 	maxAgentSourceBytes       int64 = 5 << 30
 )
 
 type fetchedUploaderFile struct {
-	Body      io.ReadCloser
-	Filename  string
-	MediaType string
+	Body                io.ReadCloser
+	Filename            string
+	MediaType           string
 	ArtifactDescription string
-	FileDescription string
-	Size      int64
-	FinalURL  string
+	FileDescription     string
+	Size                int64
+	FinalURL            string
 }
 
 type uploaderForm struct {
