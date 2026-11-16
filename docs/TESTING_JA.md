@@ -42,7 +42,7 @@ Docker Compose で専用の使い捨て DB を起動し、Atlas migrations を�
 make test-integration
 ```
 
-この処理は `scripts/test-surplus-cleanup.sh` が担当します。テスト用 DB は専用 Compose プロジェクトで起動し、終了時にコンテナを停止・削除します。既存の開発用 DB や名前付きボリュームは使用しません。
+この処理は `scripts/test-integration.sh` が担当します。テスト用 DB は専用 Compose プロジェクトで起動し、終了時にコンテナを停止・削除します。既存の開発用 DB や名前付きボリュームは使用しません。
 
 統合テストは `127.0.0.1:55432/archive_test` 以外の接続先を拒否します。テスト用 DB に実データや重要データを置かないでください。
 
