@@ -84,7 +84,6 @@ export function PublicFileRow({
 				<Link to={`/files/${file.id}`}><b>{file.original_filename}</b></Link>
 				<span>{formatBytes(file.size_bytes)}</span>
 				{file.description && <p className="public-detail-description">{file.description}</p>}
-				<Link to={`/files/${file.id}`}>ファイル詳細</Link>
 				{message && (
 					<small className="public-download-message">{message}</small>
 				)}
