@@ -955,7 +955,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						)}
 						{!listingURL.trim() && <label>
 							ファイルの説明
-							<textarea rows={3} value={fileDescription} onChange={(e) => setFileDescription(e.target.value)} placeholder="このファイルの内容や用途など" />
+							<textarea
+								rows={3}
+								value={fileDescription}
+								disabled={busy || !!pendingFileId}
+								onChange={(e) => setFileDescription(e.target.value)}
+								placeholder="このファイルの内容や用途など"
+							/>
 						</label>}
 						<label>
 							公開条件
@@ -994,6 +1000,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								onClick={() => {
 									setArtifact(null);
 									setPendingFileId("");
+									setFileDescription("");
 									setListingURL("");
 									setAcceptListingTerms(false);
 									setCandidates([]);
