@@ -20,7 +20,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Run unit and PostgreSQL integration tests
-        run: ./scripts/test-surplus-cleanup.sh
+        run: ./scripts/test-integration.sh
       - name: Report package coverage
         run: go tool cover -func=coverage.out
 
