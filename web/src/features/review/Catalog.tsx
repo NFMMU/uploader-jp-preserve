@@ -465,7 +465,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					reason: reason.trim(),
 				}),
 			});
-			if (role === "admin" && pub !== detail.public_download_enabled) {
+			if (pub !== detail.public_download_enabled && (role === "admin" || role === "author")) {
 				await api(`/catalog/files/${detail.id}/publication`, {
 					method: "PATCH",
 					body: JSON.stringify({ enabled: pub, reason: reason.trim() }),
