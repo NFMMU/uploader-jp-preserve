@@ -569,9 +569,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<option value="">公開状態：すべて</option>
 					<option value="public">公開中</option>
 					<option value="private">非公開</option>
-					<option value="restricted">制限付き</option>
-					<option value="pending">未確認</option>
-					<option value="unknown">条件不明</option>
+					{role !== "author" && (
+						<>
+							<option value="restricted">制限付き</option>
+							<option value="pending">未確認</option>
+							<option value="unknown">条件不明</option>
+						</>
+					)}
 				</select>
 				<span className="result-count">{f.data.total ?? files.length} 件</span>
 			</div>
