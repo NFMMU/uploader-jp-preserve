@@ -137,7 +137,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (!metadata) return;
 		const reason = window.prompt("メタデータの変更理由を入力してください");
 		if (!reason || reason.trim().length < 3) return;
-		if (metaForm.file_description.length > 20_000) {
+		if (Array.from(metaForm.file_description).length > 20_000) {
 			notify("ファイルの説明は20,000文字以内で入力してください");
 			return;
 		}
