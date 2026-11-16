@@ -168,7 +168,6 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 			oidcProviderQuery.DiscoveryEndpoint,
 			oidcProviderQuery.ClientID,
 			oidcProviderQuery.ServiceIcon,
-			oidcProviderQuery.IsEnabled,
 			oidcProviderQuery.CreatedAt,
 			oidcProviderQuery.UpdatedAt,
 		).First()
