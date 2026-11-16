@@ -162,6 +162,9 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Model(&model.OidcProvider{}).Where("id = ?", other).UpdateColumn("is_enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
 	router := gin.New()
 	router.PUT("/:id", func(c *gin.Context) { c.Set("currentUser", model.User{ID: uuid.NewString()}); s.putOidcProvider(c) })
 	router.GET("/", s.listOidcProviders)
@@ -212,6 +215,7 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	var result struct {
 		Items []struct {
 			ID          string `json:"id"`
+			IsEnabled   bool   `json:"is_enabled"`
 			CallbackURL string `json:"callback_url"`
 		} `json:"items"`
 	}
@@ -224,6 +228,10 @@ func TestOidcProviderUpdatePreservesIdentityAndSecret(t *testing.T) {
 	for _, item := range result.Items {
 		if item.CallbackURL != "http://canonical.example:8080/api/v1/auth/oidc/callback/"+item.ID {
 			t.Fatal("incorrect canonical callback")
+		}
+		wantEnabled := item.ID == id
+		if item.IsEnabled != wantEnabled {
+			t.Errorf("provider %s is_enabled = %v, want %v", item.ID, item.IsEnabled, wantEnabled)
 		}
 	}
 }
