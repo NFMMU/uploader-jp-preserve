@@ -591,10 +591,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				}
 				actions={
 					<>
-						{linkedArtifactID && role === "author" && (
+						{linkedArtifactID && (
 							<button
 								className="secondary"
-								onClick={() => nav("/admin/artifacts")}
+								onClick={() => nav(role === "author" ? "/admin/artifacts" : "/admin/review?tab=files")}
 								type="button"
 							>
 								作品一覧へ戻る
