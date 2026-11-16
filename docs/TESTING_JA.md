@@ -85,4 +85,13 @@ CI のテストがスキップされたり、DB が準備されていない状�
 
 ### Biome の検査範囲
 
-CI では `BIOME_BASE_REF` を比較基準として Biome の `--changed --since` を使用します。Pull Request では base SHA、push では push 前の SHA を基準にするため、push に含まれる複数コミットの変更をまとめて検査します。変更対象がない場合は `--no-errors-on-unmatched` により正常終了します。\n\nローカルでは `npm run lint:check:local` と `npm run format:check:local` を使用してください。これらは `src` 全体を検査するため、未コミット変更や新規ファイルも対象になります。CI 用の `lint:check` / `format:check` はイベントの比較基準を使うため、ローカルの未コミット変更確認には使用しません。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3451be4280230c45017fc779f9dfcbea6bc614dfd0459932232270d3657401c4 -->
+
+CI では `BIOME_BASE_REF` を比較基準として Biome の `--changed --since` を使用します。Pull Request では base SHA、push では push 前の SHA を基準にするため、push に含まれる複数コミットの変更をまとめて検査します。変更対象がない場合は `--no-errors-on-unmatched` により正常終了します。`BIOME_BASE_REF` は必須で、未指定時はエラーになります。
+
+ローカルでは `npm run lint:check:local` と `npm run format:check:local` を使用してください。これらは Web ディレクトリ全体（Git の ignore 対象を除く）を検査するため、未コミット変更や新規ファイルも対象になります。CI 用の `lint:check` / `format:check` はイベントの比較基準を使うため、ローカルの未コミット変更確認には使用しません。
+
+
+<!-- /coderabbit-ai-generated:v1 -->

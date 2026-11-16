@@ -17,4 +17,7 @@ export type PublicArtifact = {
 	files: PublicFile[];
 };
 
-export type PublicFileDetail = PublicFile & { artifact_id: string; artifact_title: string };
+export type PublicFileDetail = PublicFile & {
+	artifact_id: string;
+	artifact_title: string;
+};

@@ -31,21 +31,5 @@
 				"organizeImports": "on"
 			}
 		}
-	},
-	"overrides": [
-		{
-			"includes": [
-				"src/features/public/pages/PublicFileDetail.tsx",
-				"src/features/public/pages/PublicFileRow.tsx",
-				"src/features/review/AuthorArtifacts.tsx",
-				"src/features/review/Catalog.tsx",
-				"src/features/review/RequestDetailPage.tsx",
-				"src/style.css",
-				"src/types/public.ts"
-			],
-			"formatter": {
-				"enabled": false
-			}
-		}
-	]
+	}
 }

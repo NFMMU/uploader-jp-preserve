@@ -13,10 +13,10 @@
 		"format": "biome format",
 		"test": "node --test",
 		"test:watch": "node --watch --test",
-		"lint:check": "biome check --changed --since=${BIOME_BASE_REF:-HEAD^} --no-errors-on-unmatched",
-		"format:check": "biome format --changed --since=${BIOME_BASE_REF:-HEAD^} --no-errors-on-unmatched",
-		"lint:check:local": "biome check src",
-		"format:check:local": "biome format src"
+		"lint:check": "biome check --changed --since=\"${BIOME_BASE_REF:?BIOME_BASE_REF must be set to the event comparison SHA}\" --no-errors-on-unmatched",
+		"format:check": "biome format --changed --since=\"${BIOME_BASE_REF:?BIOME_BASE_REF must be set to the event comparison SHA}\" --no-errors-on-unmatched",
+		"lint:check:local": "biome check .",
+		"format:check:local": "biome format ."
 	},
 	"dependencies": {
 		"@fontsource/noto-sans-jp": "^5.3.1",
