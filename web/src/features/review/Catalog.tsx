@@ -553,12 +553,19 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				>
 					<option value="">すべての公開条件</option>
 					{(role === "author"
-						? ["allowed", "restricted"]
-						: ["allowed", "restricted", "in_progress", "pending", "unknown"]
-					).map((value) => (
-						<option key={value} value={value}>
-							{{allowed:"再配布可",restricted:"制限付き",in_progress:"確認中",pending:"未確認",unknown:"不明"}[value]}
-						</option>
+						? [
+							{ value: "allowed", label: "再配布可" },
+							{ value: "restricted", label: "制限付き" },
+						]
+						: [
+							{ value: "allowed", label: "再配布可" },
+							{ value: "restricted", label: "制限付き" },
+							{ value: "in_progress", label: "確認中" },
+							{ value: "pending", label: "未確認" },
+							{ value: "unknown", label: "不明" },
+						]
+					).map(({ value, label }) => (
+						<option key={value} value={value}>{label}</option>
 					))}
 				</select>
 				<select
@@ -1083,7 +1090,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								{role === "author" && !["allowed", "restricted"].includes(policy) && (
 									<option value={policy} disabled>
-										{({unknown:"不明",pending:"未確認",in_progress:"確認中"})[policy] || "現在の設定"}
+										{policy === "unknown" ? "不明" : policy === "pending" ? "未確認" : policy === "in_progress" ? "確認中" : "現在の設定"}
 									</option>
 								)}
 								<option value="allowed">再配布可</option>
