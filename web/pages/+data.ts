@@ -6,7 +6,11 @@ const DEFAULT_DESCRIPTION =
 	"uploader.jpのサービス終了に伴う創作関連アセットの消失を防ぐことを目的としたプロジェクトです。";
 const DEFAULT_IMAGE = `${SITE_URL}/ogp/default.png`;
 
-type FileResponse = {\n\titem?: { id?: string; original_filename?: string; description?: string };\n};\n\ntype ArtifactResponse = {
+type FileResponse = {
+\titem?: { id?: string; original_filename?: string; description?: string };
+};
+
+type ArtifactResponse = {
 	item?: {
 		id?: string;
 		title?: string;
