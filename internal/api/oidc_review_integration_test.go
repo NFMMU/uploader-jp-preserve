@@ -344,3 +344,49 @@ func TestOidcMissingProviderResponses(t *testing.T) {
 		}
 	}
 }
+
+func TestOidcProviderUpdateIsEnabledOptionalAndExplicit(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	if err := db.AutoMigrate(&model.OidcProvider{}, &model.AuditLog{}); err != nil {
+		t.Fatal(err)
+	}
+	query.SetDefault(db)
+	s := &Server{db: db, logger: slog.Default(), cfg: config.Config{SourcePasswordEncryptionKey: bytes.Repeat([]byte{0x42}, 32)}}
+	provider := model.OidcProvider{
+		ID: uuid.NewString(), DisplayName: "initial", DiscoveryEndpoint: "https://issuer.example",
+		ClientID: "client", ClientSecret: "keep-secret", IsEnabled: false,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.PUT("/:id", func(c *gin.Context) {
+		c.Set("currentUser", model.User{ID: uuid.NewString()})
+		s.putOidcProvider(c)
+	})
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "omitted preserves false", body: `{"display_name":"omitted"}`, want: false},
+		{name: "explicit true", body: `{"display_name":"enabled","is_enabled":true}`, want: true},
+		{name: "explicit false", body: `{"display_name":"disabled","is_enabled":false}`, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/"+provider.ID, strings.NewReader(tc.body)))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+			}
+			var stored model.OidcProvider
+			if err := db.First(&stored, "id = ?", provider.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.IsEnabled != tc.want {
+				t.Fatalf("is_enabled = %v, want %v", stored.IsEnabled, tc.want)
+			}
+		})
+	}
+}
