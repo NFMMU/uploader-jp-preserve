@@ -397,6 +397,13 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		notFoundOrError(c, err, "file object")
 		return
 	}
+	// An unchanged publication state is a no-op. In particular, do not
+	// reject an already-public file merely because its nodes are temporarily
+	// unhealthy when the caller is only saving an unrelated policy form.
+	if file.PublicDownloadEnabled == *req.Enabled {
+		c.JSON(http.StatusOK, gin.H{"file": file, "unchanged": true})
+		return
+	}
 	if *req.Enabled {
 		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
 			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless policy is allowed, preservation is verified, and a valid SHA-256 is recorded"})
