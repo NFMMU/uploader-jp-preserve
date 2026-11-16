@@ -34,7 +34,7 @@
 	},
 	"overrides": [
 		{
-			"include": [
+			"includes": [
 				"src/features/public/pages/PublicFileDetail.tsx",
 				"src/features/public/pages/PublicFileRow.tsx",
 				"src/features/review/AuthorArtifacts.tsx",
