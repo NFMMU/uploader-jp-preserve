@@ -337,6 +337,13 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"item": item})
 }
 
+func sameOptionalRequestTarget(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
 func limitAuthorDisplayName(value string) string {
 	value = strings.TrimSpace(value)
 	runes := []rune(value)
@@ -452,9 +459,26 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		// Remember the status observed under the row lock.
 		originalStatus := publicRequest.Status
 
-		// An accepted request cannot have its targets changed.
-		if originalStatus == "accepted" &&
-			(req.ArtifactID != nil || req.FileObjectID != nil) {
+		// Once a preservation request has been assigned to an author, its
+		// artifact/file target is immutable even if the request is reopened.
+		var priorAssignmentCount int64
+		if publicRequest.RequestType == "preservation" {
+			if err := tx.Model(&model.AuditLog{}).
+				Where(
+					"target_type = ? AND target_id = ? AND action = ? AND result = ?",
+					"public_request",
+					publicRequest.ID,
+					"public_request.author_assigned",
+					"success",
+				).
+				Count(&priorAssignmentCount).Error; err != nil {
+				return err
+			}
+		}
+
+		targetsChanged := (req.ArtifactID != nil && !sameOptionalRequestTarget(req.ArtifactID, publicRequest.ArtifactID)) ||
+			(req.FileObjectID != nil && !sameOptionalRequestTarget(req.FileObjectID, publicRequest.FileObjectID))
+		if targetsChanged && (originalStatus == "accepted" || priorAssignmentCount > 0) {
 			return errAcceptedTargetsImmutable
 		}
 
@@ -536,19 +560,6 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			*req.Status == "accepted" &&
 			originalStatus != "accepted" &&
 			publicRequest.RequestType == "preservation" {
-			var priorAssignmentCount int64
-			if err := tx.Model(&model.AuditLog{}).
-				Where(
-					"target_type = ? AND target_id = ? AND action = ? AND result = ?",
-					"public_request",
-					publicRequest.ID,
-					"public_request.author_assigned",
-					"success",
-				).
-				Count(&priorAssignmentCount).Error; err != nil {
-				return err
-			}
-
 			// An author assignment is a one-time operation per preservation request.
 			if priorAssignmentCount == 0 {
 				if req.AuthorMode != "existing" && req.AuthorMode != "create" {
