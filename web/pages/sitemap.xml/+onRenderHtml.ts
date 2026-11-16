@@ -94,8 +94,8 @@ async function getPublicUrls(): Promise<string[]> {
 
 	return [
 		...STATIC_PATHS.map((path) => `${SITE_URL}${path}`),
-		...new Set(artifactIds).values().map((id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`),
-		...new Set(fileIds).values().map((id) => `${SITE_URL}/files/${encodeURIComponent(id)}`),
+		...Array.from(new Set(artifactIds), (id) => `${SITE_URL}/artifacts/${encodeURIComponent(id)}`),
+		...Array.from(new Set(fileIds), (id) => `${SITE_URL}/files/${encodeURIComponent(id)}`),
 	];
 }
 
