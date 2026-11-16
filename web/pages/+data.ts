@@ -7,7 +7,7 @@ const DEFAULT_DESCRIPTION =
 const DEFAULT_IMAGE = `${SITE_URL}/ogp/default.png`;
 
 type FileResponse = {
-\titem?: { id?: string; original_filename?: string; description?: string };
+	item?: { id?: string; original_filename?: string; description?: string };
 };
 
 type ArtifactResponse = {
