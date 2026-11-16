@@ -181,7 +181,7 @@ func (s *Server) putOidcProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	isEnabled := true
+	isEnabled := data.IsEnabled
 	if req.IsEnabled != nil {
 		isEnabled = *req.IsEnabled
 	}
