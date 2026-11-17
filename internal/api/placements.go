@@ -122,10 +122,10 @@ func (s *Server) reconcilePlacements(ctx context.Context) error {
 		return err
 	}
 	if err := db.Exec(`UPDATE tasks AS t SET status='failed', last_error=COALESCE(t.last_error, 'node went offline during placement task'), lease_until=NULL, lease_token=NULL, updated_at=now()
-		WHERE t.status IN ('queued','running') AND ((t.task_type IN ('store','delete') AND t.target_node_id IN (SELECT id FROM nodes WHERE status='offline')) OR (t.task_type='replicate' AND t.source_node_id IN (SELECT id FROM nodes WHERE status='offline')))`).Error; err != nil {
+		WHERE t.status IN ('queued','running') AND ((t.task_type = 'store' AND t.target_node_id IN (SELECT id FROM nodes WHERE status='offline')) OR (t.task_type = 'replicate' AND t.source_node_id IN (SELECT id FROM nodes WHERE status='offline')))`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM nodes WHERE status='offline') AND status IN ('queued','running','stored','deleting')`).Error; err != nil {
+	if err := db.Exec(`UPDATE placements SET status='missing' WHERE node_id IN (SELECT id FROM nodes WHERE status='offline') AND status IN ('queued','running','stored')`).Error; err != nil {
 		return err
 	}
 	var fileIDs []string
