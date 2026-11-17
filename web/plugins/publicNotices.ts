@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { parse } from "yaml";
 
@@ -60,13 +60,13 @@ export function publicNoticesPlugin(): Plugin {
 			);
 			return [...imports, "export default [", ...entries, "];"].join("\n");
 		},
-		handleHotUpdate({ file, server }) {
-			if (!file.startsWith(noticesDirectory) || !file.endsWith(".md")) return;
-			const virtualModule = server.moduleGraph.getModuleById(
+		hotUpdate({ file }) {
+			if (dirname(file) !== noticesDirectory || !file.endsWith(".md")) return;
+			const virtualModule = this.environment.moduleGraph.getModuleById(
 				resolvedPublicNoticesId,
 			);
 			if (virtualModule) {
-				server.moduleGraph.invalidateModule(virtualModule);
+				this.environment.moduleGraph.invalidateModule(virtualModule);
 				return [virtualModule];
 			}
 			return;

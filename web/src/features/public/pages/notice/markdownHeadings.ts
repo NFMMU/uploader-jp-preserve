@@ -20,7 +20,7 @@ function slugifyHeading(value: string): string {
 
 function visitHeadings(tree: Root, collect: boolean): NoticeHeading[] {
 	const headings: NoticeHeading[] = [];
-	const usedIds = new Map<string, number>();
+	const usedIds = new Set<string>();
 
 	for (const node of tree.children) {
 		if (node.type !== "heading" || (node.depth !== 2 && node.depth !== 3))
@@ -28,9 +28,10 @@ function visitHeadings(tree: Root, collect: boolean): NoticeHeading[] {
 
 		const title = mdToString(node);
 		const baseId = slugifyHeading(title);
-		const count = usedIds.get(baseId) ?? 0;
-		usedIds.set(baseId, count + 1);
-		const id = count === 0 ? baseId : baseId + "-" + (count + 1);
+		let id = baseId;
+		let suffix = 2;
+		while (usedIds.has(id)) id = baseId + "-" + suffix++;
+		usedIds.add(id);
 
 		const data = node.data as
 			| (typeof node.data & { hProperties?: Record<string, unknown> })

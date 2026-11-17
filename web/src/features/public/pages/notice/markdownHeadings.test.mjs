@@ -21,3 +21,19 @@ test("duplicate headings receive stable unique ids", () => {
 		["overview", "overview-2", "overview-3"],
 	);
 });
+
+test("generated suffixes do not collide with literal heading slugs", () => {
+	for (const markdown of [
+		"## Overview\n\n## Overview\n\n## Overview 2",
+		"## Overview 2\n\n## Overview\n\n## Overview",
+	]) {
+		const ids = parseNoticeHeadings(markdown).map((heading) => heading.id);
+		assert.equal(new Set(ids).size, 3);
+	}
+	assert.deepEqual(
+		parseNoticeHeadings("## Overview\n\n## Overview\n\n## Overview 2").map(
+			(heading) => heading.id,
+		),
+		["overview", "overview-2", "overview-2-2"],
+	);
+});
