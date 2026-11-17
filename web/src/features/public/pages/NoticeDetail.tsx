@@ -16,7 +16,7 @@ const notices = Object.entries(sources)
 	.filter((notice): notice is Notice => notice !== null && notice.published);
 
 function formatDate(date: string) {
-	return new Date(date + "T00:00:00").toLocaleDateString("ja-JP", {
+	return new Date(`${date}T00:00:00`).toLocaleDateString("ja-JP", {
 		year: "numeric",
 		month: "long",
 		day: "numeric",
@@ -54,7 +54,7 @@ export function NoticeDetail() {
 	return (
 		<>
 			<PageMeta
-				title={notice.title + " | お知らせ | uploader.jp保全プロジェクト"}
+				title={`${notice.title} | お知らせ | uploader.jp保全プロジェクト`}
 				description={notice.summary}
 			/>
 			<div className="notice-detail-page">
@@ -80,7 +80,7 @@ export function NoticeDetail() {
 								{notice.tags.map((tag) => (
 									<Link
 										key={tag}
-										to={"/notices?tag=" + encodeURIComponent(tag)}
+										to={`/notices?tag=${encodeURIComponent(tag)}`}
 									>
 										<Tag size={13} /> {tag}
 									</Link>
@@ -92,12 +92,12 @@ export function NoticeDetail() {
 						<nav className="notice-toc" aria-label="この記事の目次">
 							<b>この記事の内容</b>
 							<ul>
-								{headings.map((heading, index) => (
+								{headings.map((heading) => (
 									<li
 										className={heading.level === 3 ? "nested" : ""}
-										key={heading.id + "-" + index}
+										key={`${heading.id}`}
 									>
-										<a href={"#" + heading.id}>{heading.title}</a>
+										<a href={`#${heading.id}`}>{heading.title}</a>
 									</li>
 								))}
 							</ul>
