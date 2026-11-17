@@ -31,7 +31,6 @@ import CopyEmail from "@/components/common/CopyEmail";
 import { Audit } from "@/features/audit/Audit";
 import { Dashboard } from "@/features/dashboard/Dashboard";
 import { Nodes } from "@/features/nodes/Nodes";
-import { AdminNotices } from "@/features/notices/AdminNotices";
 import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 import { PreferencePage } from "@/features/preference/PreferencePage";
 import PublicSite from "@/features/public/PublicSite";
@@ -148,7 +147,6 @@ function App() {
 	}
 	const links = [
 		["/admin", "概要", LayoutDashboard],
-		["/admin/notices", "運営からのお知らせ", Bell],
 		["/admin/review", "保全レビュー", ClipboardList],
 		["/admin/url-collector", "URL自動収集", Globe],
 		["/admin/nodes", "保存ノード", HardDrive],
@@ -382,7 +380,6 @@ function App() {
 					</header>
 					<div className="page">
 						<Routes>
-							<Route path="/admin/notices" element={<AdminNotices />} />
 							<Route
 								path="/admin"
 								element={

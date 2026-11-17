@@ -1,11 +1,12 @@
 import react from "@vitejs/plugin-react";
 import vike from "vike/plugin";
 import { defineConfig } from "vite";
+import { publicNoticesPlugin } from "./plugins/publicNotices";
 
 const allowedHosts = ["uploaderjp.udonya.moe"];
 
 export default defineConfig({
-	plugins: [react(), vike()],
+	plugins: [publicNoticesPlugin(), react(), vike()],
 	server: {
 		host: "0.0.0.0",
 		port: 5173,

@@ -1,4 +1,6 @@
+import noticesSource from "virtual:public-notices";
 import type { PageContextServer } from "vike/types";
+import { parseNotice } from "../src/features/public/pages/notice/parseNotice";
 
 const SITE_NAME = "uploader.jp 保全プロジェクト";
 const SITE_URL = "https://uploaderjp.udonya.moe";
@@ -21,6 +23,7 @@ type ArtifactResponse = {
 
 function escapeMetadata(value: unknown, fallback: string): string {
 	if (typeof value !== "string") return fallback;
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: これは構わない
 	const normalized = value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
 	return normalized || fallback;
 }
@@ -88,6 +91,29 @@ export async function data(pageContext: PageContextServer) {
 		metadata.title = `${staticPage.title} - ${SITE_NAME}`;
 		ogpTitle = staticPage.title;
 		metadata.description = staticPage.description;
+	}
+
+	const noticeMatch = pathname.match(/^\/notices\/([^/]+)\/?$/);
+	if (noticeMatch) {
+		let slug = noticeMatch[1];
+		try {
+			slug = decodeURIComponent(slug);
+		} catch {
+			// Malformed URL encoding cannot match a notice slug.
+		}
+		const notice = noticesSource
+			.map(({ path, source }) => parseNotice(path, source))
+			.find((item) => item?.slug === slug);
+		if (notice) {
+			const title = escapeMetadata(notice.title, "お知らせ");
+			metadata.title = `${title} - お知らせ - ${SITE_NAME}`;
+			ogpTitle = title;
+			metadata.description = escapeMetadata(
+				notice.summary,
+				DEFAULT_DESCRIPTION,
+			);
+			metadata.type = "article";
+		}
 	}
 
 	const artifactMatch = pathname.match(/^\/artifacts\/([^/]+)\/?$/);

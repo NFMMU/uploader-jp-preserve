@@ -7,10 +7,12 @@ import {
 	PrivacyPage,
 	TermsPage,
 } from "./legal/LegalPages";
+import { NoticeDetail } from "./pages/NoticeDetail";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
 import { PublicFileDetail } from "./pages/PublicFileDetail";
+import { PublicNotices } from "./pages/PublicNotices";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
 import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";
@@ -22,6 +24,9 @@ function PublicSite() {
 			<main className="public-main">
 				<Routes>
 					<Route path="/" element={<PublicCatalog />} />
+					<Route path="/notices" element={<PublicNotices />} />
+					<Route path="/notices/:id" element={<NoticeDetail />} />
+					<Route path="/notice" element={<Navigate to="/notices" replace />} />
 					<Route path="/artifacts/:id" element={<PublicArtifactDetail />} />
 					<Route path="/files/:id" element={<PublicFileDetail />} />
 					<Route path="/requests" element={<PublicRequest />} />
@@ -29,16 +34,11 @@ function PublicSite() {
 						path="/preservation-requests"
 						element={<PreservationRequest />}
 					/>
-					{/*<Route
-						path="/redistribution-support"
-						element={<RedistributionAssistancePage mode="redistribution" />}
-					/>*/}
 					<Route
 						path="/publisher-support"
 						element={<RedistributionAssistancePage mode="publisher" />}
 					/>
 					<Route path="/relocation-info" element={<RelocationInfoRequest />} />
-					{/*<Route path="/participate" element={<NodeParticipationRequest />} />*/}
 					<Route path="/terms" element={<TermsPage />} />
 					<Route path="/disclaimer" element={<DisclaimerPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
@@ -46,7 +46,6 @@ function PublicSite() {
 						path="/preservation-policy"
 						element={<PreservationPolicyPage />}
 					/>
-					<Route path="/terms" element={<TermsPage />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</main>
@@ -57,11 +56,11 @@ function PublicSite() {
 					<span>© 2026 全国もちもちうどん連盟</span>
 				</div>
 				<div className="footer-right">
+					<Link to="/notices">お知らせ</Link>
 					<Link to="/terms">利用規約</Link>
 					<Link to="/privacy">プライバシー・ポリシー</Link>
 					<Link to="/disclaimer">免責事項</Link>
-					<Link to={"/preservation-policy"}>保全・再配布審査ポリシー</Link>
-					{/*<Link to="/participate">ストレージノード参加</Link>*/}
+					<Link to="/preservation-policy">保全・再配布審査ポリシー</Link>
 					<a href="mailto:uploaderjp-archive@udonya.moe">お問い合わせ</a>
 					<CopyEmail email="uploaderjp-archive@udonya.moe" />
 				</div>
