@@ -110,7 +110,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 						</button>
 					))}
 				</div>
-				<span className="result-count">{items.length} 件</span>
+				<span className="result-count">全 {total.toLocaleString()} 件</span>
 			</div>
 			<section className="panel table-panel">
 				<Table
