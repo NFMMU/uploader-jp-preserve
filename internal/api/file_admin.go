@@ -220,16 +220,18 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"changed": changed, "count": len(changed), "action": req.Action})
 }
 
-func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.PublicRequest, actorID, reason string) error {
-	if request.RequestType != "deletion" || request.Status != "accepted" {
-		return errors.New("file deletion requires an accepted deletion request")
-	}
-	if request.FileObjectID != nil {
-		if *request.FileObjectID != file.ID {
-			return errors.New("deletion request targets a different file")
+func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request *model.PublicRequest, actorID, reason string) error {
+	if request != nil {
+		if request.RequestType != "deletion" || request.Status != "accepted" {
+			return errors.New("file deletion requires an accepted deletion request")
 		}
-	} else if request.ArtifactID == nil || *request.ArtifactID != file.ArtifactID {
-		return errors.New("deletion request must target this file or its artifact")
+		if request.FileObjectID != nil {
+			if *request.FileObjectID != file.ID {
+				return errors.New("deletion request targets a different file")
+			}
+		} else if request.ArtifactID == nil || *request.ArtifactID != file.ArtifactID {
+			return errors.New("deletion request must target this file or its artifact")
+		}
 	}
 	if file.DeletedAt.Valid {
 		return nil
@@ -241,11 +243,11 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.Publi
 	if running > 0 {
 		return fmt.Errorf("file %s has a running preservation task; retry deletion after it finishes", file.ID)
 	}
-	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status = 'queued' AND task_type <> 'delete'", file.ID).Updates(map[string]any{"status": "failed", "last_error": "cancelled by accepted deletion request", "updated_at": time.Now().UTC()}).Error; err != nil {
+	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status = 'queued' AND task_type <> 'delete'", file.ID).Updates(map[string]any{"status": "failed", "last_error": "cancelled by deletion request", "updated_at": time.Now().UTC()}).Error; err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(map[string]any{"public_download_enabled": false, "deletion_requested_at": now}).Error; err != nil {
+	if err := tx.Model(&model.FileObject{}).Where("id = ? AND deleted_at IS NULL", file.ID).Updates(map[string]any{"public_download_enabled": false, "deletion_requested_at": now}).Error; err != nil {
 		return err
 	}
 	var placements []model.Placement
@@ -278,7 +280,10 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request model.Publi
 			return err
 		}
 	}
-	auditReason := strings.TrimSpace(reason) + " [request_id=" + request.ID + "]"
+	auditReason := strings.TrimSpace(reason)
+	if request != nil {
+		auditReason += " [request_id=" + request.ID + "]"
+	}
 	targetID := file.ID
 	entry := model.AuditLog{ActorID: &actorID, ActorLabel: "user:" + actorID, TargetType: "file_object", TargetID: &targetID, Action: "file_object.deletion.requested", Result: "success", Reason: trimOptional(&auditReason)}
 	return tx.Create(&entry).Error
