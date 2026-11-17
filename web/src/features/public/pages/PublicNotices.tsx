@@ -61,7 +61,7 @@ export function PublicNotices() {
 			/>
 			<section className="public-notices" aria-label="お知らせ一覧">
 				{tags.length > 0 && (
-					<div className="notice-tag-filters" aria-label="タグで絞り込む">
+					<div className="notice-tag-filters">
 						<button
 							className={!selectedTag ? "active" : ""}
 							onClick={() => selectTag("")}
