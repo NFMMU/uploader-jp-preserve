@@ -33,7 +33,7 @@ export function AdminNotices() {
 		<>
 			<Heading
 				eyebrow="INFORMATION"
-				title="管理者からのお知らせ"
+				title="プロジェクト事務局からのお知らせ"
 				desc="運営からの重要なお知らせ、メンテナンス情報、更新内容を掲載します。"
 			/>
 			<div className="admin-notices">
@@ -88,9 +88,6 @@ export function AdminNotices() {
 						<p>このカテゴリのお知らせはありません。</p>
 					</div>
 				)}
-				<p className="admin-notices-footnote">
-					お知らせは運営リポジトリで管理されています。内容に関する問い合わせは運営までご連絡ください。
-				</p>
 			</div>
 		</>
 	);

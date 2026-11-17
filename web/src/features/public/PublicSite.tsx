@@ -14,6 +14,7 @@ import { PublicFileDetail } from "./pages/PublicFileDetail";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
 import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";
+import { AdminNotices } from "features/notices/AdminNotices";
 
 function PublicSite() {
 	return (
@@ -22,6 +23,7 @@ function PublicSite() {
 			<main className="public-main">
 				<Routes>
 					<Route path="/" element={<PublicCatalog />} />
+					<Route path="/notice" element={<AdminNotices />} />
 					<Route path="/artifacts/:id" element={<PublicArtifactDetail />} />
 					<Route path="/files/:id" element={<PublicFileDetail />} />
 					<Route path="/requests" element={<PublicRequest />} />
