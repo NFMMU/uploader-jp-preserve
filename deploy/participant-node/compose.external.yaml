@@ -1,6 +1,6 @@
 services:
   node-agent-init:
-    image: alpine:3.22
+    image: alpine:3.24
     user: "0:0"
     environment:
       NODE_DATA_DIR: ${NODE_DATA_DIR:-./data}
