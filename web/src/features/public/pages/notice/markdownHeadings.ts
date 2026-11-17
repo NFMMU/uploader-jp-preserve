@@ -1,7 +1,7 @@
 import type { Root } from "mdast";
 import { toString as mdToString } from "mdast-util-to-string";
 import remarkParse from "remark-parse";
-import { type Transformer, unified } from "unified";
+import { type Plugin, unified } from "unified";
 
 export type NoticeHeading = {
 	level: number;
@@ -51,8 +51,6 @@ export function parseNoticeHeadings(markdown: string): NoticeHeading[] {
 	return visitHeadings(tree, true);
 }
 
-export function remarkNoticeHeadingIds(): Transformer<Root> {
-	return (tree: Root) => {
-		visitHeadings(tree, false);
-	};
-}
+export const remarkNoticeHeadingIds: Plugin<[], Root> = () => (tree) => {
+	visitHeadings(tree, false);
+};
