@@ -12,18 +12,17 @@ async function loadFont(path) {
 	return readFile(fileURLToPath(new URL(path, FONT_DIR)));
 }
 
-const [notoSansJP, notoSansJPbold, roboto, notoColorMoji] = await Promise.all([
-	loadFont(
-		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2",
-	),
-	loadFont(
-		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-700-normal.woff2",
-	),
-	loadFont("@fontsource/roboto/files/roboto-latin-400-normal.woff2"),
-	loadFont(
-		"@fontsource/noto-color-emoji/files/noto-color-emoji-emoji-400-normal.woff2",
-	),
-]);
+const [notoSansJP, notoSansJPbold, notoSansGreek, notoSansGreekBold] =
+	await Promise.all([
+		loadFont(
+			"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2",
+		),
+		loadFont(
+			"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-700-normal.woff2",
+		),
+		loadFont("@fontsource/noto-sans/files/noto-sans-greek-400-normal.woff2"),
+		loadFont("@fontsource/noto-sans/files/noto-sans-greek-700-normal.woff2"),
+	]);
 
 const cache = new Map();
 const MAX_CACHE = 100;
@@ -130,7 +129,7 @@ async function generate(title, description) {
 			overflow: "hidden",
 			background:
 				"linear-gradient(106deg, #e8f1ff 0%, #f5f8ff 65%, #f5f4df 65%, #fbf9e9 100%)",
-			fontFamily: '"Noto Sans JP", "Roboto", "Noto Color Moji"',
+			fontFamily: '"Noto Sans JP", "Noto Sans Greek"',
 			color: "#111111",
 		},
 		[
@@ -237,18 +236,42 @@ async function generate(title, description) {
 				style: "normal",
 			},
 			{
-				name: "Roboto",
-				data: roboto,
+				name: "Noto Sans Greek",
+				data: notoSansGreek,
 				weight: 400,
 				style: "normal",
 			},
 			{
-				name: "Noto Color Moji",
-				data: notoColorMoji,
-				weight: 400,
+				name: "Noto Sans Greek",
+				data: notoSansGreekBold,
+				weight: 700,
 				style: "normal",
 			},
 		],
+		loadAdditionalAsset: async (code, segment) => {
+			if (code !== "emoji") {
+				return undefined;
+			}
+
+			// UnicodeコードポイントからTwemojiのファイル名を生成
+			const codePoints = [...segment]
+				.map((char) => char.codePointAt(0).toString(16))
+				.join("-")
+				.replace(/-fe0f/g, "");
+
+			const emojiUrl = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codePoints}.svg`;
+
+			const response = await fetch(emojiUrl);
+
+			if (!response.ok) {
+				console.warn(`Failed to load emoji: ${segment}`);
+				return undefined;
+			}
+
+			const svg = await response.text();
+
+			return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+		},
 	});
 
 	return sharp(Buffer.from(svg)).png().toBuffer();

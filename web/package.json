@@ -19,9 +19,8 @@
 		"format:check:local": "biome format ."
 	},
 	"dependencies": {
-		"@fontsource/noto-color-emoji": "^5.3.2",
+		"@fontsource/noto-sans": "^5.3.0",
 		"@fontsource/noto-sans-jp": "^5.3.1",
-		"@fontsource/roboto": "^5.3.0",
 		"@vitejs/plugin-react": "^6.1.2",
 		"lucide-react": "^1.63.0",
 		"react": "^19.3.1",
