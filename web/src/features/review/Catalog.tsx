@@ -455,7 +455,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	}
 
 	async function deleteSingleFile(id: string) {
-		if (!window.confirm("このファイルを各保存ノードから物理削除しますか？")) return;
+		if (!window.confirm("このファイルを各保存ノードから物理削除しますか？"))\n\t\t\treturn;
 		try {
 			await api(`/catalog/files/${encodeURIComponent(id)}`, {
 				method: "DELETE",
