@@ -401,7 +401,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 		try {
 			if (role !== "author" && action === "policy") {
-				let tmpReason = window.prompt("変更理由を入力");
+				const tmpReason = window.prompt("変更理由を入力");
 				if (tmpReason?.trim() == null) throw Error("変更理由は必須です");
 				setReason(tmpReason);
 			}
