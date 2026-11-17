@@ -1,4 +1,11 @@
-import { Archive, ArrowUpRight, Search, UserRound } from "lucide-react";
+import {
+	Archive,
+	ArrowUpRight,
+	Files,
+	FolderOpen,
+	Search,
+	UserRound,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Heading } from "@/components/common/Heading";
@@ -88,25 +95,36 @@ export function AuthorArtifacts({ api, refresh }: any) {
 				<div className="content-grid">
 					{filtered.map((artifact) => (
 						<NavLink
-							className="panel quick-card"
-							to={`/admin/artifacts/${encodeURIComponent(artifact.id)}`}
+							className="panel artifact-catalog-card"
+							to={{
+								pathname: `/admin/artifacts/${encodeURIComponent(artifact.id)}`,
+								search: query.trim()
+									? `?q=${encodeURIComponent(query.trim())}`
+									: "",
+							}}
 							key={artifact.id}
-							aria-label={`${artifact.title || "名称未設定"}のファイル一覧を開く`}
 						>
-							<div className="quick-icon blue">
-								<Archive size={20} />
+							<div className="artifact-catalog-card-head">
+								<span className="artifact-catalog-icon">
+									<FolderOpen size={19} />
+								</span>
+								<span className="artifact-catalog-count">
+									<Files size={14} />{" "}
+									{Number(artifact.file_count || 0).toLocaleString()} ファイル
+								</span>
 							</div>
-							<div className="quick-card-content">
+							<div className="artifact-catalog-card-body">
 								<b>{artifact.title || "名称未設定"}</b>
+								<span>{artifact.creator_name || "作者不明"}</span>
+								{artifact.description && <p>{artifact.description}</p>}
 								<small>
-									<UserRound size={13} /> {artifact.creator_name || "作者不明"}
-								</small>
-								{artifact.description && <small>{artifact.description}</small>}
-								<small className="muted">
 									<code>{artifact.id}</code>
 								</small>
 							</div>
-							<ArrowUpRight size={18} />
+							<div className="artifact-catalog-card-footer">
+								<span>作品内のファイルを管理</span>
+								<ArrowUpRight size={17} />
+							</div>
 						</NavLink>
 					))}
 				</div>
