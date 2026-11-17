@@ -90,7 +90,7 @@ export function NoticeDetail() {
 					)}
 					<div className="notice-article-body">
 						<ReactMarkdown
-							remarkPlugins={[remarkNoticeHeadingIds()]}
+							remarkPlugins={[remarkNoticeHeadingIds]}
 							components={{
 								a: ({ href, children }) => (
 									<a
