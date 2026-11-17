@@ -348,17 +348,7 @@ func (s *Server) deleteNodes(c *gin.Context) {
 func (s *Server) listTasks(c *gin.Context) {
 	page, limit, isAll := pagination(c)
 
-	query := s.db.WithContext(c.Request.Context()).
-		Model(&model.Task{}).
-		Where(`NOT (
-            tasks.status = 'failed'
-            AND tasks.task_type IN ('source_fetch', 'store')
-            AND EXISTS (
-                SELECT 1 FROM file_objects
-                WHERE file_objects.id = tasks.file_object_id
-                AND file_objects.preservation_status = 'verified'
-            )
-        )`)
+	query := s.db.WithContext(c.Request.Context()).Model(&model.Task{})
 
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		query = query.Where("tasks.status = ?", status)
