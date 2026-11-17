@@ -17,6 +17,8 @@ import { Modal } from "@/components/common/Modal";
 import { Pagination } from "@/components/common/Pagination";
 import { Table } from "@/components/common/Table";
 import { FileRow } from "@/components/files/FileRow";
+import { ArtifactMetadataModal } from "@/features/review/ArtifactMetadataModal";
+import { FileMetadataModal } from "@/features/review/FileMetadataModal";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
@@ -258,18 +260,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [modal, setModal] = useState(false);
 	const [detail, setDetail] = useState<Obj | null>(null);
 	const [metadata, setMetadata] = useState<Obj | null>(null);
-	const [metaForm, setMetaForm] = useState({
-		artifact_title: "",
-		creator_name: "",
-		artifact_source_url: "",
-		artifact_description: "",
-		original_filename: "",
-		media_type: "",
-		source_url: "",
-		file_description: "",
-	});
 	const [artifact, setArtifact] = useState<Obj | null>(null);
 	const [artifactRecord, setArtifactRecord] = useState<Obj | null>(null);
+	const [artifactMetadataOpen, setArtifactMetadataOpen] = useState(false);
 	const [pendingFileId, setPendingFileId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [upload, setUpload] = useState<File | null>(null);
@@ -397,59 +390,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
-		setMetaForm({
-			artifact_title: x.artifact_title || "",
-			creator_name: x.creator_name || "",
-			artifact_source_url: x.artifact_source_url || "",
-			artifact_description: x.artifact_description || "",
-			original_filename: x.original_filename || "",
-			media_type: x.media_type || "",
-			source_url: x.source_url || "",
-			file_description: x.description || "",
-		});
 	}
-	async function saveMetadata(e: React.FormEvent) {
-		e.preventDefault();
-		if (!metadata) return;
-		const reason = window.prompt("メタデータの変更理由を入力してください");
-		if (!reason || reason.trim().length < 3) return;
-		if (Array.from(metaForm.file_description).length > 20_000) {
-			notify("ファイルの説明は20,000文字以内で入力してください");
-			return;
-		}
-		setBusy(true);
-		try {
-			await api(`/catalog/artifacts/${metadata.artifact_id}`, {
-				method: "PATCH",
-				body: JSON.stringify({
-					title: metaForm.artifact_title,
-					creator_name: metaForm.creator_name,
-					source_url: metaForm.artifact_source_url,
-					description: metaForm.artifact_description,
-					reason: reason.trim(),
-				}),
-			});
-			await api(`/catalog/files/${metadata.id}/metadata`, {
-				method: "PATCH",
-				body: JSON.stringify({
-					original_filename: metaForm.original_filename,
-					media_type: metaForm.media_type,
-					source_url: metaForm.source_url,
-					...(metaForm.file_description !== (metadata.description || "") && {
-						description: metaForm.file_description,
-					}),
-					reason: reason.trim(),
-				}),
-			});
-			notify("作品・ファイルのメタデータを更新しました");
-			setMetadata(null);
-			setRefreshDummy((x) => x + 1);
-		} catch (e) {
-			notify((e as Error).message);
-		} finally {
-			setBusy(false);
-		}
-	}
+
 	async function runBulk(action: "policy" | "publication", extra: Obj = {}) {
 		if (selectedIDs.length === 0) {
 			notify("先にファイルを選択してください");
@@ -801,6 +743,16 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								onClick={() => downloadExport("csv", notify)}
 							>
 								<Download size={16} /> CSV出力
+							</button>
+						)}
+						{linkedArtifactID && artifactRecord && role !== "viewer" && (
+							<button
+								className="secondary"
+								type="button"
+								disabled={busy}
+								onClick={() => setArtifactMetadataOpen(true)}
+							>
+								作品情報を編集
 							</button>
 						)}
 						{linkedArtifactID && role === "admin" && artifactRecord && (
@@ -1430,118 +1382,38 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				</Modal>
 			)}
 			{metadata && (
-				<Modal
-					title="作品・ファイルのメタデータ"
-					close={() => setMetadata(null)}
-				>
-					<form className="form-stack" onSubmit={saveMetadata}>
-						<label>
-							作品名 *
-							<input
-								required
-								value={metaForm.artifact_title}
-								onChange={(e) =>
-									setMetaForm({ ...metaForm, artifact_title: e.target.value })
-								}
-							/>
-						</label>
-						<label>
-							作者・配布者
-							<input
-								value={metaForm.creator_name}
-								onChange={(e) =>
-									setMetaForm({ ...metaForm, creator_name: e.target.value })
-								}
-							/>
-						</label>
-						<label>
-							作品の元ページURL *
-							<input
-								required
-								type="url"
-								value={metaForm.artifact_source_url}
-								onChange={(e) =>
-									setMetaForm({
-										...metaForm,
-										artifact_source_url: e.target.value,
-									})
-								}
-							/>
-						</label>
-						<label>
-							作品の説明
-							<textarea
-								rows={3}
-								value={metaForm.artifact_description}
-								onChange={(e) =>
-									setMetaForm({
-										...metaForm,
-										artifact_description: e.target.value,
-									})
-								}
-							/>
-						</label>
-						<div className="form-divider" />
-						<label>
-							ファイル名 *
-							<input
-								required
-								value={metaForm.original_filename}
-								onChange={(e) =>
-									setMetaForm({
-										...metaForm,
-										original_filename: e.target.value,
-									})
-								}
-							/>
-						</label>
-						<label>
-							ファイルの説明
-							<textarea
-								rows={3}
-								value={metaForm.file_description || ""}
-								onChange={(e) =>
-									setMetaForm({ ...metaForm, file_description: e.target.value })
-								}
-							/>
-						</label>
-						<label>
-							MIME タイプ
-							<input
-								value={metaForm.media_type}
-								onChange={(e) =>
-									setMetaForm({ ...metaForm, media_type: e.target.value })
-								}
-								placeholder="application/zip"
-							/>
-						</label>
-						<label>
-							ファイル取得元URL
-							<input
-								type="url"
-								value={metaForm.source_url}
-								onChange={(e) =>
-									setMetaForm({ ...metaForm, source_url: e.target.value })
-								}
-							/>
-						</label>
-						<p className="muted">
-							作者・作品名は作品レコードを更新するため、同じ作品に属するファイルの表示にも反映されます。
-						</p>
-						<div className="modal-actions">
-							<button
-								type="button"
-								className="secondary"
-								onClick={() => setMetadata(null)}
-							>
-								キャンセル
-							</button>
-							<button className="primary" disabled={busy}>
-								{busy ? "保存中…" : "メタデータを保存"}
-							</button>
-						</div>
-					</form>
-				</Modal>
+				<FileMetadataModal
+					file={metadata}
+					api={api}
+					notify={notify}
+					busy={busy}
+					setBusy={setBusy}
+					close={() => {
+						if (busy) return;
+						setMetadata(null);
+					}}
+					onSaved={() => {
+						setMetadata(null);
+						setRefreshDummy((x) => x + 1);
+					}}
+				/>
+			)}
+			{artifactMetadataOpen && artifactRecord && (
+				<ArtifactMetadataModal
+					artifact={artifactRecord}
+					api={api}
+					notify={notify}
+					busy={busy}
+					setBusy={setBusy}
+					close={() => {
+						if (busy) return;
+						setArtifactMetadataOpen(false);
+					}}
+					onSaved={() => {
+						setArtifactMetadataOpen(false);
+						setRefreshDummy((x) => x + 1);
+					}}
+				/>
 			)}
 		</>
 	);
