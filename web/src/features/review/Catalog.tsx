@@ -288,6 +288,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	});
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
+	const [reason, setReason] = useState("");
 	let filePath = `/catalog/files?page=${page}&limit=${limit}`;
 	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
 	if (preservationFilter)
@@ -397,8 +398,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			notify("先にファイルを選択してください");
 			return;
 		}
-		const reason = window.prompt("一括変更の理由を入力してください");
-		if (!reason || reason.trim().length < 3) return;
 		try {
 			const body: Obj = {
 				file_ids: selectedIDs,
@@ -1361,6 +1360,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						<p className="muted">
 							公開には再配布可の確認、検証済み状態、オンライン保存先が必要です。
 						</p>
+						<label>
+							{`変更理由${role !== "author" ? "(任意)" : null}`}
+							<input
+								type={"text"}
+								value={reason}
+								required={role !== "author"}
+								onChange={(e) => setReason(e.target.value)}
+							/>
+						</label>
 						<div className="modal-actions">
 							<button className="secondary" onClick={() => setDetail(null)}>
 								閉じる

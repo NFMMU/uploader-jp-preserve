@@ -363,7 +363,7 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 		Representative       *string `json:"representative" binding:"omitempty,uuid"`
 		EvidenceURL          *string `json:"evidence_url" binding:"omitempty,max=4096"`
 		EvidenceNote         *string `json:"evidence_note" binding:"omitempty,max=20000"`
-		Reason               string  `json:"reason" binding:"required,min=3,max=2000"`
+		Reason               *string `json:"reason" binding:"omitempty,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || !redistributionPolicies[req.RedistributionPolicy] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid redistribution_policy and reason are required"})
@@ -431,14 +431,14 @@ func (s *Server) updateFilePolicy(c *gin.Context) {
 	if req.RedistributionPolicy != "allowed" {
 		file.PublicDownloadEnabled = false
 	}
-	s.audit(c, &actor, "file_object", file.ID, "file_object.policy.update", "success", &req.Reason)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.policy.update", "success", req.Reason)
 	c.JSON(http.StatusOK, gin.H{"file": file, "policy": req.RedistributionPolicy})
 }
 
 func (s *Server) updatePublicationFlag(c *gin.Context) {
 	var req struct {
-		Enabled *bool  `json:"enabled" binding:"required"`
-		Reason  string `json:"reason" binding:"required,min=3,max=2000"`
+		Enabled *bool   `json:"enabled" binding:"required"`
+		Reason  *string `json:"reason" binding:"omitempty,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled and reason are required"})
@@ -478,7 +478,7 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 		return
 	}
 	file.PublicDownloadEnabled = *req.Enabled
-	s.audit(c, &actor, "file_object", file.ID, "file_object.publication_flag.update", "success", &req.Reason)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.publication_flag.update", "success", req.Reason)
 	c.JSON(http.StatusOK, gin.H{"file": file})
 }
 
