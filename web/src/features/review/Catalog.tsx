@@ -426,7 +426,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (selectedIDs.length === 0) return;
 		if (
 			!window.confirm(
-				`選択した ${selectedIDs.length} 件のファイルを論理削除します。続行しますか？`,
+				`選択した ${selectedIDs.length} 件のファイルを各保存ノードから物理削除します。削除処理を開始しますか？`,
 			)
 		)
 			return;
@@ -455,7 +455,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	}
 
 	async function deleteSingleFile(id: string) {
-		if (!window.confirm("このファイルを論理削除しますか？")) return;
+		if (!window.confirm("このファイルを各保存ノードから物理削除しますか？")) return;
 		try {
 			await api(`/catalog/files/${encodeURIComponent(id)}`, {
 				method: "DELETE",
@@ -463,7 +463,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setSelectedIDs((current) =>
 				current.filter((selectedID) => selectedID !== id),
 			);
-			notify("ファイルを削除しました");
+			notify("物理削除を予約しました");
 			setRefreshDummy((x) => x + 1);
 		} catch (error) {
 			notify((error as Error).message);
