@@ -42,11 +42,11 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-			CAST(id AS TEXT) ILIKE ? OR title ILIKE ? OR COALESCE(creator_name, '') ILIKE ? OR source_url ILIKE ?
+			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
 			OR id IN (
 				SELECT artifact_id FROM file_objects
 				WHERE deleted_at IS NULL
-				AND (CAST(id AS TEXT) ILIKE ? OR original_filename ILIKE ? OR COALESCE(sha256, '') ILIKE ?)
+				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
 			)
 		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
@@ -225,15 +225,15 @@ func (s *Server) listFiles(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-			CAST(id AS TEXT) ILIKE ?
-			OR original_filename ILIKE ?
-			OR COALESCE(sha256, '') ILIKE ?
+			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
+			OR original_filename COLLATE "case_insensitive" LIKE ?
+			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
 			OR artifact_id IN (
 				SELECT id FROM artifacts
-				WHERE CAST(id AS TEXT) ILIKE ?
-				OR title ILIKE ?
-				OR COALESCE(creator_name, '') ILIKE ?
-				OR source_url ILIKE ?
+				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
+				OR title COLLATE "case_insensitive" LIKE ?
+				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
+				OR source_url COLLATE "case_insensitive" LIKE ?
 			)
 		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
