@@ -39,7 +39,7 @@ export function AuthorArtifacts({ api, refresh }: any) {
 				title="割り当てられた作品"
 				desc="担当する作品を選択すると、作品情報の編集やファイルの管理を行えます。"
 			/>
-			<section className="panel form-stack" style={{ padding: 18, gap: 14 }}>
+			<section className="panel form-stack" style={{ padding: 18, gap: 14, marginBottom: 4 }}>
 				<div className="filter-bar" style={{ margin: 0 }}>
 					<div className="search-box" style={{ flex: 1 }}>
 						<Search size={17} />
