@@ -37,7 +37,7 @@ export function AdminNotices() {
 				desc="運営からの重要なお知らせ、メンテナンス情報、更新内容を掲載します。"
 			/>
 			<div className="admin-notices">
-				<div className="notice-toolbar" aria-label="お知らせのカテゴリ">
+				<div className="notice-toolbar">
 					{categories.map((item) => (
 						<button
 							className={category === item ? "active" : ""}
