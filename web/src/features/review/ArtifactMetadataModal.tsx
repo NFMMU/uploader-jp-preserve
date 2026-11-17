@@ -22,14 +22,14 @@ export function ArtifactMetadataModal({
 	setBusy,
 	close,
 	onSaved,
-	isAuthor
+	isAuthor,
 }: Props) {
 	const [form, setForm] = useState({
 		title: artifact.title || "",
 		creator_name: artifact.creator_name || "",
 		source_url: artifact.source_url || "",
 		description: artifact.description || "",
-		reason: ""
+		reason: "",
 	});
 
 	async function save(event: React.FormEvent) {
@@ -38,9 +38,9 @@ export function ArtifactMetadataModal({
 		try {
 			await api(`/catalog/artifacts/${artifact.id}`, {
 				method: "PATCH",
-				body: JSON.stringify({ ...form,  }),
+				body: JSON.stringify({ ...form }),
 			});
-			setForm({...form, reason:""})
+			setForm({ ...form, reason: "" });
 			notify("作品のメタデータを更新しました");
 			onSaved();
 		} catch (error) {
