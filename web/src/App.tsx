@@ -1,6 +1,7 @@
 import OidcLoginCard from "features/oidc/LoginCard";
 import {
 	Archive,
+	Bell,
 	ClipboardList,
 	Globe,
 	HardDrive,
@@ -30,6 +31,7 @@ import CopyEmail from "@/components/common/CopyEmail";
 import { Audit } from "@/features/audit/Audit";
 import { Dashboard } from "@/features/dashboard/Dashboard";
 import { Nodes } from "@/features/nodes/Nodes";
+import { AdminNotices } from "@/features/notices/AdminNotices";
 import { ProvidersPage } from "@/features/oidc/ProvidersPage";
 import { PreferencePage } from "@/features/preference/PreferencePage";
 import PublicSite from "@/features/public/PublicSite";
@@ -75,9 +77,10 @@ function App() {
 					await api("/delete-cookie");
 				} finally {
 					setUser(null);
-					if (window.location.pathname != "/admin/login") {
+					if (window.location.pathname !== "/admin/login") {
 						nav("/admin/login");
 					}
+					// biome-ignore lint/correctness/noUnsafeFinally: 意図した動作
 					throw new Error(data.error || data.message || `HTTP ${r.status}`);
 				}
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
@@ -145,6 +148,7 @@ function App() {
 	}
 	const links = [
 		["/admin", "概要", LayoutDashboard],
+		["/admin/notices", "運営からのお知らせ", Bell],
 		["/admin/review", "保全レビュー", ClipboardList],
 		["/admin/url-collector", "URL自動収集", Globe],
 		["/admin/nodes", "保存ノード", HardDrive],
@@ -194,6 +198,7 @@ function App() {
 		return false;
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 動的関数をuseEffectに含めない
 	useEffect(() => {
 		if (!loading || !loc.pathname.startsWith("/admin")) return;
 		(async () => {
@@ -272,7 +277,7 @@ function App() {
 		}
 		return (
 			<div className="app-shell">
-				<aside className={"sidebar " + (mobile ? "open" : "")}>
+				<aside className={`sidebar ${mobile ? "open" : ""}`}>
 					<div className="brand">
 						<div className="brand-icon">
 							<Archive />
@@ -377,6 +382,7 @@ function App() {
 					</header>
 					<div className="page">
 						<Routes>
+							<Route path="/admin/notices" element={<AdminNotices />} />
 							<Route
 								path="/admin"
 								element={

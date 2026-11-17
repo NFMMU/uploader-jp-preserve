@@ -32,7 +32,8 @@
 		"typescript": "^7.0.2",
 		"vike": "^0.4.268",
 		"vike-react": "^0.6.32",
-		"vite": "^8.3.5"
+		"vite": "^8.3.5",
+		"yaml": "^2.9.1"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.7",
