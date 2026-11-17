@@ -54,7 +54,7 @@ export function NoticeDetail() {
 	return (
 		<>
 			<PageMeta
-				title={`${notice.title} | お知らせ | uploader.jp保全プロジェクト`}
+				title={`${notice.title} - お知らせ`}
 				description={notice.summary}
 			/>
 			<div className="notice-detail-page">
