@@ -77,9 +77,10 @@ function App() {
 					await api("/delete-cookie");
 				} finally {
 					setUser(null);
-					if (window.location.pathname != "/admin/login") {
+					if (window.location.pathname !== "/admin/login") {
 						nav("/admin/login");
 					}
+					// biome-ignore lint/correctness/noUnsafeFinally: 意図した動作
 					throw new Error(data.error || data.message || `HTTP ${r.status}`);
 				}
 			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
@@ -197,6 +198,7 @@ function App() {
 		return false;
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 動的関数をuseEffectに含めない
 	useEffect(() => {
 		if (!loading || !loc.pathname.startsWith("/admin")) return;
 		(async () => {
@@ -275,7 +277,7 @@ function App() {
 		}
 		return (
 			<div className="app-shell">
-				<aside className={"sidebar " + (mobile ? "open" : "")}>
+				<aside className={`sidebar ${mobile ? "open" : ""}`}>
 					<div className="brand">
 						<div className="brand-icon">
 							<Archive />

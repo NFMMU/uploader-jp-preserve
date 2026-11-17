@@ -21,5 +21,7 @@
   },
   "[typescriptreact]": {
     "editor.defaultFormatter": "biomejs.biome"
-  }
+  },
+  "biome.lsp.bin": "./web/node_modules/.bin/biome",
+  "biome.configurationPath": "web/biome.json"
 }
