@@ -3,7 +3,10 @@ import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Heading } from "@/components/common/Heading";
 
-import { type Notice, parseNotice } from "./parseNotice";
+import {
+	type Notice,
+	parseNotice,
+} from "features/public/pages/notice/parseNotice";
 
 const sources = import.meta.glob("../../content/admin-notices/*.md", {
 	eager: true,

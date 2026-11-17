@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseNotice } from "./parseNotice.ts";
+import { parseNotice } from "../notice/parseNotice.ts";
 
 const notice = (metadata, body = "本文") =>
 	parseNotice("/notices/example.md", `---\n${metadata}\n---\n\n${body}`);

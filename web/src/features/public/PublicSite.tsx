@@ -14,7 +14,7 @@ import { PublicFileDetail } from "./pages/PublicFileDetail";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
 import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";
-import { AdminNotices } from "features/notices/AdminNotices";
+import { AdminNotices } from "features/public/pages/PublicNotices";
 
 function PublicSite() {
 	return (
