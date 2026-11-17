@@ -187,9 +187,11 @@ export async function data(pageContext: PageContextServer) {
 			console.error("Failed to fetch public file metadata for SSR:", error);
 		}
 	}
-	metadata.image =
-		`${SITE_URL}/og.png?title=${encodeURIComponent(ogpTitle)}` +
-		`&description=${encodeURIComponent(metadata.description)}`;
+	const params = new URLSearchParams({
+		title: ogpTitle,
+		description: metadata.description,
+	});
+	metadata.image = `${SITE_URL}/og.png?${params.toString()}`;
 
 	return { metadata };
 }
