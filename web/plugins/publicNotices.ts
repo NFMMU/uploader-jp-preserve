@@ -6,7 +6,7 @@ import type { Plugin } from "vite";
 const publicNoticesId = "virtual:public-notices";
 const resolvedPublicNoticesId = "\0" + publicNoticesId;
 
-function isPublished(source: string): boolean {
+export function isPublished(source: string): boolean {
 	const match = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
 	if (!match) return false;
 	try {
