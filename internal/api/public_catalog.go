@@ -57,11 +57,11 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
 		query = query.Where(`(
-			artifacts.title ILIKE ? OR COALESCE(artifacts.creator_name, '') ILIKE ?
-			OR COALESCE(artifacts.description, '') ILIKE ? OR artifacts.source_url ILIKE ?
+			artifacts.title COLLATE "case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE "case_insensitive" LIKE ?
+			OR COALESCE(artifacts.description, '') COLLATE "case_insensitive" LIKE ? OR artifacts.source_url COLLATE "case_insensitive" LIKE ?
 			OR EXISTS (
 				SELECT 1 FROM file_objects f
-				WHERE f.artifact_id = artifacts.id AND f.original_filename ILIKE ?
+				WHERE f.artifact_id = artifacts.id AND f.original_filename COLLATE "case_insensitive" LIKE ?
 				  AND f.deleted_at IS NULL
 				  AND f.public_download_enabled = TRUE AND f.redistribution_policy = 'allowed'
 				  AND f.preservation_status = 'verified' AND f.sha256 ~ '^[0-9a-fA-F]{64}$'
