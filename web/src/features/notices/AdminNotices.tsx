@@ -83,7 +83,7 @@ export function AdminNotices() {
 						))}
 					</div>
 				) : (
-					<div className="admin-notices-empty">
+					<div className="admin-notice-empty">
 						<Bell size={22} />
 						<p>このカテゴリのお知らせはありません。</p>
 					</div>
