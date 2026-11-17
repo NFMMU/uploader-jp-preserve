@@ -23,6 +23,7 @@ type ArtifactResponse = {
 
 function escapeMetadata(value: unknown, fallback: string): string {
 	if (typeof value !== "string") return fallback;
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: これは構わない
 	const normalized = value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
 	return normalized || fallback;
 }
