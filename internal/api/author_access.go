@@ -47,7 +47,7 @@ func (s *Server) requireAuthorFileArtifactAccess() gin.HandlerFunc {
 		var file model.FileObject
 		if err := s.db.WithContext(c.Request.Context()).
 			Select("id", "artifact_id").
-			First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+			First(&file, "id = ? AND deleted_at IS NULL", c.Param("id")).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "file object not found"})
 			} else {
@@ -109,7 +109,7 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+			First(&file, "id = ? AND deleted_at IS NULL", c.Param("id")).Error; err != nil {
 			return err
 		}
 		if actor.Role == "author" {
