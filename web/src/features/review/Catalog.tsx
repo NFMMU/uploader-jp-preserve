@@ -289,6 +289,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
 	const [reason, setReason] = useState("");
+
 	let filePath = `/catalog/files?page=${page}&limit=${limit}`;
 	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
 	if (preservationFilter)
@@ -399,6 +400,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			return;
 		}
 		try {
+			if (role !== "author" && action === "policy") {
+				let tmpReason = window.prompt("変更理由を入力");
+				if (tmpReason?.trim() == null) throw Error("変更理由は必須です");
+				setReason(tmpReason);
+			}
 			const body: Obj = {
 				file_ids: selectedIDs,
 				action,

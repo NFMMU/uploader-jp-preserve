@@ -133,7 +133,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 		Action               string   `json:"action" binding:"required,oneof=policy publication"`
 		RedistributionPolicy string   `json:"redistribution_policy"`
 		Enabled              *bool    `json:"enabled"`
-		Reason               string   `json:"reason" binding:"required,min=3,max=2000"`
+		Reason               *string  `json:"reason" binding:"omitempty,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bulk action payload"})
@@ -215,7 +215,7 @@ func (s *Server) bulkFileAction(c *gin.Context) {
 		return
 	}
 	for _, id := range changed {
-		s.audit(c, &actor, "file_object", id, "file_object.bulk."+req.Action, "success", &req.Reason)
+		s.audit(c, &actor, "file_object", id, "file_object.bulk."+req.Action, "success", req.Reason)
 	}
 	c.JSON(http.StatusOK, gin.H{"changed": changed, "count": len(changed), "action": req.Action})
 }
