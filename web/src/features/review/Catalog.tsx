@@ -682,6 +682,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			}
 			notify("公開ポリシーを更新しました");
 			setDetail(null);
+			setReason("");
 			setRefreshDummy((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -1404,6 +1405,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						setMetadata(null);
 						setRefreshDummy((x) => x + 1);
 					}}
+					isAuthor={role === "author"}
 				/>
 			)}
 			{artifactMetadataOpen && artifactRecord && (
@@ -1421,6 +1423,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						setArtifactMetadataOpen(false);
 						setRefreshDummy((x) => x + 1);
 					}}
+					isAuthor={role === "author"}
 				/>
 			)}
 		</>

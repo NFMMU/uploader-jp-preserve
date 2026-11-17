@@ -11,6 +11,7 @@ type Props = {
 	setBusy: (busy: boolean) => void;
 	close: () => void;
 	onSaved: () => void;
+	isAuthor: boolean;
 };
 
 export function ArtifactMetadataModal({
@@ -21,24 +22,25 @@ export function ArtifactMetadataModal({
 	setBusy,
 	close,
 	onSaved,
+	isAuthor
 }: Props) {
 	const [form, setForm] = useState({
 		title: artifact.title || "",
 		creator_name: artifact.creator_name || "",
 		source_url: artifact.source_url || "",
 		description: artifact.description || "",
+		reason: ""
 	});
 
 	async function save(event: React.FormEvent) {
 		event.preventDefault();
-		const reason = window.prompt("作品メタデータの変更理由を入力してください");
-		if (!reason || reason.trim().length < 3) return;
 		setBusy(true);
 		try {
 			await api(`/catalog/artifacts/${artifact.id}`, {
 				method: "PATCH",
-				body: JSON.stringify({ ...form, reason: reason.trim() }),
+				body: JSON.stringify({ ...form,  }),
 			});
+			setForm({...form, reason:""})
 			notify("作品のメタデータを更新しました");
 			onSaved();
 		} catch (error) {
@@ -88,6 +90,17 @@ export function ArtifactMetadataModal({
 						value={form.description}
 						onChange={(event) =>
 							setForm({ ...form, description: event.target.value })
+						}
+					/>
+				</label>
+				<label>
+					{`変更理由${isAuthor ? " (任意)" : ""}`}
+					<textarea
+						rows={3}
+						value={form.reason}
+						required={!isAuthor}
+						onChange={(event) =>
+							setForm({ ...form, reason: event.target.value })
 						}
 					/>
 				</label>

@@ -11,6 +11,7 @@ type Props = {
 	setBusy: (busy: boolean) => void;
 	close: () => void;
 	onSaved: () => void;
+	isAuthor: boolean;
 };
 
 export function FileMetadataModal({
@@ -21,20 +22,18 @@ export function FileMetadataModal({
 	setBusy,
 	close,
 	onSaved,
+	isAuthor,
 }: Props) {
 	const [form, setForm] = useState({
 		original_filename: file.original_filename || "",
 		media_type: file.media_type || "",
 		source_url: file.source_url || "",
 		description: file.description || "",
+		reason: "",
 	});
 
 	async function save(event: React.FormEvent) {
 		event.preventDefault();
-		const reason = window.prompt(
-			"ファイルメタデータの変更理由を入力してください",
-		);
-		if (!reason || reason.trim().length < 3) return;
 		if (Array.from(form.description).length > 20_000) {
 			notify("ファイルの説明は20,000文字以内で入力してください");
 			return;
@@ -48,9 +47,10 @@ export function FileMetadataModal({
 					media_type: form.media_type,
 					source_url: form.source_url,
 					description: form.description,
-					reason: reason.trim(),
+					reason: form.reason,
 				}),
 			});
+			setForm({ ...form, reason: "" });
 			notify("ファイルのメタデータを更新しました");
 			onSaved();
 		} catch (error) {
@@ -104,6 +104,17 @@ export function FileMetadataModal({
 						value={form.source_url}
 						onChange={(event) =>
 							setForm({ ...form, source_url: event.target.value })
+						}
+					/>
+				</label>
+				<label>
+					{`変更理由${isAuthor ? " (任意)" : ""}`}
+					<textarea
+						rows={3}
+						value={form.reason}
+						required={!isAuthor}
+						onChange={(event) =>
+							setForm({ ...form, reason: event.target.value })
 						}
 					/>
 				</label>

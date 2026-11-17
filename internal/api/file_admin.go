@@ -21,7 +21,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		CreatorName *string `json:"creator_name" binding:"omitempty,max=255"`
 		SourceURL   *string `json:"source_url" binding:"omitempty,max=4096"`
 		Description *string `json:"description" binding:"omitempty,max=20000"`
-		Reason      string  `json:"reason" binding:"required,min=3,max=2000"`
+		Reason      *string `json:"reason" binding:"omitempty,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.Title == nil && req.CreatorName == nil && req.SourceURL == nil && req.Description == nil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one valid metadata field is required"})
@@ -65,7 +65,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
-	s.audit(c, &actor, "artifact", artifact.ID, "artifact.metadata.update", "success", &req.Reason)
+	s.audit(c, &actor, "artifact", artifact.ID, "artifact.metadata.update", "success", req.Reason)
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact})
 }
 
@@ -75,7 +75,7 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		MediaType        *string `json:"media_type" binding:"omitempty,max=255"`
 		SourceURL        *string `json:"source_url" binding:"omitempty,max=4096"`
 		Description      *string `json:"description" binding:"omitempty,max=20000"`
-		Reason           string  `json:"reason" binding:"required,min=3,max=2000"`
+		Reason           *string `json:"reason" binding:"omitempty,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || (req.OriginalFilename == nil && req.MediaType == nil && req.SourceURL == nil && req.Description == nil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one file metadata field and a reason are required"})
@@ -118,7 +118,7 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
-	s.audit(c, &actor, "file_object", file.ID, "file_object.metadata.update", "success", &req.Reason)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.metadata.update", "success", req.Reason)
 	if err := db.First(&file, "id = ?", file.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated file"})
 		return
