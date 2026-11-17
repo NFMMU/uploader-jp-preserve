@@ -7,14 +7,22 @@ import sharp from "sharp";
 const PORT = 3001;
 const SITE_NAME = "uploader.jp保全プロジェクト - 全国もちもちうどん連盟";
 
-const FONT_PATH = fileURLToPath(
-	new URL(
-		"../node_modules/@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2",
-		import.meta.url,
-	),
-);
+const FONT_DIR = new URL("../node_modules/", import.meta.url);
+async function loadFont(path) {
+	return readFile(fileURLToPath(new URL(path, FONT_DIR)));
+}
 
-const font = await readFile(FONT_PATH);
+const [notoSansJP, notoSansJPbold, roboto, twemoji] = await Promise.all([
+	loadFont(
+		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2",
+	),
+	loadFont(
+		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-700-normal.woff2",
+	),
+	loadFont("@fontsource/roboto/files/roboto-latin-400-normal.woff2"),
+	loadFont("@fontsource/twemoji/files/twemoji-mozilla-colr.woff2"),
+]);
+
 const cache = new Map();
 const MAX_CACHE = 100;
 
@@ -91,6 +99,7 @@ function clean(value, fallback, maxLength) {
 	if (!value) return fallback;
 
 	return (
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: これは仕方ない
 		[...value.replace(/[\u0000-\u001f\u007f]/g, " ").trim()]
 			.slice(0, maxLength)
 			.join("") || fallback
@@ -119,7 +128,7 @@ async function generate(title, description) {
 			overflow: "hidden",
 			background:
 				"linear-gradient(106deg, #e8f1ff 0%, #f5f8ff 65%, #f5f4df 65%, #fbf9e9 100%)",
-			fontFamily: "Noto Sans JP",
+			fontFamily: '"Noto Sans JP", "Roboto", "Twemoji"',
 			color: "#111111",
 		},
 		[
@@ -215,14 +224,26 @@ async function generate(title, description) {
 		fonts: [
 			{
 				name: "Noto Sans JP",
-				data: font,
+				data: notoSansJP,
 				weight: 400,
 				style: "normal",
 			},
 			{
 				name: "Noto Sans JP",
-				data: font,
+				data: notoSansJPbold,
 				weight: 700,
+				style: "normal",
+			},
+			{
+				name: "Roboto",
+				data: roboto,
+				weight: 400,
+				style: "normal",
+			},
+			{
+				name: "Twemoji",
+				data: twemoji,
+				weight: 400,
 				style: "normal",
 			},
 		],
