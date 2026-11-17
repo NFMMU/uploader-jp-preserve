@@ -12,7 +12,7 @@ async function loadFont(path) {
 	return readFile(fileURLToPath(new URL(path, FONT_DIR)));
 }
 
-const [notoSansJP, notoSansJPbold, roboto, twemoji] = await Promise.all([
+const [notoSansJP, notoSansJPbold, roboto, notoColorMoji] = await Promise.all([
 	loadFont(
 		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2",
 	),
@@ -20,7 +20,9 @@ const [notoSansJP, notoSansJPbold, roboto, twemoji] = await Promise.all([
 		"@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-700-normal.woff2",
 	),
 	loadFont("@fontsource/roboto/files/roboto-latin-400-normal.woff2"),
-	loadFont("@fontsource/twemoji/files/twemoji-mozilla-colr.woff2"),
+	loadFont(
+		"@fontsource/noto-color-emoji/files/noto-color-emoji-emoji-400-normal.woff2",
+	),
 ]);
 
 const cache = new Map();
@@ -128,7 +130,7 @@ async function generate(title, description) {
 			overflow: "hidden",
 			background:
 				"linear-gradient(106deg, #e8f1ff 0%, #f5f8ff 65%, #f5f4df 65%, #fbf9e9 100%)",
-			fontFamily: '"Noto Sans JP", "Roboto", "Twemoji"',
+			fontFamily: '"Noto Sans JP", "Roboto", "Noto Color Moji"',
 			color: "#111111",
 		},
 		[
@@ -241,8 +243,8 @@ async function generate(title, description) {
 				style: "normal",
 			},
 			{
-				name: "Twemoji",
-				data: twemoji,
+				name: "Noto Color Moji",
+				data: notoColorMoji,
 				weight: 400,
 				style: "normal",
 			},
