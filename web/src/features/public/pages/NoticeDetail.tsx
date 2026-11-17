@@ -17,7 +17,9 @@ const notices = Object.entries(sources)
 
 function formatDate(date: string) {
 	return new Date(date + "T00:00:00").toLocaleDateString("ja-JP", {
-		year: "numeric", month: "long", day: "numeric",
+		year: "numeric",
+		month: "long",
+		day: "numeric",
 	});
 }
 
@@ -26,9 +28,12 @@ function readingTime(markdown: string) {
 }
 
 function headingId(value: string) {
-	return value.toLocaleLowerCase()
-		.replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
-		.replace(/[\s-]+/g, "-") || "section";
+	return (
+		value
+			.toLocaleLowerCase()
+			.replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
+			.replace(/[\s-]+/g, "-") || "section"
+	);
 }
 
 export function NoticeDetail() {
@@ -38,7 +43,9 @@ export function NoticeDetail() {
 		if (!notice) return [];
 		return notice.body.split(/\r?\n/).flatMap((line) => {
 			const match = line.match(/^(##|###)\s+(.+?)\s*#*\s*$/);
-			return match ? [{ level: match[1].length, title: match[2], id: headingId(match[2]) }] : [];
+			return match
+				? [{ level: match[1].length, title: match[2], id: headingId(match[2]) }]
+				: [];
 		});
 	}, [notice]);
 
@@ -51,18 +58,33 @@ export function NoticeDetail() {
 				description={notice.summary}
 			/>
 			<div className="notice-detail-page">
-				<Link className="notice-back-link" to="/notices"><ArrowLeft size={16} /> お知らせ一覧へ戻る</Link>
+				<Link className="notice-back-link" to="/notices">
+					<ArrowLeft size={16} /> お知らせ一覧へ戻る
+				</Link>
 				<article className="notice-article">
 					<header className="notice-article-header">
 						<div className="notice-article-meta">
-							<time dateTime={notice.date}><CalendarDays size={15} /> {formatDate(notice.date)}</time>
-							{notice.updatedAt && <span>更新：{formatDate(notice.updatedAt)}</span>}
-							<span><Clock3 size={15} /> 約{readingTime(notice.body)}分で読めます</span>
+							<time dateTime={notice.date}>
+								<CalendarDays size={15} /> {formatDate(notice.date)}
+							</time>
+							{notice.updatedAt && (
+								<span>更新：{formatDate(notice.updatedAt)}</span>
+							)}
+							<span>
+								<Clock3 size={15} /> 約{readingTime(notice.body)}分で読めます
+							</span>
 						</div>
 						<h1>{notice.title}</h1>
 						{notice.tags.length > 0 && (
 							<div className="notice-entry-tags notice-article-tags">
-								{notice.tags.map((tag) => <Link key={tag} to={"/notices?tag=" + encodeURIComponent(tag)}><Tag size={13} /> {tag}</Link>)}
+								{notice.tags.map((tag) => (
+									<Link
+										key={tag}
+										to={"/notices?tag=" + encodeURIComponent(tag)}
+									>
+										<Tag size={13} /> {tag}
+									</Link>
+								))}
 							</div>
 						)}
 					</header>
@@ -71,7 +93,10 @@ export function NoticeDetail() {
 							<b>この記事の内容</b>
 							<ul>
 								{headings.map((heading, index) => (
-									<li className={heading.level === 3 ? "nested" : ""} key={heading.id + "-" + index}>
+									<li
+										className={heading.level === 3 ? "nested" : ""}
+										key={heading.id + "-" + index}
+									>
 										<a href={"#" + heading.id}>{heading.title}</a>
 									</li>
 								))}
@@ -79,16 +104,32 @@ export function NoticeDetail() {
 						</nav>
 					)}
 					<div className="notice-article-body">
-						<ReactMarkdown components={{
-							h2: ({ children }) => <h2 id={headingId(String(children ?? ""))}>{children}</h2>,
-							h3: ({ children }) => <h3 id={headingId(String(children ?? ""))}>{children}</h3>,
-							a: ({ href, children }) => <a href={href} target={href?.startsWith("http") ? "_blank" : undefined} rel={href?.startsWith("http") ? "noreferrer" : undefined}>{children}</a>,
-						}}>
+						<ReactMarkdown
+							components={{
+								h2: ({ children }) => (
+									<h2 id={headingId(String(children ?? ""))}>{children}</h2>
+								),
+								h3: ({ children }) => (
+									<h3 id={headingId(String(children ?? ""))}>{children}</h3>
+								),
+								a: ({ href, children }) => (
+									<a
+										href={href}
+										target={href?.startsWith("http") ? "_blank" : undefined}
+										rel={href?.startsWith("http") ? "noreferrer" : undefined}
+									>
+										{children}
+									</a>
+								),
+							}}
+						>
 							{notice.body}
 						</ReactMarkdown>
 					</div>
 					<footer className="notice-article-footer">
-						<Link to="/notices"><ArrowLeft size={15} /> お知らせ一覧へ戻る</Link>
+						<Link to="/notices">
+							<ArrowLeft size={15} /> お知らせ一覧へ戻る
+						</Link>
 					</footer>
 				</article>
 			</div>

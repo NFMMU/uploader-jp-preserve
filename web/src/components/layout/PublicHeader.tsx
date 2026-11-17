@@ -4,7 +4,9 @@ export function PublicHeader() {
 	return (
 		<header className="public-header">
 			<div className="public-header-inner">
-				<Link className="public-brand" to="/">uploader.jp保全プロジェクト</Link>
+				<Link className="public-brand" to="/">
+					uploader.jp保全プロジェクト
+				</Link>
 				<nav aria-label="メインナビゲーション">
 					<Link to="/">作品一覧</Link>
 					<Link to="/preservation-requests">保全リクエスト</Link>

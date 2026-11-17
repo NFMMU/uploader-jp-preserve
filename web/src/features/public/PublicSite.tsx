@@ -7,15 +7,15 @@ import {
 	PrivacyPage,
 	TermsPage,
 } from "./legal/LegalPages";
+import { NoticeDetail } from "./pages/NoticeDetail";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
 import { PublicFileDetail } from "./pages/PublicFileDetail";
+import { PublicNotices } from "./pages/PublicNotices";
 import { PublicRequest } from "./pages/PublicRequest";
 import { RedistributionAssistancePage } from "./pages/RedistributionAssistancePage";
 import { RelocationInfoRequest } from "./pages/RelocationInfoRequest";
-import { PublicNotices } from "./pages/PublicNotices";
-import { NoticeDetail } from "./pages/NoticeDetail";
 
 function PublicSite() {
 	return (
@@ -30,13 +30,22 @@ function PublicSite() {
 					<Route path="/artifacts/:id" element={<PublicArtifactDetail />} />
 					<Route path="/files/:id" element={<PublicFileDetail />} />
 					<Route path="/requests" element={<PublicRequest />} />
-					<Route path="/preservation-requests" element={<PreservationRequest />} />
-					<Route path="/publisher-support" element={<RedistributionAssistancePage mode="publisher" />} />
+					<Route
+						path="/preservation-requests"
+						element={<PreservationRequest />}
+					/>
+					<Route
+						path="/publisher-support"
+						element={<RedistributionAssistancePage mode="publisher" />}
+					/>
 					<Route path="/relocation-info" element={<RelocationInfoRequest />} />
 					<Route path="/terms" element={<TermsPage />} />
 					<Route path="/disclaimer" element={<DisclaimerPage />} />
 					<Route path="/privacy" element={<PrivacyPage />} />
-					<Route path="/preservation-policy" element={<PreservationPolicyPage />} />
+					<Route
+						path="/preservation-policy"
+						element={<PreservationPolicyPage />}
+					/>
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</main>

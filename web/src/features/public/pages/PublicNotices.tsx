@@ -31,7 +31,10 @@ export function PublicNotices() {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const selectedTag = searchParams.get("tag") || "";
 	const tags = useMemo(
-		() => [...new Set(notices.flatMap((notice) => notice.tags))].sort((a, b) => a.localeCompare(b, "ja")),
+		() =>
+			[...new Set(notices.flatMap((notice) => notice.tags))].sort((a, b) =>
+				a.localeCompare(b, "ja"),
+			),
 		[],
 	);
 	const visible = notices.filter(
@@ -79,7 +82,9 @@ export function PublicNotices() {
 					</div>
 				)}
 				<div className="notice-list-header">
-					<span>{selectedTag ? `「${selectedTag}」の投稿` : "すべてのお知らせ"}</span>
+					<span>
+						{selectedTag ? `「${selectedTag}」の投稿` : "すべてのお知らせ"}
+					</span>
 					<span>{visible.length} 件</span>
 				</div>
 				{visible.length ? (
@@ -91,21 +96,35 @@ export function PublicNotices() {
 										<time dateTime={notice.date}>
 											<CalendarDays size={14} /> {formatDate(notice.date)}
 										</time>
-										{notice.pinned && <span className="notice-pinned"><Pin size={13} /> 重要</span>}
+										{notice.pinned && (
+											<span className="notice-pinned">
+												<Pin size={13} /> 重要
+											</span>
+										)}
 									</div>
 									<h2>
-										<Link to={`/notices/${encodeURIComponent(notice.slug)}`}>{notice.title}</Link>
+										<Link to={`/notices/${encodeURIComponent(notice.slug)}`}>
+											{notice.title}
+										</Link>
 									</h2>
 									<p className="notice-summary">{notice.summary}</p>
 									{notice.tags.length > 0 && (
 										<div className="notice-entry-tags">
 											{notice.tags.map((tag) => (
-												<Link key={tag} to={`/notices?tag=${encodeURIComponent(tag)}`}>{tag}</Link>
+												<Link
+													key={tag}
+													to={`/notices?tag=${encodeURIComponent(tag)}`}
+												>
+													{tag}
+												</Link>
 											))}
 										</div>
 									)}
 								</div>
-								<Link className="notice-read-more" to={`/notices/${encodeURIComponent(notice.slug)}`}>
+								<Link
+									className="notice-read-more"
+									to={`/notices/${encodeURIComponent(notice.slug)}`}
+								>
 									続きを読む <span aria-hidden="true">→</span>
 								</Link>
 							</article>
@@ -114,7 +133,11 @@ export function PublicNotices() {
 				) : (
 					<div className="admin-notice-empty">
 						<Bell size={22} />
-						<p>{selectedTag ? "このタグが付いたお知らせはありません。" : "現在公開中のお知らせはありません。"}</p>
+						<p>
+							{selectedTag
+								? "このタグが付いたお知らせはありません。"
+								: "現在公開中のお知らせはありません。"}
+						</p>
 					</div>
 				)}
 			</section>

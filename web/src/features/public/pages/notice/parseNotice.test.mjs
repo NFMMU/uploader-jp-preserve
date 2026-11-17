@@ -51,14 +51,25 @@ test("uses safe defaults for missing or incorrectly typed values", () => {
 });
 
 test("accepts only real calendar dates in YYYY-MM-DD string form", () => {
-	for (const date of ['"2026-02-29"', '"2026-04-31"', '"2026-13-01"', '"2026-1-01"', "123", "true"]) {
+	for (const date of [
+		'"2026-02-29"',
+		'"2026-04-31"',
+		'"2026-13-01"',
+		'"2026-1-01"',
+		"123",
+		"true",
+	]) {
 		assert.equal(notice(`date: ${date}`).date, "1970-01-01", date);
 	}
 	assert.equal(notice('date: "2024-02-29"').date, "2024-02-29");
 });
 
 test("ignores malformed front matter without throwing", () => {
-	for (const source of ["# 本文", "---\ntitle: [\n---\n本文", "---\n- item\n---\n本文"]) {
+	for (const source of [
+		"# 本文",
+		"---\ntitle: [\n---\n本文",
+		"---\n- item\n---\n本文",
+	]) {
 		assert.equal(parseNotice("example.md", source), null);
 	}
 });
