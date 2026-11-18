@@ -94,20 +94,6 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		}
 		req.ExternalURL = &validated
 	}
-	if req.RequestType == "preservation" && req.FileObjectID != nil && req.ArtifactID == nil {
-		var file model.FileObject
-		if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", *req.FileObjectID).Error; err == nil {
-			req.ArtifactID = &file.ArtifactID
-		}
-	}
-	if req.RequestType == "preservation" && req.SourceURL != nil && req.ArtifactID == nil {
-		// Associate requests for individual files with the uploader-level artifact.
-		rootURL := uploaderArtifactSourceURL(*req.SourceURL)
-		var artifact model.Artifact
-		if err := s.db.WithContext(c.Request.Context()).Where("source_url = ?", rootURL).Order("created_at ASC").First(&artifact).Error; err == nil {
-			req.ArtifactID = &artifact.ID
-		}
-	}
 	if req.ArtifactID != nil {
 		var count int64
 		if err := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{}).Where("id = ?", *req.ArtifactID).Count(&count).Error; err != nil || count == 0 {
@@ -147,6 +133,27 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 	}
 
 	if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if request.RequestType == "preservation" && request.SourceURL != nil {
+			rootURL := uploaderArtifactSourceURL(*request.SourceURL)
+			if err := lockUploaderArtifactRoots(tx, rootURL); err != nil {
+				return err
+			}
+			if request.FileObjectID != nil && request.ArtifactID == nil {
+				var file model.FileObject
+				if err := tx.Select("id", "artifact_id").First(&file, "id = ?", *request.FileObjectID).Error; err != nil {
+					return err
+				}
+				request.ArtifactID = &file.ArtifactID
+			}
+			if request.ArtifactID == nil && strings.HasPrefix(rootURL, "/") {
+				var artifact model.Artifact
+				if err := tx.Where("source_url = ?", rootURL).Order("created_at ASC").First(&artifact).Error; err == nil {
+					request.ArtifactID = &artifact.ID
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+			}
+		}
 		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
