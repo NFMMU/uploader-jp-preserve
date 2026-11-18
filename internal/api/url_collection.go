@@ -265,7 +265,7 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			fileErr := tx.Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", storedURL).First(&existingFile).Error
 			if fileErr == nil {
 				duplicate = true
-				return tx.Exec("UPDATE source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", item.URL).Error
+				return tx.Exec("UPDATE source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", storedURL).Error
 			}
 			if !errors.Is(fileErr, gorm.ErrRecordNotFound) {
 				return fileErr
@@ -281,8 +281,15 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 				return requestErr
 			}
 
+			var artifactID *string
+			var linkedArtifact model.Artifact
+			if err := tx.Where("source_url = ?", uploaderArtifactSourceURL(storedURL)).Order("created_at ASC").First(&linkedArtifact).Error; err == nil {
+				artifactID = &linkedArtifact.ID
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 			preserveRequest := model.PublicRequest{
-				ID: requestID, RequestType: "preservation", Status: "pending", Title: new(title),
+				ID: requestID, RequestType: "preservation", Status: "pending", Title: new(title), ArtifactID: artifactID,
 				SourceURL: new(storedURL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
 			}
 			if err := tx.Create(&preserveRequest).Error; err != nil {
