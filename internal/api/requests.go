@@ -493,6 +493,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 	var generatedAuthorPassword string
 	var assignedAuthorID string
 	var assignedArtifactID string
+	var responseArtifactID *string
 
 	var artifactTargetRecomputed bool
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -959,6 +960,11 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			intakeFilePathToRemove = publicRequest.IntakeFilePath
 		}
 
+		if artifactTargetRecomputed {
+			updates["artifact_id"] = targetArtifactID
+			responseArtifactID = targetArtifactID
+		}
+
 		// Include the observed status in the UPDATE predicate.
 		// The row lock protects the read-modify-write sequence, while
 		// this predicate provides an additional optimistic concurrency
@@ -1184,12 +1190,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		publicRequest.CreatorName = req.CreatorName
 	}
 	if artifactTargetRecomputed {
-		publicRequest.ArtifactID = nil
-		if assignedArtifactID != "" {
-			publicRequest.ArtifactID = &assignedArtifactID
-		} else if publicRequest.ArtifactID != nil {
-			publicRequest.ArtifactID = publicRequest.ArtifactID
-		}
+		publicRequest.ArtifactID = responseArtifactID
 	}
 
 	if req.SourceURL != nil {
