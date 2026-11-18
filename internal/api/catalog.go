@@ -184,9 +184,11 @@ func (s *Server) getArtifact(c *gin.Context) {
 		return
 	}
 	var requests []model.PublicRequest
-	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
-		return
+	if actor, ok := hooks.CurrentUser(c); ok && (actor.Role == "admin" || actor.Role == "reviewer") {
+		if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
+			return
+		}
 	}
 	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 	for i := range files {
