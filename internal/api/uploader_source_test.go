@@ -166,3 +166,40 @@ func TestSourceFetchFailureIsPermanent(t *testing.T) {
 		t.Fatal("transient network failures should remain eligible for automatic retry")
 	}
 }
+
+func TestUploaderSourceURLForStorage(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"https://uu.getuploader.com/MMDkaz/index/date/desc/2", "/MMDkaz"},
+		{"https://ux.getuploader.com/MMDkaz/", "/MMDkaz"},
+		{"https://uu.getuploader.com/MMDkaz/download/7", "/MMDkaz/download/7"},
+		{"https://ux.getuploader.com/MMDkaz/download/8?token=abc", "/MMDkaz/download/8?token=abc"},
+		{"/MMDkaz/download/9", "/MMDkaz/download/9"},
+		{"https://uploader.jp/", "https://uploader.jp/"},
+	}
+	for _, tc := range cases {
+		got, err := uploaderSourceURLForStorage(tc.raw)
+		if err != nil {
+			t.Errorf("uploaderSourceURLForStorage(%q): %v", tc.raw, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("uploaderSourceURLForStorage(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestUploaderArtifactSourceURL(t *testing.T) {
+	cases := map[string]string{
+		"/MMDkaz/download/7": "/MMDkaz",
+		"/MMDkaz": "/MMDkaz",
+		"https://uploader.jp/account": "https://uploader.jp/account",
+	}
+	for raw, want := range cases {
+		if got := uploaderArtifactSourceURL(raw); got != want {
+			t.Errorf("uploaderArtifactSourceURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
