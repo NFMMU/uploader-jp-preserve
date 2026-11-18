@@ -90,16 +90,16 @@ WHERE a.id = m.duplicate_id;
 WITH canonical AS (
   SELECT normalized_url,
          CASE
-           WHEN normalized_url ~* '^https://(ux|uu)\\.getuploader\\.com/' THEN regexp_replace(
-             regexp_replace(normalized_url, '^https://(ux|uu)\\.getuploader\\.com', '', 'i'),
+           WHEN normalized_url ~* '^https://(ux|uu)\.getuploader\.com/' THEN regexp_replace(
+             regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
              '/(index|list)/.*$', ''
            )
            ELSE normalized_url
          END AS canonical_url,
          row_number() OVER (
            PARTITION BY CASE
-             WHEN normalized_url ~* '^https://(ux|uu)\\.getuploader\\.com/' THEN regexp_replace(
-               regexp_replace(normalized_url, '^https://(ux|uu)\\.getuploader\\.com', '', 'i'),
+             WHEN normalized_url ~* '^https://(ux|uu)\.getuploader\.com/' THEN regexp_replace(
+               regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
                '/(index|list)/.*$', ''
              )
              ELSE normalized_url
