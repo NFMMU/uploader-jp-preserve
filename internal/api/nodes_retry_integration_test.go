@@ -529,3 +529,38 @@ func TestRetryDeleteTaskIntegration(t *testing.T) {
 		})
 	}
 }
+
+
+func TestClearFailedTasksPreservesDeletionTasksIntegration(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, node, storeTask := retryFixture(t, db)
+	deletionTask := model.Task{
+		TaskType:     "delete",
+		FileObjectID: file.ID,
+		TargetNodeID: &node.ID,
+		Status:       "failed",
+		AttemptCount: maxTaskAttempts,
+	}
+	if err := db.Create(&deletionTask).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(response)
+	c.Request = httptest.NewRequest(http.MethodPost, "/tasks/clear-failed", nil)
+	c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+	s.clearFailedTasks(c)
+	if response.Code != http.StatusOK {
+		t.Fatalf("clear failed tasks: %d %s", response.Code, response.Body)
+	}
+	var remaining model.Task
+	if err := db.First(&remaining, "id = ?", deletionTask.ID).Error; err != nil {
+		t.Fatalf("failed deletion task must remain retryable: %v", err)
+	}
+	if remaining.Status != "failed" || remaining.TaskType != "delete" {
+		t.Fatalf("deletion task was modified: %+v", remaining)
+	}
+	if err := db.First(&remaining, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remaining, err)
+	}
+}
