@@ -43,4 +43,9 @@ table "artifacts" {
   index "artifacts_creator_name_idx" {
     columns = [column.creator_name]
   }
+  index "artifacts_getuploader_source_path_uidx" {
+    unique = true
+    where = "source_url LIKE '/%'"
+    columns = [column.source_url]
+  }
 }
