@@ -71,7 +71,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
 				actions={
 					<>
-						<button
+						<button type="button"
 							className="secondary"
 							type="button"
 							onClick={() => downloadExport("csv", notify)}
@@ -79,7 +79,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							<Download size={16} /> CSV出力
 						</button>
 						{role === "admin" && (
-							<button
+							<button type="button"
 								className="primary"
 								type="button"
 								onClick={() => setCreateOpen(true)}
@@ -124,7 +124,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							: "作品を登録すると、ここからファイルを管理できます。"}
 					</span>
 					{query && (
-						<button
+						<button type="button"
 							className="secondary"
 							type="button"
 							onClick={() => setQuery("")}
@@ -224,14 +224,14 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button
+							<button type="button"
 								type="button"
 								className="secondary"
 								onClick={() => setCreateOpen(false)}
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button type="button" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -381,14 +381,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 
 	useEffect(() => {
 		setPage(1);
-	}, [
-		query,
-		preservationFilter,
-		policyFilter,
-		publicationFilter,
-		linkedArtifactID,
-		limit,
-	]);
+	}, []);
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
@@ -729,7 +722,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				actions={
 					<>
 						{linkedArtifactID && (
-							<button
+							<button type="button"
 								className="secondary"
 								onClick={() =>
 									nav(
@@ -744,7 +737,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{role !== "author" && (
-							<button
+							<button type="button"
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
 							>
@@ -752,7 +745,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && artifactRecord && role !== "viewer" && (
-							<button
+							<button type="button"
 								className="secondary"
 								type="button"
 								disabled={busy}
@@ -762,7 +755,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button
+							<button type="button"
 								className="primary"
 								onClick={() => openAddFile(artifactRecord)}
 								type="button"
@@ -771,7 +764,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{role === "admin" && !linkedArtifactID && (
-							<button
+							<button type="button"
 								className="primary"
 								onClick={() => setModal(true)}
 								type="button"
@@ -885,11 +878,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button type="button" className="small-btn" onClick={() => setSelectedIDs([])}>
 							選択解除
 						</button>
 					</div>
-					<button
+					<button type="button"
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
@@ -902,7 +895,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button type="button" className="small-btn" onClick={() => setSelectedIDs([])}>
 							選択解除
 						</button>
 					</div>
@@ -920,7 +913,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<option value="unknown">不明</option>
 							</select>
 						</label>
-						<button
+						<button type="button"
 							className="secondary"
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
@@ -930,20 +923,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 						{role === "admin" && (
 							<>
-								<button
+								<button type="button"
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
 								>
 									選択したファイルを削除
 								</button>
-								<button
+								<button type="button"
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
 								>
 									一括公開
 								</button>
-								<button
+								<button type="button"
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
 								>
@@ -1081,14 +1074,14 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button
+							<button type="button"
 								type="button"
 								className="secondary"
 								onClick={() => setModal(false)}
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button type="button" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1189,7 +1182,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</label>
 						)}
 						<div className="modal-actions">
-							<button
+							<button type="button"
 								type="button"
 								className="secondary"
 								disabled={
@@ -1208,7 +1201,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<div className="candidate-list">
 								<div className="candidate-list-head">
 									<b>検出したファイル ({candidates.length})</b>
-									<button
+									<button type="button"
 										type="button"
 										className="small-btn"
 										onClick={() =>
@@ -1243,7 +1236,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 										</span>
 									</label>
 								))}
-								<button
+								<button type="button"
 									type="button"
 									className="primary wide"
 									disabled={
@@ -1302,7 +1295,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</select>
 						</label>
 						<div className="modal-actions">
-							<button
+							<button type="button"
 								type="button"
 								className="secondary"
 								onClick={() => {
@@ -1311,7 +1304,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button
+							<button type="button"
 								className="primary"
 								disabled={
 									busy ||
@@ -1411,10 +1404,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button className="secondary" onClick={() => setDetail(null)}>
+							<button type="button" className="secondary" onClick={() => setDetail(null)}>
 								閉じる
 							</button>
-							<button
+							<button type="button"
 								className="primary"
 								onClick={savePolicy}
 								disabled={
