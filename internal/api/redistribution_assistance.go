@@ -356,6 +356,9 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 	artifactCreated := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if strings.HasPrefix(artifactSourceURL, "/") {
+			if err := lockUploaderArtifactRoots(tx, artifactSourceURL); err != nil {
+				return err
+			}
 			if err := tx.Where("source_url = ?", artifactSourceURL).Order("created_at ASC").First(&artifact).Error; err != nil {
 				if !errors.Is(err, gorm.ErrRecordNotFound) {
 					return err
@@ -391,11 +394,51 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 	}
 
 	if !s.queueStagedIngest(c, file, tmpName, written, sha, "application/octet-stream", *request.IntakeFileName, 3, fileSourceURL, "", "", "", "", "") {
-		_ = db.Model(&model.PublicRequest{}).Where("id = ?", request.ID).Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()}).Error
-		if artifactCreated {
-			if err := db.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
-				s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "error", err)
+		rollbackErr := db.Transaction(func(tx *gorm.DB) error {
+			if err := lockUploaderArtifactRoots(tx, artifactSourceURL); err != nil {
+				return err
 			}
+			result := tx.Model(&model.PublicRequest{}).
+				Where("id = ? AND artifact_id = ? AND file_object_id = ?", request.ID, artifact.ID, file.ID).
+				Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()})
+			if result.Error != nil {
+				return result.Error
+			}
+			if err := tx.Delete(&model.FileObject{}, "id = ?", file.ID).Error; err != nil {
+				return err
+			}
+			if artifactCreated {
+				var lockedArtifact model.Artifact
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Select("id").
+					First(&lockedArtifact, "id = ?", artifact.ID).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return nil
+					}
+					return err
+				}
+				var references int64
+				if err := tx.Model(&model.FileObject{}).Where("artifact_id = ?", artifact.ID).Count(&references).Error; err != nil {
+					return err
+				}
+				var requestReferences int64
+				if err := tx.Model(&model.PublicRequest{}).Where("artifact_id = ?", artifact.ID).Count(&requestReferences).Error; err != nil {
+					return err
+				}
+				var authorReferences int64
+				if err := tx.Table("author_artifact").Where("artifact_id = ?", artifact.ID).Count(&authorReferences).Error; err != nil {
+					return err
+				}
+				if references == 0 && requestReferences == 0 && authorReferences == 0 {
+					if err := tx.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if rollbackErr != nil && s.logger != nil {
+			s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "file_object_id", file.ID, "error", rollbackErr)
 		}
 		return
 	}
