@@ -778,38 +778,38 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			{(role === "admin" || role === "reviewer") &&
 				linkedArtifactID &&
 				artifactRecord && (
-				<section
-					className="panel related-requests-panel"
-					aria-labelledby="related-preservation-requests"
-				>
-					<div className="panel-heading">
-						<h2 id="related-preservation-requests">関連するリクエスト</h2>
-						<span className="muted">
-							{(artifactData.data.related_requests || []).length} 件
-						</span>
-					</div>
-					{(artifactData.data.related_requests || []).length > 0 ? (
-						<ul className="related-request-list">
-							{(artifactData.data.related_requests || []).map(
-								(request: Obj) => (
-									<li key={request.id}>
-										<a
-											href={`/admin/requests/${encodeURIComponent(request.id)}`}
-										>
-											<strong>{request.title || "タイトル未設定"}</strong>
-											<span>
-												{request.status} ·{" "}
-												{new Date(request.created_at).toLocaleString("ja-JP")}
-											</span>
-										</a>
-									</li>
-								),
-							)}
-						</ul>
-					) : (
-						<p className="muted">関連する保全リクエストはありません。</p>
-					)}
-				</section>
+					<section
+						className="panel related-requests-panel"
+						aria-labelledby="related-preservation-requests"
+					>
+						<div className="panel-heading">
+							<h2 id="related-preservation-requests">関連するリクエスト</h2>
+							<span className="muted">
+								{(artifactData.data.related_requests || []).length} 件
+							</span>
+						</div>
+						{(artifactData.data.related_requests || []).length > 0 ? (
+							<ul className="related-request-list">
+								{(artifactData.data.related_requests || []).map(
+									(request: Obj) => (
+										<li key={request.id}>
+											<a
+												href={`/admin/requests/${encodeURIComponent(request.id)}`}
+											>
+												<strong>{request.title || "タイトル未設定"}</strong>
+												<span>
+													{request.status} ·{" "}
+													{new Date(request.created_at).toLocaleString("ja-JP")}
+												</span>
+											</a>
+										</li>
+									),
+								)}
+							</ul>
+						) : (
+							<p className="muted">関連する保全リクエストはありません。</p>
+						)}
+					</section>
 			)}
 			<div className="filter-bar file-filter-bar">
 				<div className="search-box">
