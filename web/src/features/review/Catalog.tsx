@@ -775,7 +775,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					</>
 				}
 			/>
-			{linkedArtifactID && artifactRecord && (
+			{(role === "admin" || role === "reviewer") && linkedArtifactID && artifactRecord && (
 				<section
 					className="panel related-requests-panel"
 					aria-labelledby="related-preservation-requests"
