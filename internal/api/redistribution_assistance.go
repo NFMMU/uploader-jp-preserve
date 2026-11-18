@@ -335,8 +335,8 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 	artifactSourceURL := "https://uploader.jp/"
 	var fileSourceURL *string
 	if request.SourceURL != nil {
-		if validated, validationErr := validateUploaderURL(*request.SourceURL); validationErr == nil {
-			artifactSourceURL = validated
+		if validated, validationErr := uploaderSourceURLForStorage(*request.SourceURL); validationErr == nil {
+			artifactSourceURL = uploaderArtifactSourceURL(validated)
 			fileSourceURL = &validated
 		}
 	}
