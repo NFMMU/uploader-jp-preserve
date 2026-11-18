@@ -1196,7 +1196,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"task_id": claimed.Task.ID, "task_type": claimed.Task.TaskType, "lease_token": claimed.LeaseToken,
-			"file_object_id": file.ID, "source_url": *file.SourceURL, "source_password": sourcePassword, "attempt_count": claimed.Task.AttemptCount,
+			"file_object_id": file.ID, "source_url": uploaderSourceURLForAccess(*file.SourceURL), "source_password": sourcePassword, "attempt_count": claimed.Task.AttemptCount,
 			"target_node_id": claimed.Task.TargetNodeID,
 		})
 		return
