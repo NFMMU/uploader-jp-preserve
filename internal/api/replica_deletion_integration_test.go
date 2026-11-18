@@ -130,7 +130,6 @@ func TestReplicaUploadRechecksDeletionIntegration(t *testing.T) {
 	}
 }
 
-
 func TestConcurrentDeleteResultsFinalizeFileIntegration(t *testing.T) {
 	db := retryTestDB(t)
 	s, file, firstNode, firstTask := retryFixture(t, db)
