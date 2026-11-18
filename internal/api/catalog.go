@@ -253,6 +253,9 @@ func (s *Server) createFileObject(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+	}
 	c.JSON(http.StatusCreated, file)
 }
 
