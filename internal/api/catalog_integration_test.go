@@ -335,7 +335,16 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read GetUploader migration: %v", err)
 	}
-	migrationSQL := strings.Replace(string(migration), "BEGIN;", "", 1)
+	migrationLines := strings.Split(string(migration), "\n")
+	sqlLines := make([]string, 0, len(migrationLines))
+	for _, line := range migrationLines {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		sqlLines = append(sqlLines, line)
+	}
+	migrationSQL := strings.Join(sqlLines, "\n")
+	migrationSQL = strings.Replace(migrationSQL, "BEGIN;", "", 1)
 	migrationSQL = strings.Replace(migrationSQL, "COMMIT;", "", 1)
 	for i, statement := range strings.Split(migrationSQL, ";") {
 		statement = strings.TrimSpace(statement)
