@@ -67,7 +67,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				desc="作品を選択すると、その作品に属するファイルと保全・公開状態をまとめて管理できます。"
 				actions={
 					<>
-						<button 
+						<button
 							className="secondary"
 							type="button"
 							onClick={() => downloadExport("csv", notify)}
@@ -75,7 +75,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							<Download size={16} /> CSV出力
 						</button>
 						{role === "admin" && (
-							<button 
+							<button
 								className="primary"
 								type="button"
 								onClick={() => setCreateOpen(true)}
@@ -94,8 +94,8 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							value={query}
 							onChange={(event) => {
 								setQuery(event.target.value);
-									setPage(1);
-								}}
+								setPage(1);
+							}}
 							placeholder="作品名・作者・作品ID・元ページURLで検索"
 							aria-label="作品を検索"
 						/>
@@ -123,7 +123,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							: "作品を登録すると、ここからファイルを管理できます。"}
 					</span>
 					{query && (
-						<button 
+						<button
 							className="secondary"
 							type="button"
 							onClick={() => setQuery("")}
@@ -226,7 +226,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button 
+							<button
 								type="button"
 								className="secondary"
 								onClick={() => setCreateOpen(false)}
@@ -721,7 +721,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				actions={
 					<>
 						{linkedArtifactID && (
-							<button 
+							<button
 								className="secondary"
 								onClick={() =>
 									nav(
@@ -744,7 +744,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && artifactRecord && role !== "viewer" && (
-							<button 
+							<button
 								className="secondary"
 								type="button"
 								disabled={busy}
@@ -754,7 +754,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button 
+							<button
 								className="primary"
 								onClick={() => openAddFile(artifactRecord)}
 								type="button"
@@ -763,7 +763,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{role === "admin" && !linkedArtifactID && (
-							<button 
+							<button
 								className="primary"
 								onClick={() => setModal(true)}
 								type="button"
@@ -1085,7 +1085,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button 
+							<button
 								type="button"
 								className="secondary"
 								onClick={() => setModal(false)}
@@ -1193,7 +1193,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</label>
 						)}
 						<div className="modal-actions">
-							<button 
+							<button
 								type="button"
 								className="secondary"
 								disabled={
@@ -1212,7 +1212,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<div className="candidate-list">
 								<div className="candidate-list-head">
 									<b>検出したファイル ({candidates.length})</b>
-									<button 
+									<button
 										type="button"
 										className="small-btn"
 										onClick={() =>
@@ -1247,7 +1247,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 										</span>
 									</label>
 								))}
-								<button 
+								<button
 									type="button"
 									className="primary wide"
 									disabled={
@@ -1306,7 +1306,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</select>
 						</label>
 						<div className="modal-actions">
-							<button 
+							<button
 								type="button"
 								className="secondary"
 								onClick={() => {
