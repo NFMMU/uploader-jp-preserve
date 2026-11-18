@@ -3,13 +3,14 @@ BEGIN;
 
 -- File and request rows retain the individual download ID; listing paths collapse to the root.
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i') AS path
+  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
   FROM file_objects
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com/' OR source_url LIKE '/%'
+  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, CASE
-    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path from '\?.*$'), '')
+    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+      THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(path from '\\?.*$'), '')
     ELSE '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1)
   END AS source_url
   FROM cleaned
@@ -17,13 +18,14 @@ normalized AS (
 UPDATE file_objects f SET source_url = n.source_url FROM normalized n WHERE f.id = n.id;
 
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i') AS path
+  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
   FROM public_requests
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com/' OR source_url LIKE '/%'
+  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, CASE
-    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path from '\?.*$'), '')
+    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+      THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(path from '\\?.*$'), '')
     ELSE '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1)
   END AS source_url
   FROM cleaned
@@ -32,9 +34,9 @@ UPDATE public_requests r SET source_url = n.source_url FROM normalized n WHERE r
 
 -- Artifacts must contain only the uploader root, including historical /name/pageN values.
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i') AS path
+  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
   FROM artifacts
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com/' OR source_url LIKE '/%'
+  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1) AS source_url
@@ -82,20 +84,20 @@ DELETE FROM artifacts a USING getuploader_artifact_merge m WHERE a.id = m.duplic
 -- Only GetUploader absolute URLs and our stored path keys participate in registry merging.
 WITH mapped AS (
   SELECT normalized_url, origin, public_request_id, created_at,
-         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com/'
-           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i')
+         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
+           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
            ELSE normalized_url END AS path_url
   FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com/' OR normalized_url LIKE '/%'
+  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR normalized_url LIKE '/%'
 ),
 canonical AS (
   SELECT normalized_url,
-         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
-           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
+         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(path_url from '\\?.*$'), '')
            ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END AS canonical_url,
          row_number() OVER (
-           PARTITION BY CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
-             THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
+           PARTITION BY CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+             THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(path_url from '\\?.*$'), '')
              ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END
            ORDER BY (public_request_id IS NOT NULL) DESC,
                     CASE WHEN origin = 'catalogued' THEN 0 ELSE 1 END, created_at
@@ -109,22 +111,23 @@ WHERE r.normalized_url = c.normalized_url AND c.position > 1;
 -- Rewrite only matching registry records; query strings remain on individual download URLs.
 WITH mapped AS (
   SELECT normalized_url, source_url,
-         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com/'
-           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i')
+         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
+           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
            ELSE normalized_url END AS path_url,
-         CASE WHEN source_url ~* '^https://(ux|uu)[.]getuploader[.]com/'
-           THEN regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com', '', 'i')
+         CASE WHEN source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
+           THEN regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
            ELSE source_url END AS source_path
   FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com/' OR normalized_url LIKE '/%'
+  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR normalized_url LIKE '/%'
 ),
 normalized AS (
   SELECT normalized_url,
-         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
-           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
+         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(path_url from '\\?.*$'), '')
            ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END AS canonical_url,
          CASE
-           WHEN rtrim(split_part(source_path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(source_path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(source_path from '\?.*$'), '')
+           WHEN rtrim(split_part(source_path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+(/.*)?$'
+             THEN regexp_replace(rtrim(split_part(source_path, '?', 1), '/'), '^(/[^/]+/)[^/]+/([^/]+).*$', '\\1download/\\2') || coalesce(substring(source_path from '\\?.*$'), '')
            WHEN source_path LIKE '/%' THEN '/' || split_part(trim(both '/' FROM split_part(source_path, '?', 1)), '/', 1)
            ELSE source_path
          END AS canonical_source_url
