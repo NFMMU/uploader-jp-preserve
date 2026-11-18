@@ -97,7 +97,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		}
 		items = append(items, publicCatalogArtifact{
 			ID: artifact.ID, Title: artifact.Title, CreatorName: artifact.CreatorName,
-			SourceURL: artifact.SourceURL, Description: artifact.Description,
+			SourceURL: uploaderSourceURLForAccess(artifact.SourceURL), Description: artifact.Description,
 			CreatedAt: artifact.CreatedAt, Files: files,
 		})
 	}
