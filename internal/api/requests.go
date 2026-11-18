@@ -55,7 +55,7 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "保存申請ではアップロード元URLが必要です。"})
 			return
 		}
-		validated, err := normalizeUploaderURL(*req.SourceURL)
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "アップロード元URLは、uploader.jpまたはgetuploader.comのHTTPS URLを指定してください。"})
 			return
@@ -93,6 +93,14 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 			return
 		}
 		req.ExternalURL = &validated
+	}
+	if req.RequestType == "preservation" && req.SourceURL != nil && req.ArtifactID == nil {
+		// Associate requests for individual files with the uploader-level artifact.
+		rootURL := uploaderArtifactSourceURL(*req.SourceURL)
+		var artifact model.Artifact
+		if err := s.db.WithContext(c.Request.Context()).Where("source_url = ?", rootURL).Order("created_at ASC").First(&artifact).Error; err == nil {
+			req.ArtifactID = &artifact.ID
+		}
 	}
 	if req.ArtifactID != nil {
 		var count int64
