@@ -94,6 +94,12 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		}
 		req.ExternalURL = &validated
 	}
+	if req.RequestType == "preservation" && req.FileObjectID != nil && req.ArtifactID == nil {
+		var file model.FileObject
+		if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", *req.FileObjectID).Error; err == nil {
+			req.ArtifactID = &file.ArtifactID
+		}
+	}
 	if req.RequestType == "preservation" && req.SourceURL != nil && req.ArtifactID == nil {
 		// Associate requests for individual files with the uploader-level artifact.
 		rootURL := uploaderArtifactSourceURL(*req.SourceURL)
