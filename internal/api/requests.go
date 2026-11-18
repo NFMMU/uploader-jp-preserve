@@ -242,6 +242,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		items := make([]publicRequestListItem, 0, len(rows))
 		for _, row := range rows {
 			item := row.Item
+			if item.SourceURL != nil { item.SourceURL = new(uploaderSourceURLForAccess(*item.SourceURL)) }
 			item.ArtifactID = row.LinkedArtifactID
 			item.HasSourcePassword = item.SourcePasswordEncrypted != nil && *item.SourcePasswordEncrypted != ""
 			items = append(items, item)
@@ -259,6 +260,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 
 	items := make([]publicRequestListItem, 0, len(requests))
 	for _, request := range requests {
+		if request.SourceURL != nil { request.SourceURL = new(uploaderSourceURLForAccess(*request.SourceURL)) }
 		item := publicRequestListItem{PublicRequest: request, HasSourcePassword: request.SourcePasswordEncrypted != nil && *request.SourcePasswordEncrypted != ""}
 		artifactID := request.ArtifactID
 		if request.FileObjectID != nil {
@@ -291,6 +293,7 @@ func (s *Server) getPublicRequest(c *gin.Context) {
 		return
 	}
 
+	if request.SourceURL != nil { request.SourceURL = new(uploaderSourceURLForAccess(*request.SourceURL)) }
 	item := publicRequestListItem{
 		PublicRequest: request,
 		HasSourcePassword: request.SourcePasswordEncrypted != nil &&
