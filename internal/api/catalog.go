@@ -583,6 +583,10 @@ func validateUploaderURL(raw string) (string, error) {
 // uploaderSourceURLForStorage keeps getuploader.com references host-independent.
 // ux.getuploader.com and uu.getuploader.com are aliases for the same uploader.
 func uploaderSourceURLForStorage(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "/") {
+		raw = "https://uu.getuploader.com" + raw
+	}
 	validated, err := validateUploaderURL(raw)
 	if err != nil {
 		return "", err
