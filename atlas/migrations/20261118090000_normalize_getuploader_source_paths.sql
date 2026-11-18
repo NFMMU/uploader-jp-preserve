@@ -89,23 +89,29 @@ WHERE a.id = m.duplicate_id;
 -- individual URL before rewriting both stored columns.
 WITH canonical AS (
   SELECT normalized_url,
-         regexp_replace(
-           regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
-           '/(index|list)/.*$', ''
-         ) AS canonical_url,
-         row_number() OVER (
-           PARTITION BY regexp_replace(
-             regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
+         CASE
+           WHEN normalized_url ~* '^https://(ux|uu)\\.getuploader\\.com/' THEN regexp_replace(
+             regexp_replace(normalized_url, '^https://(ux|uu)\\.getuploader\\.com', '', 'i'),
              '/(index|list)/.*$', ''
            )
+           ELSE normalized_url
+         END AS canonical_url,
+         row_number() OVER (
+           PARTITION BY CASE
+             WHEN normalized_url ~* '^https://(ux|uu)\\.getuploader\\.com/' THEN regexp_replace(
+               regexp_replace(normalized_url, '^https://(ux|uu)\\.getuploader\\.com', '', 'i'),
+               '/(index|list)/.*$', ''
+             )
+             ELSE normalized_url
+           END
            ORDER BY CASE WHEN origin = 'catalogued' THEN 0 ELSE 1 END, created_at
          ) AS position
   FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)\.getuploader\.com/'
 )
 DELETE FROM source_url_registry r
 USING canonical c
-WHERE r.normalized_url = c.normalized_url AND c.position > 1;
+WHERE r.normalized_url = c.normalized_url
+  AND c.position > 1;
 
 UPDATE source_url_registry
 SET normalized_url = regexp_replace(
