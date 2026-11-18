@@ -808,7 +808,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 											</span>
 										</a>
 									</li>
-								)
+								),
 							)}
 						</ul>
 					) : (
