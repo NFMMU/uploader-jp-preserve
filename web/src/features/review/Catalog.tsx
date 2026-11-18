@@ -42,11 +42,6 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: これは意図した動作
-	useEffect(() => {
-		setPage(1);
-	}, [query, limit]);
-
 	async function createArtifact(event: React.FormEvent) {
 		event.preventDefault();
 		setBusy(true);
@@ -97,7 +92,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<Search size={17} />
 						<input
 							value={query}
-							onChange={(event) => setQuery(event.target.value)}
+							onChange={(event) => {
+								setQuery(event.target.value);
+								setPage(1);
+							}}
 							placeholder="作品名・作者・作品ID・元ページURLで検索"
 							aria-label="作品を検索"
 						/>
@@ -128,7 +126,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<button
 							className="secondary"
 							type="button"
-							onClick={() => setQuery("")}
+							onClick={() => {
+								setQuery("");
+								setPage(1);
+							}}
 						>
 							検索をクリア
 						</button>
@@ -324,7 +325,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}, [linkedArtifactID, artifactData.data.artifact]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: apiは関数なので含まない
 	useEffect(() => {
 		if (role === "author" || !linkedFileID || f.loading) return;
 		let live = true;
@@ -346,7 +346,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		return () => {
 			live = false;
 		};
-	}, [linkedFileID, f.loading, f.data.items]);
+	}, [api, linkedFileID, f.loading, f.data.items, nav, notify, role]);
 
 	function resetAddFileForm() {
 		setPendingFileId("");
@@ -448,8 +448,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setRefreshDummy((x) => x + 1);
 			notify(
 				failures.length
-					? `${selectedIDs.length - failures.length} 件を削除、${failures.length} 件失敗しました`
-					: `${selectedIDs.length} 件を削除しました`,
+					? `${selectedIDs.length - failures.length} 件の削除依頼を受け付け、${failures.length} 件は受付に失敗しました`
+					: `${selectedIDs.length} 件の削除依頼を受け付けました`,
 			);
 		} finally {
 			setBusy(false);
