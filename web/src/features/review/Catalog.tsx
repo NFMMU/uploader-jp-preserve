@@ -126,7 +126,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<button
 							className="secondary"
 							type="button"
-							onClick={() => setQuery("")}
+							onClick={() => {
+							setQuery("");
+							setPage(1);
+						}}
 						>
 							検索をクリア
 						</button>
@@ -233,7 +236,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button type="button" className="primary" disabled={busy}>
+							<button type="submit" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -1108,7 +1111,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button type="button" className="primary" disabled={busy}>
+							<button type="submit" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1332,7 +1335,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								キャンセル
 							</button>
 							<button
-								type="button"
+								type="submit"
 								className="primary"
 								disabled={
 									busy ||
