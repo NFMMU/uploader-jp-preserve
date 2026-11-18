@@ -9,7 +9,7 @@ WITH cleaned AS (
 ),
 normalized AS (
   SELECT id, CASE
-    WHEN split_part(path, '?', 1) ~ '^/[^/]+/download/[^/]+$' THEN regexp_replace(path, '/+$', '')
+    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path from '\?.*$'), '')
     ELSE '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1)
   END AS source_url
   FROM cleaned
@@ -23,7 +23,7 @@ WITH cleaned AS (
 ),
 normalized AS (
   SELECT id, CASE
-    WHEN split_part(path, '?', 1) ~ '^/[^/]+/download/[^/]+$' THEN regexp_replace(path, '/+$', '')
+    WHEN rtrim(split_part(path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path from '\?.*$'), '')
     ELSE '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1)
   END AS source_url
   FROM cleaned
@@ -90,12 +90,12 @@ WITH mapped AS (
 ),
 canonical AS (
   SELECT normalized_url,
-         CASE WHEN split_part(path_url, '?', 1) ~ '^/[^/]+/download/[^/]+$'
-           THEN regexp_replace(path_url, '/+$', '')
+         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
+           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
            ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END AS canonical_url,
          row_number() OVER (
-           PARTITION BY CASE WHEN split_part(path_url, '?', 1) ~ '^/[^/]+/download/[^/]+$'
-             THEN regexp_replace(path_url, '/+$', '')
+           PARTITION BY CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
+             THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
              ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END
            ORDER BY (public_request_id IS NOT NULL) DESC,
                     CASE WHEN origin = 'catalogued' THEN 0 ELSE 1 END, created_at
@@ -120,11 +120,11 @@ WITH mapped AS (
 ),
 normalized AS (
   SELECT normalized_url,
-         CASE WHEN split_part(path_url, '?', 1) ~ '^/[^/]+/download/[^/]+$'
-           THEN regexp_replace(path_url, '/+$', '')
+         CASE WHEN rtrim(split_part(path_url, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$'
+           THEN regexp_replace(rtrim(split_part(path_url, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(path_url from '\?.*$'), '')
            ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1) END AS canonical_url,
          CASE
-           WHEN split_part(source_path, '?', 1) ~ '^/[^/]+/download/[^/]+$' THEN regexp_replace(source_path, '/+$', '')
+           WHEN rtrim(split_part(source_path, '?', 1), '/') ~* '^/[^/]+/download/[^/]+$' THEN regexp_replace(rtrim(split_part(source_path, '?', 1), '/'), '^(/[^/]+/)[^/]+/', '\1download/') || coalesce(substring(source_path from '\?.*$'), '')
            WHEN source_path LIKE '/%' THEN '/' || split_part(trim(both '/' FROM split_part(source_path, '?', 1)), '/', 1)
            ELSE source_path
          END AS canonical_source_url

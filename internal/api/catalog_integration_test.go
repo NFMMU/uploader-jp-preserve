@@ -250,7 +250,6 @@ func TestPublicCatalogPaginationIntegration(t *testing.T) {
 	}
 }
 
-
 func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	db, _ := catalogTestDB(t)
 
@@ -269,8 +268,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		updated_at timestamptz NOT NULL DEFAULT now()
 	)`)
 
-	oldest := model.Artifact{Title: "MMDkaz oldest", SourceURL: "https://uu.getuploader.com/MMDkaz/index/date/desc/2"}
-	duplicate := model.Artifact{Title: "MMDkaz duplicate", SourceURL: "https://ux.getuploader.com/MMDkaz/page2"}
+	oldest := model.Artifact{CreatedAt: time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC), Title: "MMDkaz oldest", SourceURL: "https://uu.getuploader.com/MMDkaz/index/date/desc/2"}
+	duplicate := model.Artifact{CreatedAt: time.Date(2026, time.November, 2, 0, 0, 0, 0, time.UTC), Title: "MMDkaz duplicate", SourceURL: "https://ux.getuploader.com/MMDkaz/page2"}
 	unrelated := model.Artifact{Title: "unrelated uploader", SourceURL: "https://uploader.jp/account"}
 	for _, artifact := range []*model.Artifact{&oldest, &duplicate, &unrelated} {
 		if err := db.Create(artifact).Error; err != nil {
@@ -278,8 +277,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		}
 	}
 
-	file7URL := "https://uu.getuploader.com/MMDkaz/download/7"
-	file8URL := "https://ux.getuploader.com/MMDkaz/download/8?token=abc"
+	file7URL := "https://uu.getuploader.com/MMDkaz/DOWNLOAD/7/"
+	file8URL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/"
 	file7 := model.FileObject{
 		ArtifactID: oldest.ID, OriginalFilename: "seven.zip", SizeBytes: 7,
 		PreservationStatus: "stored", RedistributionPolicy: "unknown", SourceURL: &file7URL,
@@ -294,8 +293,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		}
 	}
 
-	requestWithFileURL := "https://uu.getuploader.com/MMDkaz/download/7"
-	requestWithoutFileURL := "https://ux.getuploader.com/MMDkaz/download/8"
+	requestWithFileURL := "https://uu.getuploader.com/MMDkaz/DOWNLOAD/7/"
+	requestWithoutFileURL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/"
 	requestWithFile := model.PublicRequest{
 		RequestType: "preservation", Status: "pending", FileObjectID: &file7.ID,
 		SourceURL: &requestWithFileURL, Details: "file-linked request",
@@ -320,7 +319,9 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	}{
 		{"https://uu.getuploader.com/MMDkaz/index/date/desc/1", "https://uu.getuploader.com/MMDkaz/index/date/desc/1", "catalogued"},
 		{"https://ux.getuploader.com/MMDkaz/page2", "https://ux.getuploader.com/MMDkaz/page2", "catalogued"},
-		{"https://uu.getuploader.com/MMDkaz/download/7", "https://uu.getuploader.com/MMDkaz/download/7", "catalogued"},
+		{"https://uu.getuploader.com/MMDkaz/DOWNLOAD/7/", "https://uu.getuploader.com/MMDkaz/DOWNLOAD/7/", "catalogued"},
+		{"/MMDkaz/download/7", "/MMDkaz/download/7", "catalogued"},
+		{"/MMDkaz/download/8/?token=abc/", "/MMDkaz/DOWNLOAD/8/?token=abc/", "catalogued"},
 		{"https://example.uploader.jp/index/1", "https://example.uploader.jp/index/1", "public_request"},
 		{"https://example.uploader.jp/index/2", "https://example.uploader.jp/index/2", "public_request"},
 	}
@@ -376,7 +377,7 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		want string
 	}{
 		{file7, "/MMDkaz/download/7"},
-		{file8, "/MMDkaz/download/8?token=abc"},
+		{file8, "/MMDkaz/download/8?token=abc/"},
 	} {
 		var got model.FileObject
 		if err := db.First(&got, "id = ?", expected.file.ID).Error; err != nil {
@@ -391,6 +392,13 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		var got model.PublicRequest
 		if err := db.First(&got, "id = ?", expected.ID).Error; err != nil {
 			t.Fatal(err)
+		}
+		wantSource := "/MMDkaz/download/7"
+		if expected.ID == requestWithoutFile.ID {
+			wantSource = "/MMDkaz/download/8?token=abc/"
+		}
+		if got.SourceURL == nil || *got.SourceURL != wantSource {
+			t.Errorf("request source_url=%v, want %q", got.SourceURL, wantSource)
 		}
 		if got.ArtifactID == nil || *got.ArtifactID != oldest.ID {
 			t.Fatalf("request %s was not linked to canonical artifact: %+v", got.ID, got.ArtifactID)
@@ -408,12 +416,12 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	if err := db.Table("source_url_registry").Count(&registryCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if registryCount != 4 {
-		t.Fatalf("registry rows=%d, want 4 (uploader root, file ID, and two unrelated URLs)", registryCount)
+	if registryCount != 5 {
+		t.Fatalf("registry rows=%d, want 5 (uploader root, two file IDs, and two unrelated URLs)", registryCount)
 	}
-	for _, key := range []string{"/MMDkaz", "/MMDkaz/download/7", "https://example.uploader.jp/index/1", "https://example.uploader.jp/index/2"} {
+	for _, key := range []string{"/MMDkaz", "/MMDkaz/download/7", "/MMDkaz/download/8?token=abc/", "https://example.uploader.jp/index/1", "https://example.uploader.jp/index/2"} {
 		var count int64
-		if err := db.Table("source_url_registry").Where("normalized_url = ?", key).Count(&count).Error; err != nil {
+		if err := db.Table("source_url_registry").Where("normalized_url = ? AND source_url = ?", key, key).Count(&count).Error; err != nil {
 			t.Fatal(err)
 		}
 		if count != 1 {

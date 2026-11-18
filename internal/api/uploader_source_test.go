@@ -178,6 +178,9 @@ func TestUploaderSourceURLForStorage(t *testing.T) {
 		{"https://ux.getuploader.com/MMDkaz/download/8?token=abc", "/MMDkaz/download/8?token=abc"},
 		{"/MMDkaz/download/9", "/MMDkaz/download/9"},
 		{"https://uploader.jp/", "https://uploader.jp/"},
+		{"https://EXAMPLE.Uploader.JP.:443/download/7?token=abc/#fragment", "https://example.uploader.jp/download/7?token=abc/"},
+		{"https://uu.getuploader.com/A/DOWNLOAD/7/", "/A/download/7"},
+		{"/A/download/7/?token=abc/", "/A/download/7?token=abc/"},
 		{"https://example.uploader.jp/download/7#first", "https://example.uploader.jp/download/7"},
 		{"https://example.uploader.jp/download/7#second", "https://example.uploader.jp/download/7"},
 	}
@@ -195,22 +198,22 @@ func TestUploaderSourceURLForStorage(t *testing.T) {
 
 func TestUploaderArtifactSearchKeys(t *testing.T) {
 	cases := []struct {
-		raw             string
+		raw                    string
 		wantFile, wantArtifact string
 	}{
 		{
-			raw: "https://uu.getuploader.com/MMDkaz/index/date/desc/2",
-			wantFile: "/MMDkaz",
+			raw:          "https://uu.getuploader.com/MMDkaz/index/date/desc/2",
+			wantFile:     "/MMDkaz",
 			wantArtifact: "/MMDkaz",
 		},
 		{
-			raw: "https://ux.getuploader.com/MMDkaz/download/7",
-			wantFile: "/MMDkaz/download/7",
+			raw:          "https://ux.getuploader.com/MMDkaz/download/7",
+			wantFile:     "/MMDkaz/download/7",
 			wantArtifact: "/MMDkaz",
 		},
 		{
-			raw: "https://uploader.jp/",
-			wantFile: "https://uploader.jp/",
+			raw:          "https://uploader.jp/",
+			wantFile:     "https://uploader.jp/",
 			wantArtifact: "https://uploader.jp/",
 		},
 	}
@@ -225,8 +228,8 @@ func TestUploaderArtifactSearchKeys(t *testing.T) {
 
 func TestUploaderArtifactSourceURL(t *testing.T) {
 	cases := map[string]string{
-		"/MMDkaz/download/7": "/MMDkaz",
-		"/MMDkaz": "/MMDkaz",
+		"/MMDkaz/download/7":          "/MMDkaz",
+		"/MMDkaz":                     "/MMDkaz",
 		"https://uploader.jp/account": "https://uploader.jp/account",
 	}
 	for raw, want := range cases {

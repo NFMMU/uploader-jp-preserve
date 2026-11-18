@@ -665,6 +665,7 @@ func uploaderSourceURLForStorage(raw string) (string, error) {
 	}
 	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if host != "ux.getuploader.com" && host != "uu.getuploader.com" {
+		u.Host = host
 		u.Fragment = ""
 		u.RawFragment = ""
 		return u.String(), nil
