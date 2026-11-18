@@ -179,7 +179,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				total={total}
 				loading={data.loading}
 				onPageChange={setPage}
-				onLimitChange={setLimit}
+				onLimitChange={(nextLimit) => {
+					setLimit(nextLimit);
+					setPage(1);
+				}}
 			/>
 			{createOpen && (
 				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
