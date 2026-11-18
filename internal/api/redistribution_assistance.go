@@ -405,8 +405,24 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 			if result.Error != nil {
 				return result.Error
 			}
-			if err := tx.Delete(&model.FileObject{}, "id = ?", file.ID).Error; err != nil {
+			// Serialize deletion against any concurrent attempt to attach this
+			// staged file to another request. Physical deletion is safe only when
+			// no PublicRequest still references it.
+			var lockedFile model.FileObject
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
 				return err
+			}
+			var fileRequestReferences int64
+			if err := tx.Model(&model.PublicRequest{}).Where("file_object_id = ?", file.ID).Count(&fileRequestReferences).Error; err != nil {
+				return err
+			}
+			if fileRequestReferences == 0 {
+				if err := tx.Unscoped().Delete(&model.FileObject{}, "id = ?", file.ID).Error; err != nil {
+					return err
+				}
 			}
 			if artifactCreated {
 				var lockedArtifact model.Artifact
