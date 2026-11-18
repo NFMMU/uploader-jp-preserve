@@ -343,8 +343,7 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 			continue
 		}
 		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("execute migration statement %d: %v
-SQL: %s", i+1, err, statement)
+			t.Fatalf("execute migration statement %d: %v\nSQL: %s", i+1, err, statement)
 		}
 	}
 
