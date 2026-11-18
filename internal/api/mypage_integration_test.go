@@ -261,7 +261,7 @@ func TestMypagePhysicalDeletionQueueIntegration(t *testing.T) {
 			}
 			if tc.status == http.StatusAccepted {
 				again := mypageRequest(t, http.MethodDelete, "/:id", "/"+file.ID, "", &actor, s.deleteFileObject)
-				mypageError(t, again, http.StatusNotFound, "file object not found")
+				mypageError(t, again, http.StatusConflict, "file deletion has already been requested")
 			}
 		})
 	}
