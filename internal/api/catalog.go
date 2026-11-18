@@ -116,8 +116,21 @@ func (s *Server) createArtifact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 		return
 	}
-	artifact := model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
-	if err := s.db.WithContext(c.Request.Context()).Create(&artifact).Error; err != nil {
+	source = uploaderArtifactSourceURL(source)
+	db := s.db.WithContext(c.Request.Context())
+	var artifact model.Artifact
+	if strings.HasPrefix(source, "/") {
+		if err := db.Where("source_url = ?", source).Order("created_at ASC").First(&artifact).Error; err == nil {
+			artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+			c.JSON(http.StatusOK, artifact)
+			return
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not find existing uploader artifact"})
+			return
+		}
+	}
+	artifact = model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
+	if err := db.Create(&artifact).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
 		return
 	}
