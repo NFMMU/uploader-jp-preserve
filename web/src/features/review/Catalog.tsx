@@ -736,7 +736,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</button>
 						)}
 						{role !== "author" && (
-							<button type="button"
+							<button
+								type="button"
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
 							>
@@ -889,11 +890,16 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button type="button" className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							type="button"
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+						>
 							選択解除
 						</button>
 					</div>
-					<button type="button"
+					<button
+						type="button"
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
@@ -906,7 +912,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button type="button" className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							type="button"
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+						>
 							選択解除
 						</button>
 					</div>
@@ -924,7 +934,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<option value="unknown">不明</option>
 							</select>
 						</label>
-						<button type="button"
+						<button
+							type="button"
 							className="secondary"
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
@@ -934,20 +945,23 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 						{role === "admin" && (
 							<>
-								<button type="button"
+								<button
+									type="button"
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
 								>
 									選択したファイルを削除
 								</button>
-								<button type="button"
+								<button
+									type="button"
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
 								>
 									一括公開
 								</button>
-								<button type="button"
+								<button
+									type="button"
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
 								>
@@ -1315,7 +1329,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button type="button"
+							<button
+								type="button"
 								className="primary"
 								disabled={
 									busy ||
@@ -1415,10 +1430,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button type="button" className="secondary" onClick={() => setDetail(null)}>
+							<button
+								type="button"
+								className="secondary"
+								onClick={() => setDetail(null)}
+							>
 								閉じる
 							</button>
-							<button type="button"
+							<button
+								type="button"
 								className="primary"
 								onClick={savePolicy}
 								disabled={
