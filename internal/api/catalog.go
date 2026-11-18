@@ -42,14 +42,16 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
+		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
+			OR (? <> '' AND source_url = ?)
 			OR id IN (
 				SELECT artifact_id FROM file_objects
 				WHERE deleted_at IS NULL
 				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -123,7 +125,7 @@ func (s *Server) createArtifact(c *gin.Context) {
 	created := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if strings.HasPrefix(source, "/") {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", source).Error; err != nil {
+			if err := lockUploaderArtifactRoots(tx, source); err != nil {
 				return err
 			}
 			if err := tx.Where("source_url = ?", source).Order("created_at ASC").First(&artifact).Error; err == nil {
@@ -307,18 +309,21 @@ func (s *Server) listFiles(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
+		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
 			OR original_filename COLLATE "case_insensitive" LIKE ?
 			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
+			OR (? <> '' AND file_objects.source_url = ?)
 			OR artifact_id IN (
 				SELECT id FROM artifacts
 				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
 				OR title COLLATE "case_insensitive" LIKE ?
 				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
 				OR source_url COLLATE "case_insensitive" LIKE ?
+				OR (? <> '' AND source_url = ?)
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
