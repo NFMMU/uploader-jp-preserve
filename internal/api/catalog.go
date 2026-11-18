@@ -135,7 +135,12 @@ func (s *Server) getArtifact(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files})
+	var requests []model.PublicRequest
+	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": requests})
 }
 
 func (s *Server) createFileObject(c *gin.Context) {
@@ -580,6 +585,17 @@ func uploaderSourceURLForStorage(raw string) (string, error) {
 		}
 	}
 	return storedPath, nil
+}
+
+// uploaderArtifactSourceURL collapses an individual GetUploader download path to its uploader root.
+func uploaderArtifactSourceURL(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		parts := strings.Split(strings.Trim(stored, "/"), "/")
+		if len(parts) > 0 && parts[0] != "" {
+			return "/" + parts[0]
+		}
+	}
+	return stored
 }
 
 // uploaderSourceURLForAccess expands a stored path for HTTP requests and links.
