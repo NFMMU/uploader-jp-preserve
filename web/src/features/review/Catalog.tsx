@@ -42,10 +42,6 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
 
-	useEffect(() => {
-		setPage(1);
-	}, [query, limit]);
-
 	async function createArtifact(event: React.FormEvent) {
 		event.preventDefault();
 		setBusy(true);
@@ -96,7 +92,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<Search size={17} />
 						<input
 							value={query}
-							onChange={(event) => setQuery(event.target.value)}
+							onChange={(event) => {
+								setQuery(event.target.value);
+									setPage(1);
+								}}
 							placeholder="作品名・作者・作品ID・元ページURLで検索"
 							aria-label="作品を検索"
 						/>
@@ -177,7 +176,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				total={total}
 				loading={data.loading}
 				onPageChange={setPage}
-				onLimitChange={setLimit}
+				onLimitChange={(nextLimit) => {
+					setLimit(nextLimit);
+					setPage(1);
+				}}
 			/>
 			{createOpen && (
 				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
@@ -345,7 +347,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		return () => {
 			live = false;
 		};
-	}, [linkedFileID, f.loading, f.data.items]);
+	}, [linkedFileID, role, f.loading, f.data.items, api, notify, nav]);
 
 	function resetAddFileForm() {
 		setPendingFileId("");
@@ -377,11 +379,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Reset selection whenever the artifact context changes.
 	useEffect(() => {
 		setSelectedIDs([]);
-	}, [linkedArtifactID]);
-
-	useEffect(() => {
 		setPage(1);
-	}, []);
+	}, [linkedArtifactID]);
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
@@ -814,14 +813,20 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<Search size={17} />
 					<input
 						value={query}
-						onChange={(e) => setQuery(e.target.value)}
+						onChange={(e) => {
+							setQuery(e.target.value);
+							setPage(1);
+						}}
 						placeholder="作品名・ファイル名・作者・IDで検索"
 					/>
 				</div>
 				<select
 					aria-label="保全状態で絞り込み"
 					value={preservationFilter}
-					onChange={(e) => setPreservationFilter(e.target.value)}
+					onChange={(e) => {
+						setPreservationFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">すべての保全状態</option>
 					<option value="uncollected">未取得</option>
@@ -835,7 +840,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<select
 					aria-label="公開条件で絞り込み"
 					value={policyFilter}
-					onChange={(e) => setPolicyFilter(e.target.value)}
+					onChange={(e) => {
+						setPolicyFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">すべての公開条件</option>
 					{(role === "author"
@@ -859,7 +867,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<select
 					aria-label="公開状態で絞り込み"
 					value={publicationFilter}
-					onChange={(e) => setPublicationFilter(e.target.value)}
+					onChange={(e) => {
+						setPublicationFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">公開状態：すべて</option>
 					<option value="public">公開中</option>
