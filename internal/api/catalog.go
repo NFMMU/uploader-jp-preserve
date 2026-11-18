@@ -163,12 +163,25 @@ func (s *Server) getArtifact(c *gin.Context) {
 			files[i].SourceURL = new(uploaderSourceURLForAccess(*files[i].SourceURL))
 		}
 	}
-	for i := range requests {
-		if requests[i].SourceURL != nil {
-			requests[i].SourceURL = new(uploaderSourceURLForAccess(*requests[i].SourceURL))
-		}
+	type relatedPreservationRequest struct {
+		ID        string    `json:"id"`
+		Status    string    `json:"status"`
+		Title     *string   `json:"title,omitempty"`
+		SourceURL *string   `json:"source_url,omitempty"`
+		CreatedAt time.Time `json:"created_at"`
 	}
-	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": requests})
+	relatedRequests := make([]relatedPreservationRequest, 0, len(requests))
+	for _, request := range requests {
+		var sourceURL *string
+		if request.SourceURL != nil {
+			sourceURL = new(uploaderSourceURLForAccess(*request.SourceURL))
+		}
+		relatedRequests = append(relatedRequests, relatedPreservationRequest{
+			ID: request.ID, Status: request.Status, Title: request.Title,
+			SourceURL: sourceURL, CreatedAt: request.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": relatedRequests})
 }
 
 func (s *Server) createFileObject(c *gin.Context) {
