@@ -796,9 +796,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					{(artifactData.data.related_requests || []).length > 0 ? (
 						<ul className="related-request-list">
 							{(artifactData.data.related_requests || []).map(
-								(request: Obj) => (
+							(request: Obj) => (
 								<li key={request.id}>
-									<a href={`/admin/requests/${encodeURIComponent(request.id)}`}>
+									<a
+										href={`/admin/requests/${encodeURIComponent(request.id)}`}
+									>
 										<strong>{request.title || "タイトル未設定"}</strong>
 										<span>
 											{request.status} ·{" "}
@@ -806,7 +808,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 										</span>
 									</a>
 								</li>
-							))}
+							)
+						)}
 						</ul>
 					) : (
 						<p className="muted">関連する保全リクエストはありません。</p>
