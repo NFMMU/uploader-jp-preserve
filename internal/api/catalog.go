@@ -70,6 +70,9 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	items := make([]artifactListItem, 0, len(artifacts))
 	artifactIDs := make([]string, 0, len(artifacts))
+	for i := range artifacts {
+		artifacts[i].SourceURL = uploaderSourceURLForAccess(artifacts[i].SourceURL)
+	}
 	for _, artifact := range artifacts {
 		artifactIDs = append(artifactIDs, artifact.ID)
 		items = append(items, artifactListItem{Artifact: artifact})
@@ -120,6 +123,7 @@ func (s *Server) createArtifact(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 	c.JSON(http.StatusCreated, artifact)
 }
 
@@ -139,6 +143,17 @@ func (s *Server) getArtifact(c *gin.Context) {
 	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
 		return
+	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+	for i := range files {
+		if files[i].SourceURL != nil {
+			files[i].SourceURL = new(uploaderSourceURLForAccess(*files[i].SourceURL))
+		}
+	}
+	for i := range requests {
+		if requests[i].SourceURL != nil {
+			requests[i].SourceURL = new(uploaderSourceURLForAccess(*requests[i].SourceURL))
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": requests})
 }
