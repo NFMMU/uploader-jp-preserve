@@ -100,7 +100,7 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		if strings.TrimSpace(*req.SourceURL) == "" {
 			updates["source_url"] = nil
 		} else {
-			validated, err := validateUploaderURL(*req.SourceURL)
+			validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 				return
