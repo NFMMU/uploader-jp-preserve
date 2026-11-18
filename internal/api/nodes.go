@@ -534,9 +534,7 @@ func (s *Server) clearFailedTasks(c *gin.Context) {
 	var affectedCount int64
 	actor, _ := hooks.CurrentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		result := tx.Where(model.Task{
-			Status: "failed",
-		}).Delete(nil)
+		result := tx.Where("status = ? AND task_type <> ?", "failed", "delete").Delete(nil)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -1067,16 +1065,19 @@ func retryFailedDeletionTx(tx *gorm.DB, task model.Task, file model.FileObject, 
 	if file.DeletionRequestedAt == nil {
 		// A failed surplus deletion must still leave the required copies and
 		// spare on stable nodes. Never redirect it to a different placement.
-		var healthy, unstable int64
-		copies := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").
-			Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, *task.TargetNodeID, now.Add(-2*time.Minute))
-		if err := copies.Count(&healthy).Error; err != nil {
+		var counts struct {
+			Healthy  int64
+			Unstable int64
+		}
+		stableCutoff := now.Add(-surplusReplicaCooldown)
+		if err := tx.Table("placements AS p").
+			Select("COUNT(*) AS healthy, COUNT(*) FILTER (WHERE n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?) AS unstable", stableCutoff, stableCutoff).
+			Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, *task.TargetNodeID, now.Add(-2*time.Minute)).
+			Scan(&counts).Error; err != nil {
 			return err
 		}
-		if err := copies.Where("n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?", now.Add(-surplusReplicaCooldown), now.Add(-surplusReplicaCooldown)).Count(&unstable).Error; err != nil {
-			return err
-		}
-		if healthy < requiredReplicaCount+1 || unstable > 0 {
+		if counts.Healthy < requiredReplicaCount+1 || counts.Unstable > 0 {
 			return &retryRejection{reason: "insufficient stable copies for surplus deletion retry"}
 		}
 	}
@@ -1413,6 +1414,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		placementNodeID = valueOrEmpty(task.TargetNodeID)
 	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if task.TaskType == "delete" && req.Status == "success" {
+			var lockedFile model.FileObject
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
+				return err
+			}
+			file = lockedFile
+		}
 		updates := map[string]any{"status": nextStatus, "lease_until": nil, "lease_token": nil, "updated_at": now}
 		if req.Status == "failure" {
 			updates["last_error"] = req.Error
