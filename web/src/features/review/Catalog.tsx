@@ -42,6 +42,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: これは意図した動作
 	useEffect(() => {
 		setPage(1);
 	}, [query, limit]);
@@ -231,7 +232,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button className="primary" disabled={busy} type={"button"}>
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -291,16 +292,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [reason, setReason] = useState("");
 
 	let filePath = `/catalog/files?page=${page}&limit=${limit}`;
-	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
+	if (query.trim()) filePath += `&q=${encodeURIComponent(query.trim())}`;
 	if (preservationFilter)
-		filePath +=
-			"&preservation_status=" + encodeURIComponent(preservationFilter);
+		filePath += `&preservation_status=${encodeURIComponent(preservationFilter)}`;
 	if (policyFilter)
-		filePath += "&redistribution_policy=" + encodeURIComponent(policyFilter);
+		filePath += `&redistribution_policy=${encodeURIComponent(policyFilter)}`;
 	if (publicationFilter)
-		filePath += "&publication=" + encodeURIComponent(publicationFilter);
+		filePath += `&publication=${encodeURIComponent(publicationFilter)}`;
 	if (linkedArtifactID)
-		filePath += "&artifact_id=" + encodeURIComponent(linkedArtifactID);
+		filePath += `&artifact_id=${encodeURIComponent(linkedArtifactID)}`;
 
 	const f = useData(api, filePath, refresh + unused);
 	const files: Obj[] = f.data.items || [];
@@ -324,6 +324,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}, [linkedArtifactID, artifactData.data.artifact]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: apiは関数なので含まない
 	useEffect(() => {
 		if (role === "author" || !linkedFileID || f.loading) return;
 		let live = true;
@@ -379,6 +380,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		setSelectedIDs([]);
 	}, [linkedArtifactID]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: これは意図した動作
 	useEffect(() => {
 		setPage(1);
 	}, [
@@ -748,6 +750,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
+								type={"button"}
 							>
 								<Download size={16} /> CSV出力
 							</button>
@@ -852,7 +855,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+							type={"button"}
+						>
 							選択解除
 						</button>
 					</div>
@@ -860,6 +867,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
+						type={"button"}
 					>
 						選択したファイルを削除
 					</button>
@@ -869,7 +877,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+							type={"button"}
+						>
 							選択解除
 						</button>
 					</div>
@@ -892,6 +904,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
 							}
+							type={"button"}
 						>
 							公開条件を一括変更
 						</button>
@@ -901,18 +914,21 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
+									type={"button"}
 								>
 									選択したファイルを削除
 								</button>
 								<button
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
+									type={"button"}
 								>
 									一括公開
 								</button>
 								<button
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
+									type={"button"}
 								>
 									一括公開停止
 								</button>
@@ -1055,7 +1071,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button className="primary" disabled={busy} type={"button"}>
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1287,6 +1303,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(!!sourceURL.trim() && !acceptSourceTerms) ||
 									policy === "pending"
 								}
+								type={"button"}
 							>
 								<CloudUpload size={16} />
 								{busy
@@ -1378,7 +1395,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button className="secondary" onClick={() => setDetail(null)}>
+							<button
+								className="secondary"
+								onClick={() => setDetail(null)}
+								type={"button"}
+							>
 								閉じる
 							</button>
 							<button
@@ -1390,6 +1411,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(role === "author" &&
 										!["allowed", "restricted"].includes(policy))
 								}
+								type={"button"}
 							>
 								設定を保存
 							</button>
