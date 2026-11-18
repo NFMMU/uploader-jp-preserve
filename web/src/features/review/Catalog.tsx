@@ -127,9 +127,9 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							className="secondary"
 							type="button"
 							onClick={() => {
-							setQuery("");
-							setPage(1);
-						}}
+								setQuery("");
+								setPage(1);
+							}}
 						>
 							検索をクリア
 						</button>
