@@ -44,7 +44,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 			return
 		}
-		updates["source_url"] = validated
+		updates["source_url"] = uploaderArtifactSourceURL(validated)
 	}
 	if req.Description != nil {
 		updates["description"] = trimOptional(req.Description)
