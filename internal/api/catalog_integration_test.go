@@ -416,10 +416,10 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	if err := db.Table("source_url_registry").Count(&registryCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if registryCount != 5 {
-		t.Fatalf("registry rows=%d, want 5 (uploader root, two file IDs, and two unrelated URLs)", registryCount)
+	if registryCount != 6 {
+		t.Fatalf("registry rows=%d, want 6 (uploader root, two distinct file-7 keys, file 8, and two unrelated URLs)", registryCount)
 	}
-	for _, key := range []string{"/MMDkaz", "/MMDkaz/download/7?token=file7", "/MMDkaz/download/8?token=abc/", "https://example.uploader.jp/index/1", "https://example.uploader.jp/index/2"} {
+	for _, key := range []string{"/MMDkaz", "/MMDkaz/download/7", "/MMDkaz/download/7?token=file7", "/MMDkaz/download/8?token=abc/", "https://example.uploader.jp/index/1", "https://example.uploader.jp/index/2"} {
 		var count int64
 		if err := db.Table("source_url_registry").Where("normalized_url = ? AND source_url = ?", key, key).Count(&count).Error; err != nil {
 			t.Fatal(err)
