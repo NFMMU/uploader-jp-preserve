@@ -1180,6 +1180,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		)
 	}
 
+	if publicRequest.SourceURL != nil {
+		publicRequest.SourceURL = new(uploaderSourceURLForAccess(*publicRequest.SourceURL))
+	}
 	response := gin.H{
 		"request": publicRequest,
 		"note": "Accepted takedown requests disable public downloads. " +
