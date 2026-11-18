@@ -352,9 +352,23 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 	artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
 	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: new("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
 	db := s.db.WithContext(c.Request.Context())
+	artifactCreated := false
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&artifact).Error; err != nil {
-			return err
+		if strings.HasPrefix(artifactSourceURL, "/") {
+			if err := tx.Where("source_url = ?", artifactSourceURL).Order("created_at ASC").First(&artifact).Error; err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				if err := tx.Create(&artifact).Error; err != nil {
+					return err
+				}
+				artifactCreated = true
+			}
+		} else {
+			if err := tx.Create(&artifact).Error; err != nil {
+				return err
+			}
+			artifactCreated = true
 		}
 		file.ArtifactID = artifact.ID
 		if err := tx.Create(&file).Error; err != nil {
@@ -377,8 +391,10 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 
 	if !s.queueStagedIngest(c, file, tmpName, written, sha, "application/octet-stream", *request.IntakeFileName, 3, fileSourceURL, "", "", "", "", "") {
 		_ = db.Model(&model.PublicRequest{}).Where("id = ?", request.ID).Updates(map[string]any{"artifact_id": nil, "file_object_id": nil, "updated_at": time.Now().UTC()}).Error
-		if err := db.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
-			s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "error", err)
+		if artifactCreated {
+			if err := db.Delete(&model.Artifact{}, "id = ?", artifact.ID).Error; err != nil {
+				s.logger.Warn("could not roll back failed intake ingestion", "request_id", request.ID, "artifact_id", artifact.ID, "error", err)
+			}
 		}
 		return
 	}
