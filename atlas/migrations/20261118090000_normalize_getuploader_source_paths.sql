@@ -1,8 +1,8 @@
 -- Store GetUploader sources as host-independent paths and merge uploader-level artifacts.
 BEGIN;
 
--- Canonicalize individual source references. Keep /download/{id} on file/request
--- records, while artifact records always point at the uploader root.
+-- File/request records retain the individual download path. Artifact records
+-- always point to the uploader root.
 UPDATE file_objects
 SET source_url = regexp_replace(
   regexp_replace(source_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
@@ -24,7 +24,7 @@ SET source_url = regexp_replace(
 )
 WHERE source_url ~* '^https://(ux|uu)\.getuploader\.com/';
 
--- Link historical file-level preservation requests to their artifact before the merge.
+-- Backfill artifact relationships for historical file-level preservation requests.
 UPDATE public_requests r
 SET artifact_id = f.artifact_id
 FROM file_objects f
@@ -38,28 +38,23 @@ FROM artifacts a
 WHERE r.artifact_id IS NULL
   AND r.request_type = 'preservation'
   AND r.source_url LIKE '/%'
-  AND a.source_url = regexp_replace(r.source_url, '/(download|index|list)/.* Preserve the
--- oldest artifact ID and move every dependent record before deleting duplicates.
+  AND a.source_url = regexp_replace(r.source_url, '/(download|index|list)/.*$', '');
+
+-- Merge duplicate uploader artifacts, preserving the oldest artifact ID.
 CREATE TEMP TABLE getuploader_artifact_merge ON COMMIT DROP AS
 WITH canonical AS (
   SELECT id,
-         CASE
-           WHEN source_url LIKE '/%' THEN regexp_replace(source_url, '/(download|index|list)/.*$', '')
-           ELSE source_url
-         END AS uploader_key,
+         regexp_replace(source_url, '/(download|index|list)/.*$', '') AS uploader_key,
          first_value(id) OVER (
-           PARTITION BY CASE
-             WHEN source_url LIKE '/%' THEN regexp_replace(source_url, '/(download|index|list)/.*$', '')
-             ELSE source_url
-           END
+           PARTITION BY regexp_replace(source_url, '/(download|index|list)/.*$', '')
            ORDER BY created_at, id
          ) AS keep_id
   FROM artifacts
+  WHERE source_url LIKE '/%'
 )
 SELECT id AS duplicate_id, keep_id
 FROM canonical
-WHERE id <> keep_id
-  AND uploader_key LIKE '/%';
+WHERE id <> keep_id;
 
 UPDATE file_objects f
 SET artifact_id = m.keep_id
@@ -85,8 +80,7 @@ DELETE FROM artifacts a
 USING getuploader_artifact_merge m
 WHERE a.id = m.duplicate_id;
 
--- Registry keys are unique. Remove aliases that collapse to the same canonical
--- individual URL before rewriting both stored columns.
+-- Deduplicate registry keys across old absolute URLs and already-normalized paths.
 WITH canonical AS (
   SELECT normalized_url,
          CASE
@@ -129,89 +123,5 @@ WHERE normalized_url ~* '^https://(ux|uu)\.getuploader\.com/';
 CREATE UNIQUE INDEX IF NOT EXISTS artifacts_getuploader_source_path_uidx
   ON artifacts (source_url)
   WHERE source_url LIKE '/%';
-
-COMMIT;
-, '');
-
--- Merge artifacts that represent the same GetUploader account. Preserve the
--- oldest artifact ID and move every dependent record before deleting duplicates.
-CREATE TEMP TABLE getuploader_artifact_merge ON COMMIT DROP AS
-WITH canonical AS (
-  SELECT id,
-         CASE
-           WHEN source_url LIKE '/%' THEN regexp_replace(source_url, '/(download|index|list)/.*$', '')
-           ELSE source_url
-         END AS uploader_key,
-         first_value(id) OVER (
-           PARTITION BY CASE
-             WHEN source_url LIKE '/%' THEN regexp_replace(source_url, '/(download|index|list)/.*$', '')
-             ELSE source_url
-           END
-           ORDER BY created_at, id
-         ) AS keep_id
-  FROM artifacts
-)
-SELECT id AS duplicate_id, keep_id
-FROM canonical
-WHERE id <> keep_id
-  AND uploader_key LIKE '/%';
-
-UPDATE file_objects f
-SET artifact_id = m.keep_id
-FROM getuploader_artifact_merge m
-WHERE f.artifact_id = m.duplicate_id;
-
-UPDATE public_requests r
-SET artifact_id = m.keep_id
-FROM getuploader_artifact_merge m
-WHERE r.artifact_id = m.duplicate_id;
-
-INSERT INTO author_artifact (user_id, artifact_id, created_at)
-SELECT aa.user_id, m.keep_id, aa.created_at
-FROM author_artifact aa
-JOIN getuploader_artifact_merge m ON m.duplicate_id = aa.artifact_id
-ON CONFLICT (artifact_id, user_id) DO NOTHING;
-
-DELETE FROM author_artifact aa
-USING getuploader_artifact_merge m
-WHERE aa.artifact_id = m.duplicate_id;
-
-DELETE FROM artifacts a
-USING getuploader_artifact_merge m
-WHERE a.id = m.duplicate_id;
-
--- Registry keys are unique. Remove aliases that collapse to the same canonical
--- individual URL before rewriting both stored columns.
-WITH canonical AS (
-  SELECT normalized_url,
-         regexp_replace(
-           regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
-           '/(index|list)/.*$', ''
-         ) AS canonical_url,
-         row_number() OVER (
-           PARTITION BY regexp_replace(
-             regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
-             '/(index|list)/.*$', ''
-           )
-           ORDER BY CASE WHEN origin = 'catalogued' THEN 0 ELSE 1 END, created_at
-         ) AS position
-  FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)\.getuploader\.com/'
-)
-DELETE FROM source_url_registry r
-USING canonical c
-WHERE r.normalized_url = c.normalized_url AND c.position > 1;
-
-UPDATE source_url_registry
-SET normalized_url = regexp_replace(
-      regexp_replace(normalized_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
-      '/(index|list)/.*$', ''
-    ),
-    source_url = regexp_replace(
-      regexp_replace(source_url, '^https://(ux|uu)\.getuploader\.com', '', 'i'),
-      '/(index|list)/.*$', ''
-    ),
-    updated_at = now()
-WHERE normalized_url ~* '^https://(ux|uu)\.getuploader\.com/';
 
 COMMIT;
