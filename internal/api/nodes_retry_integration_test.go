@@ -530,7 +530,6 @@ func TestRetryDeleteTaskIntegration(t *testing.T) {
 	}
 }
 
-
 func TestClearFailedTasksPreservesDeletionTasksIntegration(t *testing.T) {
 	db := retryTestDB(t)
 	s, file, node, storeTask := retryFixture(t, db)
