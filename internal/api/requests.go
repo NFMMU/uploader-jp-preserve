@@ -638,30 +638,52 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 					if publicRequest.SourceURL == nil {
 						return errors.New("preservation request has no source URL")
 					}
-					artifactDescription := publicRequest.Details
-					if req.Details != nil {
-						artifactDescription = *req.Details
-					}
-					artifact := model.Artifact{
-						Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
-						CreatorName: publicRequest.CreatorName,
-						SourceURL:   *publicRequest.SourceURL,
-						Description: &artifactDescription,
-					}
-					if req.Title != nil {
-						artifact.Title = strings.TrimSpace(*req.Title)
-					}
-					if req.CreatorName != nil {
-						artifact.CreatorName = req.CreatorName
+					artifactSourceURL, err := uploaderSourceURLForStorage(*publicRequest.SourceURL)
+					if err != nil {
+						return errUrlValidationFailed
 					}
 					if req.SourceURL != nil {
-						artifact.SourceURL = *req.SourceURL
+						artifactSourceURL, err = uploaderSourceURLForStorage(*req.SourceURL)
+						if err != nil {
+							return errUrlValidationFailed
+						}
 					}
-					if err := tx.Create(&artifact).Error; err != nil {
-						return err
+					artifactSourceURL = uploaderArtifactSourceURL(artifactSourceURL)
+
+					// An accepted request for another file from the same uploader
+					// should attach to the existing uploader-level artifact.
+					if strings.HasPrefix(artifactSourceURL, "/") {
+						var existingArtifact model.Artifact
+						if err := tx.Where("source_url = ?", artifactSourceURL).Order("created_at ASC").First(&existingArtifact).Error; err == nil {
+							targetArtifactID = &existingArtifact.ID
+							assignedArtifactID = existingArtifact.ID
+						} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+							return err
+						}
 					}
-					targetArtifactID = &artifact.ID
-					assignedArtifactID = artifact.ID
+					if targetArtifactID == nil {
+						artifactDescription := publicRequest.Details
+						if req.Details != nil {
+							artifactDescription = *req.Details
+						}
+						artifact := model.Artifact{
+							Title:       strings.TrimSpace(valueOrEmpty(publicRequest.Title)),
+							CreatorName: publicRequest.CreatorName,
+							SourceURL:   artifactSourceURL,
+							Description: &artifactDescription,
+						}
+						if req.Title != nil {
+							artifact.Title = strings.TrimSpace(*req.Title)
+						}
+						if req.CreatorName != nil {
+							artifact.CreatorName = req.CreatorName
+						}
+						if err := tx.Create(&artifact).Error; err != nil {
+							return err
+						}
+						targetArtifactID = &artifact.ID
+						assignedArtifactID = artifact.ID
+					}
 				}
 	
 				if req.AuthorMode == "existing" {
@@ -759,7 +781,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		if req.SourceURL != nil {
 			if publicRequest.RequestType == "preservation" {
-				url, err := normalizeUploaderURL(*req.SourceURL)
+				url, err := uploaderSourceURLForStorage(*req.SourceURL)
 				if err != nil {
 					return errUrlValidationFailed
 				}
