@@ -79,7 +79,7 @@ func checkUploaderListingCandidates(ctx context.Context, found []uploaderListing
 			continue
 		}
 		storedURL, storageErr := uploaderSourceURLForStorage(normalized)
-		if storageErr == nil && registered[storedURL] {
+		if storageErr == nil && (registered[storedURL] || registered[normalized]) {
 			seen[normalized] = true
 			duplicates++
 			continue
