@@ -33,7 +33,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 	const clearFailedTasks = async () => {
 		try {
 			await api("/operations/tasks/clear-failed", { method: "POST" });
-			notify("失敗タスクのレコードをクリアしました");
+			notify("失敗した削除タスクを除くレコードをクリアしました");
 			setLocalRefresh((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
