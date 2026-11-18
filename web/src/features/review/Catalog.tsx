@@ -783,7 +783,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				}
 			/>
 			{linkedArtifactID && artifactRecord && (
-				<section className="panel related-requests-panel" aria-labelledby="related-preservation-requests">
+				<section
+					className="panel related-requests-panel"
+					aria-labelledby="related-preservation-requests"
+				>
 					<div className="panel-heading">
 						<h2 id="related-preservation-requests">関連するリクエスト</h2>
 						<span className="muted">
@@ -792,7 +795,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					</div>
 					{(artifactData.data.related_requests || []).length > 0 ? (
 						<ul className="related-request-list">
-							{(artifactData.data.related_requests || []).map((request: Obj) => (
+							{(artifactData.data.related_requests || []).map(
+								(request: Obj) => (
 								<li key={request.id}>
 									<a href={`/admin/requests/${encodeURIComponent(request.id)}`}>
 										<strong>{request.title || "タイトル未設定"}</strong>
