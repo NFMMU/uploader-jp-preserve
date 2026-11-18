@@ -125,6 +125,11 @@ SET normalized_url = regexp_replace(
     updated_at = now()
 WHERE normalized_url ~* '^https://(ux|uu)\.getuploader\.com/';
 
+-- Enforce one artifact per canonical uploader path for future registrations.
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_getuploader_source_path_uidx
+  ON artifacts (source_url)
+  WHERE source_url LIKE '/%';
+
 COMMIT;
 , '');
 
