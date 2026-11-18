@@ -810,7 +810,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<p className="muted">関連する保全リクエストはありません。</p>
 						)}
 					</section>
-			)}
+					)}
 			<div className="filter-bar file-filter-bar">
 				<div className="search-box">
 					<Search size={17} />
