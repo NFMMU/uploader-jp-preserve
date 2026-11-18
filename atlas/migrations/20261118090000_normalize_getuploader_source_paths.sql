@@ -186,8 +186,48 @@ normalized AS (
            ELSE '/' || split_part(trim(both '/' FROM split_part(path_url, '?', 1)), '/', 1)
          END AS canonical_url,
          CASE
-           WHEN source_path ~ '^/[^/]+/download/[^/]+$'
-             THEN regexp_replace(source_path, '/+$', '')
+           WHEN split_part(source_path, '?', 1) ~ '^/[^/]+/download/[^/]+
+           WHEN source_path LIKE '/%'
+             THEN '/' || split_part(trim(both '/' FROM split_part(source_path, '?', 1)), '/', 1)
+           ELSE source_path
+         END AS canonical_source_url
+  FROM mapped
+)
+UPDATE source_url_registry r
+SET normalized_url = n.canonical_url,
+    source_url = n.canonical_source_url,
+    updated_at = now()
+FROM normalized n
+WHERE r.normalized_url = n.normalized_url;
+
+-- Enforce one Artifact per canonical uploader path for future registrations.
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_getuploader_source_path_uidx
+  ON artifacts (source_url)
+  WHERE source_url LIKE '/%';
+
+COMMIT;
+
+             THEN regexp_replace(source_path, '/+
+           WHEN source_path LIKE '/%'
+             THEN '/' || split_part(trim(both '/' FROM split_part(source_path, '?', 1)), '/', 1)
+           ELSE source_path
+         END AS canonical_source_url
+  FROM mapped
+)
+UPDATE source_url_registry r
+SET normalized_url = n.canonical_url,
+    source_url = n.canonical_source_url,
+    updated_at = now()
+FROM normalized n
+WHERE r.normalized_url = n.normalized_url;
+
+-- Enforce one Artifact per canonical uploader path for future registrations.
+CREATE UNIQUE INDEX IF NOT EXISTS artifacts_getuploader_source_path_uidx
+  ON artifacts (source_url)
+  WHERE source_url LIKE '/%';
+
+COMMIT;
+, '')
            WHEN source_path LIKE '/%'
              THEN '/' || split_part(trim(both '/' FROM split_part(source_path, '?', 1)), '/', 1)
            ELSE source_path
