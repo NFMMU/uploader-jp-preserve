@@ -667,6 +667,10 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 				if uploaderArtifactSourceURL(fileArtifact.SourceURL) != uploaderArtifactSourceURL(*req.SourceURL) {
 					return errInvalidFile
 				}
+				if req.ArtifactID == nil {
+					targetArtifactID = &targetFile.ArtifactID
+					artifactTargetRecomputed = true
+				}
 			}
 		}
 
