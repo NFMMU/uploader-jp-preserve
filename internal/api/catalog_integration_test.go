@@ -249,3 +249,167 @@ func TestPublicCatalogPaginationIntegration(t *testing.T) {
 		}
 	}
 }
+
+
+func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+
+	catalogExec(t, db, `CREATE TABLE author_artifact (
+		user_id uuid NOT NULL,
+		artifact_id uuid NOT NULL,
+		created_at timestamptz NOT NULL DEFAULT now(),
+		PRIMARY KEY (artifact_id, user_id)
+	)`)
+	catalogExec(t, db, `CREATE TABLE source_url_registry (
+		normalized_url text PRIMARY KEY,
+		source_url text NOT NULL,
+		origin text NOT NULL,
+		public_request_id uuid,
+		created_at timestamptz NOT NULL DEFAULT now(),
+		updated_at timestamptz NOT NULL DEFAULT now()
+	)`)
+
+	oldest := model.Artifact{Title: "MMDkaz oldest", SourceURL: "https://uu.getuploader.com/MMDkaz/index/date/desc/2"}
+	duplicate := model.Artifact{Title: "MMDkaz duplicate", SourceURL: "https://ux.getuploader.com/MMDkaz/page2"}
+	unrelated := model.Artifact{Title: "unrelated uploader", SourceURL: "https://uploader.jp/account"}
+	for _, artifact := range []*model.Artifact{&oldest, &duplicate, &unrelated} {
+		if err := db.Create(artifact).Error; err != nil {
+			t.Fatalf("create artifact: %v", err)
+		}
+	}
+
+	file7URL := "https://uu.getuploader.com/MMDkaz/download/7"
+	file8URL := "https://ux.getuploader.com/MMDkaz/download/8?token=abc"
+	file7 := model.FileObject{
+		ArtifactID: oldest.ID, OriginalFilename: "seven.zip", SizeBytes: 7,
+		PreservationStatus: "stored", RedistributionPolicy: "unknown", SourceURL: &file7URL,
+	}
+	file8 := model.FileObject{
+		ArtifactID: duplicate.ID, OriginalFilename: "eight.zip", SizeBytes: 8,
+		PreservationStatus: "stored", RedistributionPolicy: "unknown", SourceURL: &file8URL,
+	}
+	for _, file := range []*model.FileObject{&file7, &file8} {
+		if err := db.Create(file).Error; err != nil {
+			t.Fatalf("create file: %v", err)
+		}
+	}
+
+	requestWithFileURL := "https://uu.getuploader.com/MMDkaz/download/7"
+	requestWithoutFileURL := "https://ux.getuploader.com/MMDkaz/download/8"
+	requestWithFile := model.PublicRequest{
+		RequestType: "preservation", Status: "pending", FileObjectID: &file7.ID,
+		SourceURL: &requestWithFileURL, Details: "file-linked request",
+	}
+	requestWithoutFile := model.PublicRequest{
+		RequestType: "preservation", Status: "pending",
+		SourceURL: &requestWithoutFileURL, Details: "URL-only request",
+	}
+	for _, request := range []*model.PublicRequest{&requestWithFile, &requestWithoutFile} {
+		if err := db.Create(request).Error; err != nil {
+			t.Fatalf("create request: %v", err)
+		}
+	}
+
+	authorID := uuid.NewString()
+	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?)", authorID, duplicate.ID)
+
+	registryRows := []struct {
+		normalized string
+		source     string
+		origin     string
+	}{
+		{"https://uu.getuploader.com/MMDkaz/index/date/desc/1", "https://uu.getuploader.com/MMDkaz/index/date/desc/1", "catalogued"},
+		{"https://ux.getuploader.com/MMDkaz/page2", "https://ux.getuploader.com/MMDkaz/page2", "catalogued"},
+		{"https://uu.getuploader.com/MMDkaz/download/7", "https://uu.getuploader.com/MMDkaz/download/7", "catalogued"},
+		{"https://example.uploader.jp/index/1", "https://example.uploader.jp/index/1", "public_request"},
+		{"https://example.uploader.jp/index/2", "https://example.uploader.jp/index/2", "public_request"},
+	}
+	for _, row := range registryRows {
+		catalogExec(t, db,
+			"INSERT INTO source_url_registry (normalized_url, source_url, origin) VALUES (?, ?, ?)",
+			row.normalized, row.source, row.origin,
+		)
+	}
+
+	migration, err := os.ReadFile("../../atlas/migrations/20261118090000_normalize_getuploader_source_paths.sql")
+	if err != nil {
+		t.Fatalf("read GetUploader migration: %v", err)
+	}
+	migrationSQL := strings.Replace(string(migration), "BEGIN;", "", 1)
+	migrationSQL = strings.Replace(migrationSQL, "COMMIT;", "", 1)
+	for i, statement := range strings.Split(migrationSQL, ";") {
+		statement = strings.TrimSpace(statement)
+		if statement == "" {
+			continue
+		}
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("execute migration statement %d: %v
+SQL: %s", i+1, err, statement)
+		}
+	}
+
+	var artifacts []model.Artifact
+	if err := db.Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("artifacts=%d, want 2 after merging duplicate uploader roots", len(artifacts))
+	}
+	var canonical model.Artifact
+	if err := db.First(&canonical, "id = ?", oldest.ID).Error; err != nil {
+		t.Fatalf("oldest artifact should be preserved: %v", err)
+	}
+	if canonical.SourceURL != "/MMDkaz" {
+		t.Fatalf("canonical artifact source_url=%q, want /MMDkaz", canonical.SourceURL)
+	}
+
+	for _, expected := range []struct {
+		file model.FileObject
+		want string
+	}{
+		{file7, "/MMDkaz/download/7"},
+		{file8, "/MMDkaz/download/8?token=abc"},
+	} {
+		var got model.FileObject
+		if err := db.First(&got, "id = ?", expected.file.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got.ArtifactID != oldest.ID || got.SourceURL == nil || *got.SourceURL != expected.want {
+			t.Fatalf("file %s: artifact_id=%s source_url=%v", got.ID, got.ArtifactID, got.SourceURL)
+		}
+	}
+
+	for _, expected := range []model.PublicRequest{requestWithFile, requestWithoutFile} {
+		var got model.PublicRequest
+		if err := db.First(&got, "id = ?", expected.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got.ArtifactID == nil || *got.ArtifactID != oldest.ID {
+			t.Fatalf("request %s was not linked to canonical artifact: %+v", got.ID, got.ArtifactID)
+		}
+	}
+	var authorLinkCount int64
+	if err := db.Table("author_artifact").Where("user_id = ? AND artifact_id = ?", authorID, oldest.ID).Count(&authorLinkCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if authorLinkCount != 1 {
+		t.Fatalf("author-artifact link count=%d, want 1", authorLinkCount)
+	}
+
+	var registryCount int64
+	if err := db.Table("source_url_registry").Count(&registryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if registryCount != 4 {
+		t.Fatalf("registry rows=%d, want 4 (uploader root, file ID, and two unrelated URLs)", registryCount)
+	}
+	for _, key := range []string{"/MMDkaz", "/MMDkaz/download/7", "https://example.uploader.jp/index/1", "https://example.uploader.jp/index/2"} {
+		var count int64
+		if err := db.Table("source_url_registry").Where("normalized_url = ?", key).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("registry key %q count=%d, want 1", key, count)
+		}
+	}
+}
