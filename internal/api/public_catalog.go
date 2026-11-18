@@ -146,6 +146,7 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 		})
 		return
 	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 
 	var files []publicCatalogFile
 	if isAll {
