@@ -66,6 +66,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.metadata.update", "success", req.Reason)
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact})
 }
 
@@ -122,6 +123,9 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 	if err := db.First(&file, "id = ?", file.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated file"})
 		return
+	}
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
 	}
 	c.JSON(http.StatusOK, gin.H{"file": file})
 }
