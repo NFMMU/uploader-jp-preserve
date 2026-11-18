@@ -108,7 +108,7 @@ func (s *Server) createArtifact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "title and a valid uploader.jp source_url are required"})
 		return
 	}
-	source, err := validateUploaderURL(req.SourceURL)
+	source, err := uploaderSourceURLForStorage(req.SourceURL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 		return
@@ -167,7 +167,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		return
 	}
 	if req.SourceURL != nil {
-		validated, err := validateUploaderURL(*req.SourceURL)
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
 			return
@@ -551,6 +551,43 @@ func validateUploaderURL(raw string) (string, error) {
 	}
 
 	return u.String(), nil
+}
+
+// uploaderSourceURLForStorage keeps getuploader.com references host-independent.
+// ux.getuploader.com and uu.getuploader.com are aliases for the same uploader.
+func uploaderSourceURLForStorage(raw string) (string, error) {
+	validated, err := validateUploaderURL(raw)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(validated)
+	if err != nil {
+		return "", errInvalidURL
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if host != "ux.getuploader.com" && host != "uu.getuploader.com" {
+		return validated, nil
+	}
+	segments := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		return "", errInvalidURL
+	}
+	storedPath := "/" + segments[0]
+	if len(segments) >= 3 && strings.EqualFold(segments[1], "download") && segments[2] != "" {
+		storedPath += "/download/" + segments[2]
+		if u.RawQuery != "" {
+			storedPath += "?" + u.RawQuery
+		}
+	}
+	return storedPath, nil
+}
+
+// uploaderSourceURLForAccess expands a stored path for HTTP requests and links.
+func uploaderSourceURLForAccess(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		return "https://uu.getuploader.com" + stored
+	}
+	return stored
 }
 
 func validateHTTPURL(raw string) (string, error) {
