@@ -178,6 +178,8 @@ func TestUploaderSourceURLForStorage(t *testing.T) {
 		{"https://ux.getuploader.com/MMDkaz/download/8?token=abc", "/MMDkaz/download/8?token=abc"},
 		{"/MMDkaz/download/9", "/MMDkaz/download/9"},
 		{"https://uploader.jp/", "https://uploader.jp/"},
+		{"https://example.uploader.jp/download/7#first", "https://example.uploader.jp/download/7"},
+		{"https://example.uploader.jp/download/7#second", "https://example.uploader.jp/download/7"},
 	}
 	for _, tc := range cases {
 		got, err := uploaderSourceURLForStorage(tc.raw)
@@ -187,6 +189,36 @@ func TestUploaderSourceURLForStorage(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Errorf("uploaderSourceURLForStorage(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestUploaderArtifactSearchKeys(t *testing.T) {
+	cases := []struct {
+		raw             string
+		wantFile, wantArtifact string
+	}{
+		{
+			raw: "https://uu.getuploader.com/MMDkaz/index/date/desc/2",
+			wantFile: "/MMDkaz",
+			wantArtifact: "/MMDkaz",
+		},
+		{
+			raw: "https://ux.getuploader.com/MMDkaz/download/7",
+			wantFile: "/MMDkaz/download/7",
+			wantArtifact: "/MMDkaz",
+		},
+		{
+			raw: "https://uploader.jp/",
+			wantFile: "https://uploader.jp/",
+			wantArtifact: "https://uploader.jp/",
+		},
+	}
+	for _, tc := range cases {
+		gotFile, gotArtifact := uploaderArtifactSearchKeys(tc.raw)
+		if gotFile != tc.wantFile || gotArtifact != tc.wantArtifact {
+			t.Errorf("uploaderArtifactSearchKeys(%q) = (%q, %q), want (%q, %q)",
+				tc.raw, gotFile, gotArtifact, tc.wantFile, tc.wantArtifact)
 		}
 	}
 }
