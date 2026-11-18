@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -659,7 +660,9 @@ func uploaderSourceURLForStorage(raw string) (string, error) {
 	}
 	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	if host != "ux.getuploader.com" && host != "uu.getuploader.com" {
-		return validated, nil
+		u.Fragment = ""
+		u.RawFragment = ""
+		return u.String(), nil
 	}
 	segments := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
 	if len(segments) == 0 || segments[0] == "" {
@@ -692,6 +695,43 @@ func uploaderSourceURLForAccess(stored string) string {
 		return "https://uu.getuploader.com" + stored
 	}
 	return stored
+}
+
+// uploaderArtifactSearchKeys returns the normalized file and Artifact keys for
+// a URL pasted into a catalog search box.
+func uploaderArtifactSearchKeys(raw string) (string, string) {
+	stored, err := uploaderSourceURLForStorage(raw)
+	if err != nil {
+		return "", ""
+	}
+	return stored, uploaderArtifactSourceURL(stored)
+}
+
+// lockUploaderArtifactRoots serializes GetUploader get-or-create operations.
+// Keys are acquired in sorted order so a request changing uploaders cannot
+// deadlock with another request changing the route in the opposite direction.
+func lockUploaderArtifactRoots(tx *gorm.DB, sourceURLs ...string) error {
+	unique := make(map[string]struct{})
+	for _, sourceURL := range sourceURLs {
+		if strings.TrimSpace(sourceURL) == "" {
+			continue
+		}
+		root := uploaderArtifactSourceURL(sourceURL)
+		if strings.HasPrefix(root, "/") {
+			unique[root] = struct{}{}
+		}
+	}
+	roots := make([]string, 0, len(unique))
+	for root := range unique {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	for _, root := range roots {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", root).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateHTTPURL(raw string) (string, error) {
