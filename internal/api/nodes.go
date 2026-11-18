@@ -800,7 +800,7 @@ func (s *Server) retryFailedTask(
 			return errTaskNotRetryable
 		}
 
-		if task.TaskType != "store" && task.TaskType != "source_fetch" {
+		if task.TaskType != "store" && task.TaskType != "source_fetch" && task.TaskType != "delete" {
 			return errTaskNotRetryable
 		}
 
@@ -808,6 +808,10 @@ func (s *Server) retryFailedTask(
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 			return err
+		}
+
+		if task.TaskType == "delete" {
+			return retryFailedDeletionTx(tx, task, file, actor, now)
 		}
 
 		if file.PreservationStatus == "verified" {
@@ -1029,6 +1033,60 @@ func (s *Server) retryFailedTask(
 			Reason:     &reason,
 		}).Error
 	})
+}
+
+// retryFailedDeletionTx preserves the original node and storage key. The caller
+// holds the task and file locks, serializing retries for the same file.
+func retryFailedDeletionTx(tx *gorm.DB, task model.Task, file model.FileObject, actor model.User, now time.Time) error {
+	if task.TargetNodeID == nil || file.DeletedAt.Valid {
+		return &retryRejection{reason: "deletion has no target or is already complete"}
+	}
+	var placement model.Placement
+	if err := tx.Where("file_object_id = ? AND node_id = ?", file.ID, *task.TargetNodeID).First(&placement).Error; err != nil {
+		return err
+	}
+	if placement.Status != "error" && placement.Status != "deleting" {
+		return &retryRejection{reason: "target placement is no longer pending failed deletion"}
+	}
+	var active int64
+	query := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued','running')", file.ID)
+	if file.DeletionRequestedAt != nil {
+		// Other nodes may continue deleting independently.
+		query = query.Where("task_type <> 'delete' OR target_node_id = ?", *task.TargetNodeID)
+	}
+	if err := query.Count(&active).Error; err != nil {
+		return err
+	}
+	if active > 0 {
+		return &retryRejection{reason: "another active task prevents deletion retry"}
+	}
+	if file.DeletionRequestedAt == nil {
+		// A failed surplus deletion must still leave the required copies and
+		// spare on stable nodes. Never redirect it to a different placement.
+		var healthy, unstable int64
+		copies := tx.Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, *task.TargetNodeID, now.Add(-2*time.Minute))
+		if err := copies.Count(&healthy).Error; err != nil {
+			return err
+		}
+		if err := copies.Where("n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?", now.Add(-surplusReplicaCooldown), now.Add(-surplusReplicaCooldown)).Count(&unstable).Error; err != nil {
+			return err
+		}
+		if healthy < requiredReplicaCount+1 || unstable > 0 {
+			return &retryRejection{reason: "insufficient stable copies for surplus deletion retry"}
+		}
+	}
+	if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"status": "queued", "attempt_count": 0, "last_error": nil,
+		"lease_token": nil, "lease_until": nil, "updated_at": now,
+	}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Update("status", "deleting").Error; err != nil {
+		return err
+	}
+	reason := "Administrator retried failed deletion on original node " + *task.TargetNodeID
+	return tx.Create(&model.AuditLog{ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "task", TargetID: &task.ID, Action: "task.retry", Result: "success", Reason: &reason}).Error
 }
 
 func (s *Server) retryTask(c *gin.Context) {

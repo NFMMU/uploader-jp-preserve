@@ -232,7 +232,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy} type={"button"}>
+							<button className="primary" disabled={busy} type="submit">
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -1071,7 +1071,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy} type={"button"}>
+							<button className="primary" disabled={busy} type="submit">
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1303,7 +1303,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(!!sourceURL.trim() && !acceptSourceTerms) ||
 									policy === "pending"
 								}
-								type={"button"}
+								type="submit"
 							>
 								<CloudUpload size={16} />
 								{busy

@@ -189,7 +189,8 @@ export function Tasks({ api, refresh, notify, role }: any) {
 									{role === "admin" &&
 										x.status === "failed" &&
 										(x.task_type === "store" ||
-											x.task_type === "source_fetch") &&
+											x.task_type === "source_fetch" ||
+											x.task_type === "delete") &&
 										x.target_node_id != null && (
 											<button
 												className="small-btn"
