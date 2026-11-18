@@ -534,7 +534,7 @@ func (s *Server) clearFailedTasks(c *gin.Context) {
 	var affectedCount int64
 	actor, _ := hooks.CurrentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("status = ? AND task_type <> ?", "failed", "delete").Delete(nil)
+		result := tx.Where("status = ? AND task_type <> ?", "failed", "delete").Delete(&model.Task{})
 		if result.Error != nil {
 			return result.Error
 		}
