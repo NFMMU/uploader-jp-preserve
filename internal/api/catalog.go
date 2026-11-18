@@ -70,6 +70,9 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	items := make([]artifactListItem, 0, len(artifacts))
 	artifactIDs := make([]string, 0, len(artifacts))
+	for i := range artifacts {
+		artifacts[i].SourceURL = uploaderSourceURLForAccess(artifacts[i].SourceURL)
+	}
 	for _, artifact := range artifacts {
 		artifactIDs = append(artifactIDs, artifact.ID)
 		items = append(items, artifactListItem{Artifact: artifact})
