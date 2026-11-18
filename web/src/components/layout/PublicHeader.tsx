@@ -14,7 +14,9 @@ export function PublicHeader() {
 					<Link to="/requests">公開停止・削除</Link>
 					<Link to="/relocation-info">移設先情報の提供</Link>
 					<Link to="/notices">お知らせ</Link>
-					<Link to="/admin/login">ログイン</Link>
+					<Link to="/admin/login" prefetch={"none"}>
+						ログイン
+					</Link>
 				</nav>
 			</div>
 		</header>
