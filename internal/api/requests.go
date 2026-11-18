@@ -186,7 +186,11 @@ func (s *Server) submitPublicRequest(c *gin.Context) {
 		if request.SubmitterName != nil {
 			contactName = *request.SubmitterName
 		}
-		content := fmt.Sprintf("申請種別: %s\n申請ID: %s\n連絡先: %s\n対象URL: %s\n移設先URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\n\n申請内容:\n%s", typeLabel, contactName, valueOrEmpty(request.Contact), valueOrEmpty(request.SourceURL), valueOrEmpty(request.ExternalURL), valueOrEmpty(request.RightsHolderContact), valueOrEmpty(request.IntakeFileName), request.Details)
+		sourceURLForConversation := valueOrEmpty(request.SourceURL)
+		if request.SourceURL != nil {
+			sourceURLForConversation = uploaderSourceURLForAccess(*request.SourceURL)
+		}
+		content := fmt.Sprintf("申請種別: %s\n申請ID: %s\n連絡先: %s\n対象URL: %s\n移設先URL: %s\n権利者への連絡先: %s\n添付ファイル: %s\n\n申請内容:\n%s", typeLabel, contactName, valueOrEmpty(request.Contact), sourceURLForConversation, valueOrEmpty(request.ExternalURL), valueOrEmpty(request.RightsHolderContact), valueOrEmpty(request.IntakeFileName), request.Details)
 		conversation_id := s.createLibreDeskConversation("public_request", request.ID, subjectTitle, contactName, valueOrEmpty(request.Contact), content)
 		if conversation_id != "" {
 			url := "https://uploaderjp.udonya.moe/admin/requests/" + request.ID
