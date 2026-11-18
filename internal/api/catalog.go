@@ -119,25 +119,629 @@ func (s *Server) createArtifact(c *gin.Context) {
 	source = uploaderArtifactSourceURL(source)
 	db := s.db.WithContext(c.Request.Context())
 	var artifact model.Artifact
-	if strings.HasPrefix(source, "/") {
-		if err := db.Where("source_url = ?", source).Order("created_at ASC").First(&artifact).Error; err == nil {
-			artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
-			c.JSON(http.StatusOK, artifact)
+	created := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if strings.HasPrefix(source, "/") {
+			if err := tx.Where("source_url = ?", source).Order("created_at ASC").First(&artifact).Error; err == nil {
+				// Reuse the canonical uploader artifact rather than creating a second one.
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+		if artifact.ID == "" {
+			artifact = model.Artifact{
+				Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName),
+				SourceURL: source, Description: trimOptional(req.Description),
+			}
+			if err := tx.Create(&artifact).Error; err != nil {
+				return err
+			}
+			created = true
+		}
+		if strings.HasPrefix(source, "/") {
+			// Requests submitted before an artifact existed become related when
+			// the first artifact for this uploader is registered.
+			if err := tx.Model(&model.PublicRequest{}).
+				Where(
+					"request_type = 'preservation' AND artifact_id IS NULL AND source_url LIKE '/%' AND regexp_replace(source_url, '/(download|index|list)/.*
+}
+
+func (s *Server) getArtifact(c *gin.Context) {
+	var artifact model.Artifact
+	err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error
+	if err != nil {
+		notFoundOrError(c, err, "artifact")
+		return
+	}
+	var files []model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND deleted_at IS NULL", artifact.ID).Order("created_at DESC").Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
+		return
+	}
+	var requests []model.PublicRequest
+	if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
+		return
+	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+	for i := range files {
+		if files[i].SourceURL != nil {
+			files[i].SourceURL = new(uploaderSourceURLForAccess(*files[i].SourceURL))
+		}
+	}
+	type relatedPreservationRequest struct {
+		ID        string    `json:"id"`
+		Status    string    `json:"status"`
+		Title     *string   `json:"title,omitempty"`
+		SourceURL *string   `json:"source_url,omitempty"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	relatedRequests := make([]relatedPreservationRequest, 0, len(requests))
+	for _, request := range requests {
+		var sourceURL *string
+		if request.SourceURL != nil {
+			sourceURL = new(uploaderSourceURLForAccess(*request.SourceURL))
+		}
+		relatedRequests = append(relatedRequests, relatedPreservationRequest{
+			ID: request.ID, Status: request.Status, Title: request.Title,
+			SourceURL: sourceURL, CreatedAt: request.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": relatedRequests})
+}
+
+func (s *Server) createFileObject(c *gin.Context) {
+	var req struct {
+		OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
+		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
+		Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
+		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
+		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
+		Description          *string `json:"description" binding:"omitempty,max=20000"`
+		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
+		Representative       *string `json:"representative" binding:"omitempty,uuid"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file object payload"})
+		return
+	}
+	var artifact model.Artifact
+	if err := s.db.WithContext(c.Request.Context()).First(&artifact, "id = ?", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "artifact")
+		return
+	}
+	policy := strings.TrimSpace(req.RedistributionPolicy)
+	if policy == "" {
+		policy = "unknown"
+	}
+	if !redistributionPolicies[policy] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
+		return
+	}
+	if req.SourceURL != nil {
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
 			return
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not find existing uploader artifact"})
+		}
+		req.SourceURL = &validated
+	}
+	if req.Sha256 != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.Sha256))
+		if !isHexDigest(value) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sha256 must be 64 hexadecimal characters"})
+			return
+		}
+		req.Sha256 = &value
+	}
+	if req.Representative != nil {
+		var reviewer model.User
+		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
 			return
 		}
 	}
-	artifact = model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
-	if err := db.Create(&artifact).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
+	file := model.FileObject{
+		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
+		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
+		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
+		Description: trimOptional(req.Description),
+	}
+	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
-	s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
+	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
+	c.JSON(http.StatusCreated, file)
+}
+
+type fileListItem struct {
+	model.FileObject
+	ArtifactTitle       string  `json:"artifact_title"`
+	ArtifactSourceURL   string  `json:"artifact_source_url"`
+	CreatorName         *string `json:"creator_name,omitempty"`
+	ArtifactDescription *string `json:"artifact_description,omitempty"`
+}
+
+func (s *Server) listFiles(c *gin.Context) {
+	page, limit, isAll := pagination(c)
+	db := s.db.WithContext(c.Request.Context())
+	query := db.Model(&model.FileObject{})
+	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
+		query = query.Where("artifact_id IN (SELECT artifact_id FROM author_artifact WHERE user_id = ?)", user.ID)
+	}
+	if c.Query("include_deleted") != "true" {
+		query = query.Where("deleted_at IS NULL")
+	}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		pattern := "%" + q + "%"
+		query = query.Where(`(
+			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
+			OR original_filename COLLATE "case_insensitive" LIKE ?
+			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
+			OR artifact_id IN (
+				SELECT id FROM artifacts
+				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
+				OR title COLLATE "case_insensitive" LIKE ?
+				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
+				OR source_url COLLATE "case_insensitive" LIKE ?
+			)
+		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	}
+	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
+		if _, err := uuid.Parse(artifactID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact_id"})
+			return
+		}
+		query = query.Where("artifact_id = ?", artifactID)
+	}
+	if status := c.Query("preservation_status"); status != "" {
+		if !preservationStatuses[status] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid preservation_status"})
+			return
+		}
+		query = query.Where("preservation_status = ?", status)
+	}
+	if policy := c.Query("redistribution_policy"); policy != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && policy != "allowed" && policy != "restricted" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only allowed or restricted redistribution policies"})
+			return
+		}
+		if !redistributionPolicies[policy] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
+			return
+		}
+		query = query.Where("redistribution_policy = ?", policy)
+	}
+	if publication := c.Query("publication"); publication != "" {
+		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && publication != "public" && publication != "private" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only public or private files"})
+			return
+		}
+		switch publication {
+		case "public":
+			cutoff := time.Now().UTC().Add(-2 * time.Minute)
+			query = query.Where(`public_download_enabled = TRUE AND redistribution_policy = 'allowed' AND preservation_status = 'verified' AND sha256 ~ '^[0-9a-fA-F]{64}$' AND EXISTS (
+				SELECT 1 FROM placements p JOIN nodes n ON n.id = p.node_id
+				WHERE p.file_object_id = file_objects.id AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?
+			)`, cutoff)
+		case "private":
+			query = query.Where("public_download_enabled = FALSE")
+		case "restricted":
+			query = query.Where("redistribution_policy = 'restricted'")
+		case "pending":
+			query = query.Where("redistribution_policy = 'pending'")
+		case "unknown":
+			query = query.Where("redistribution_policy = 'unknown'")
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid publication filter"})
+			return
+		}
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
+		return
+	}
+	// ファイル取得
+	var files []model.FileObject
+	fileQuery := query.Order("created_at DESC")
+	if !isAll {
+		fileQuery = fileQuery.Offset((page - 1) * limit).Limit(limit)
+	}
+	if err := fileQuery.Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search files"})
+		return
+	}
+	artifactIDs := make([]string, 0, len(files))
+	seen := map[string]bool{}
+	for _, file := range files {
+		if !seen[file.ArtifactID] {
+			seen[file.ArtifactID] = true
+			artifactIDs = append(artifactIDs, file.ArtifactID)
+		}
+	}
+	artifacts := map[string]model.Artifact{}
+	// Bound the number of parameters even when all files are requested.
+	const artifactBatchSize = 1000
+	for start := 0; start < len(artifactIDs); start += artifactBatchSize {
+		end := min(start+artifactBatchSize, len(artifactIDs))
+		var records []model.Artifact
+		if err := db.Where("id IN ?", artifactIDs[start:end]).Find(&records).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load file metadata"})
+			return
+		}
+		for _, artifact := range records {
+			artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+			artifacts[artifact.ID] = artifact
+		}
+	}
+	items := make([]fileListItem, 0, len(files))
+	for _, file := range files {
+		artifact := artifacts[file.ArtifactID]
+		if file.SourceURL != nil {
+			file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+		}
+		items = append(items, fileListItem{FileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
+}
+
+func (s *Server) getFileObject(c *gin.Context) {
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
+		allowed, accessErr := s.authorHasArtifact(c, user.ID, file.ArtifactID)
+		if accessErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify artifact access"})
+			return
+		}
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+			return
+		}
+	}
+	var policies []model.Policy
+	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load policy history"})
+		return
+	}
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+	}
+	c.JSON(http.StatusOK, gin.H{"file": file, "policy_history": policies})
+}
+
+func (s *Server) updateFilePolicy(c *gin.Context) {
+	var req struct {
+		RedistributionPolicy string  `json:"redistribution_policy" binding:"required"`
+		Representative       *string `json:"representative" binding:"omitempty,uuid"`
+		EvidenceURL          *string `json:"evidence_url" binding:"omitempty,max=4096"`
+		EvidenceNote         *string `json:"evidence_note" binding:"omitempty,max=20000"`
+		Reason               *string `json:"reason" binding:"omitempty,max=2000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || !redistributionPolicies[req.RedistributionPolicy] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid redistribution_policy and reason are required"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	actor, _ := hooks.CurrentUser(c)
+	// Authors may only make an explicit, affirmative policy decision.
+	// They cannot move a file into an unconfirmed or otherwise intermediate state.
+	if actor.Role == "author" && req.RedistributionPolicy != "allowed" && req.RedistributionPolicy != "restricted" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "authors may only set redistribution_policy to allowed or restricted"})
+		return
+	}
+	if req.Representative != nil {
+		var reviewer model.User
+		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
+			return
+		}
+	}
+	var evidenceURL *string
+	if req.EvidenceURL != nil {
+		if strings.TrimSpace(*req.EvidenceURL) != "" {
+			if _, err := validateHTTPURL(*req.EvidenceURL); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "evidence_url must be an http(s) URL"})
+				return
+			}
+		}
+		evidenceURL = trimOptional(req.EvidenceURL)
+	}
+	checkedAt := time.Now().UTC()
+	var checkedAtPtr *time.Time
+	var checkedBy *string
+	if req.RedistributionPolicy == "allowed" || req.RedistributionPolicy == "restricted" {
+		checkedAtPtr = &checkedAt
+		checkedBy = &actor.ID
+	}
+	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]any{"redistribution_policy": req.RedistributionPolicy}
+		if req.Representative != nil {
+			updates["representative"] = *req.Representative
+		}
+		if req.RedistributionPolicy != "allowed" {
+			// Fail closed immediately when a policy is no longer explicitly allowed.
+			updates["public_download_enabled"] = false
+		}
+		if err := tx.Model(&model.FileObject{}).Where("id = ?", file.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		record := model.Policy{FileObjectID: file.ID, PolicyType: req.RedistributionPolicy, EvidenceURL: evidenceURL, EvidenceNote: trimOptional(req.EvidenceNote), CheckedAt: checkedAtPtr, CheckedBy: checkedBy}
+		return tx.Create(&record).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update policy"})
+		return
+	}
+	file.RedistributionPolicy = req.RedistributionPolicy
+	if req.Representative != nil {
+		file.Representative = req.Representative
+	}
+	if req.RedistributionPolicy != "allowed" {
+		file.PublicDownloadEnabled = false
+	}
+	s.audit(c, &actor, "file_object", file.ID, "file_object.policy.update", "success", req.Reason)
+	c.JSON(http.StatusOK, gin.H{"file": file, "policy": req.RedistributionPolicy})
+}
+
+func (s *Server) updatePublicationFlag(c *gin.Context) {
+	var req struct {
+		Enabled *bool   `json:"enabled" binding:"required"`
+		Reason  *string `json:"reason" binding:"omitempty,max=2000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled and reason are required"})
+		return
+	}
+	var file model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+		notFoundOrError(c, err, "file object")
+		return
+	}
+	// An unchanged publication state is a no-op. In particular, do not
+	// reject an already-public file merely because its nodes are temporarily
+	// unhealthy when the caller is only saving an unrelated policy form.
+	if file.PublicDownloadEnabled == *req.Enabled {
+		c.JSON(http.StatusOK, gin.H{"file": file, "unchanged": true})
+		return
+	}
+	if *req.Enabled {
+		if file.RedistributionPolicy != "allowed" || file.PreservationStatus != "verified" || file.Sha256 == nil || !isHexDigest(*file.Sha256) {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download unless policy is allowed, preservation is verified, and a valid SHA-256 is recorded"})
+			return
+		}
+		cutoff := time.Now().UTC().Add(-2 * time.Minute)
+		var healthy int64
+		if err := s.db.WithContext(c.Request.Context()).Table("placements AS p").Joins("JOIN nodes AS n ON n.id = p.node_id").Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, cutoff).Count(&healthy).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check healthy placements"})
+			return
+		}
+		if healthy == 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot enable public download without a healthy verified placement"})
+			return
+		}
+	}
+	actor, _ := hooks.CurrentUser(c)
+	if err := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{}).Where("id = ?", file.ID).Update("public_download_enabled", *req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update publication flag"})
+		return
+	}
+	file.PublicDownloadEnabled = *req.Enabled
+	s.audit(c, &actor, "file_object", file.ID, "file_object.publication_flag.update", "success", req.Reason)
+	c.JSON(http.StatusOK, gin.H{"file": file})
+}
+
+func (s *Server) exportCatalog(c *gin.Context) {
+	format := strings.ToLower(c.DefaultQuery("format", "json"))
+	var artifacts []model.Artifact
+	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+		return
+	}
+	var files []model.FileObject
+	if err := s.db.WithContext(c.Request.Context()).Where("deleted_at IS NULL").Order("created_at ASC").Find(&files).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
+		return
+	}
+	actor, _ := hooks.CurrentUser(c)
+	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
+	if format == "json" {
+		c.JSON(http.StatusOK, gin.H{"artifacts": artifacts, "files": files, "exported_at": time.Now().UTC()})
+		return
+	}
+	if format != "csv" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=archive-catalog.csv")
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"record_type", "id", "artifact_id", "title", "creator_name", "source_url", "original_filename", "size_bytes", "sha256", "preservation_status", "redistribution_policy", "public_download_enabled", "created_at"})
+	for _, a := range artifacts {
+		_ = writer.Write([]string{"artifact", a.ID, "", csvSafe(a.Title), csvSafe(deref(a.CreatorName)), csvSafe(a.SourceURL), "", "", "", "", "", "", a.CreatedAt.UTC().Format(time.RFC3339)})
+	}
+	for _, f := range files {
+		_ = writer.Write([]string{"file", f.ID, f.ArtifactID, "", "", "", csvSafe(f.OriginalFilename), strconv.FormatInt(f.SizeBytes, 10), deref(f.Sha256), f.PreservationStatus, f.RedistributionPolicy, strconv.FormatBool(f.PublicDownloadEnabled), f.CreatedAt.UTC().Format(time.RFC3339)})
+	}
+	writer.Flush()
+}
+
+func pagination(c *gin.Context) (int, int, bool) {
+	isAll, _ := strconv.ParseBool(c.DefaultQuery("all", "false"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if isAll {
+		return 0, 0, true
+	}
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit, false
+}
+
+func validateUploaderURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil ||
+		u.Scheme != "https" ||
+		u.User != nil ||
+		u.Hostname() == "" ||
+		(u.Port() != "" && u.Port() != "443") {
+		return "", errInvalidURL
+	}
+
+	if !isAllowedUploaderHost(u.Hostname()) {
+		return "", errInvalidURL
+	}
+
+	return u.String(), nil
+}
+
+// uploaderSourceURLForStorage keeps getuploader.com references host-independent.
+// ux.getuploader.com and uu.getuploader.com are aliases for the same uploader.
+func uploaderSourceURLForStorage(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "/") {
+		raw = "https://uu.getuploader.com" + raw
+	}
+	validated, err := validateUploaderURL(raw)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(validated)
+	if err != nil {
+		return "", errInvalidURL
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if host != "ux.getuploader.com" && host != "uu.getuploader.com" {
+		return validated, nil
+	}
+	segments := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		return "", errInvalidURL
+	}
+	storedPath := "/" + segments[0]
+	if len(segments) >= 3 && strings.EqualFold(segments[1], "download") && segments[2] != "" {
+		storedPath += "/download/" + segments[2]
+		if u.RawQuery != "" {
+			storedPath += "?" + u.RawQuery
+		}
+	}
+	return storedPath, nil
+}
+
+// uploaderArtifactSourceURL collapses an individual GetUploader download path to its uploader root.
+func uploaderArtifactSourceURL(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		parts := strings.Split(strings.Trim(stored, "/"), "/")
+		if len(parts) > 0 && parts[0] != "" {
+			return "/" + parts[0]
+		}
+	}
+	return stored
+}
+
+// uploaderSourceURLForAccess expands a stored path for HTTP requests and links.
+func uploaderSourceURLForAccess(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		return "https://uu.getuploader.com" + stored
+	}
+	return stored
+}
+
+func validateHTTPURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Hostname() == "" {
+		return "", errInvalidURL
+	}
+	return u.String(), nil
+}
+
+func trimOptional(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func csvSafe(value string) string {
+	trimmed := strings.TrimLeft(value, "\t\r\n ")
+	if len(trimmed) > 0 && strings.ContainsRune("=+-@", rune(trimmed[0])) {
+		return "'" + value
+	}
+	return value
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func isHexDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func notFoundOrError(c *gin.Context, err error, label string) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": label + " not found"})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load " + label})
+}
+
+var errInvalidURL = errors.New("invalid URL")
+, '') = ?",
+					source,
+				).
+				Update("artifact_id", artifact.ID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create or reuse artifact"})
+		return
+	}
+	if created {
+		actor, _ := hooks.CurrentUser(c)
+		s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
+	}
 	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
-	c.JSON(http.StatusCreated, artifact)
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	c.JSON(status, artifact)
 }
 
 func (s *Server) getArtifact(c *gin.Context) {
