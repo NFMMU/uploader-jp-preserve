@@ -814,6 +814,10 @@ func (s *Server) retryFailedTask(
 			return retryFailedDeletionTx(tx, task, file, actor, now)
 		}
 
+		if task.TaskType == "store" && file.DeletionRequestedAt != nil {
+			return &retryRejection{reason: "file object is pending deletion"}
+		}
+
 		if file.PreservationStatus == "verified" {
 			return &retryRejection{reason: "file object is already verified"}
 		}

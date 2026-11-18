@@ -259,6 +259,50 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 	})
 }
 
+func TestRetryStorePendingDeletionIntegration(t *testing.T) {
+	for _, bulk := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bulk=%t", bulk), func(t *testing.T) {
+			db := retryTestDB(t)
+			s, file, _, task := retryFixture(t, db)
+			retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = now(), public_download_enabled = false WHERE id = ?", file.ID)
+			if bulk {
+				response := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(response)
+				c.Request = httptest.NewRequest(http.MethodPost, "/tasks/retry-all", nil)
+				c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+				s.retryAll(c)
+				var body struct {
+					Succeeded int `json:"succeeded"`
+					Failed    int `json:"failed"`
+					Skipped   int `json:"skipped"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if response.Code != http.StatusAccepted || body.Succeeded != 0 || body.Failed != 0 || body.Skipped != 1 {
+					t.Fatalf("bulk retry: %d %s", response.Code, response.Body)
+				}
+			} else if response := retryRequest(s, task.ID); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "file object is pending deletion") {
+				t.Fatalf("retry: %d %s", response.Code, response.Body)
+			}
+			var got model.Task
+			if err := db.First(&got, "id = ?", task.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != "failed" || got.AttemptCount != task.AttemptCount || got.LastError == nil || *got.LastError != *task.LastError {
+				t.Fatalf("rejected task changed: %+v", got)
+			}
+			var placement model.Placement
+			if err := db.First(&placement, "file_object_id = ?", file.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if placement.Status != "error" {
+				t.Fatalf("rejected placement changed: %+v", placement)
+			}
+		})
+	}
+}
+
 func TestRetryErrorHandlingIntegration(t *testing.T) {
 	const internalDetail = "synthetic database failure with private details"
 
