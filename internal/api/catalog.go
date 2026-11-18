@@ -341,12 +341,16 @@ func (s *Server) listFiles(c *gin.Context) {
 			return
 		}
 		for _, artifact := range records {
+			artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 			artifacts[artifact.ID] = artifact
 		}
 	}
 	items := make([]fileListItem, 0, len(files))
 	for _, file := range files {
 		artifact := artifacts[file.ArtifactID]
+		if file.SourceURL != nil {
+			file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+		}
 		items = append(items, fileListItem{FileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
@@ -373,6 +377,9 @@ func (s *Server) getFileObject(c *gin.Context) {
 	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load policy history"})
 		return
+	}
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
 	}
 	c.JSON(http.StatusOK, gin.H{"file": file, "policy_history": policies})
 }
