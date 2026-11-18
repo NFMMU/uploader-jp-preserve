@@ -494,14 +494,44 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 	var assignedAuthorID string
 	var assignedArtifactID string
 
+	var artifactTargetRecomputed bool
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// Lock the request row before reading its state.
-		// Concurrent PATCH requests for the same request must wait
-		// until this transaction commits or rolls back.
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
+		// Read the current source before locking the request. Artifact operations
+		// acquire the uploader lock first and then update requests, so keep the
+		// same lock order here to avoid deadlocks.
+		var preflight model.PublicRequest
+		if err := tx.Select("id", "request_type", "source_url").First(&preflight, "id = ?", c.Param("id")).Error; err != nil {
+			return err
+		}
+		if preflight.RequestType == "preservation" {
+			if req.SourceURL != nil {
+				normalized, err := uploaderSourceURLForStorage(*req.SourceURL)
+				if err != nil {
+					return errUrlValidationFailed
+				}
+				req.SourceURL = &normalized
+			}
+			var oldSourceURL, newSourceURL string
+			if preflight.SourceURL != nil {
+				oldSourceURL = *preflight.SourceURL
+			}
+			if req.SourceURL != nil {
+				newSourceURL = *req.SourceURL
+			} else {
+				newSourceURL = oldSourceURL
+			}
+			if err := lockUploaderArtifactRoots(tx, oldSourceURL, newSourceURL); err != nil {
+				return err
+			}
+		}
+
+		// Lock the request row after the uploader-key locks.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&publicRequest, "id = ?", c.Param("id")).Error; err != nil {
 			return err
+		}
+		if !sameOptionalRequestTarget(preflight.SourceURL, publicRequest.SourceURL) {
+			return errRequestConflict
 		}
 
 		// Remember the status observed under the row lock.
@@ -524,8 +554,22 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			}
 		}
 
+		sourceURLChanged := false
+		sourceUploaderChanged := false
+		if publicRequest.RequestType == "preservation" && req.SourceURL != nil {
+			sourceURLChanged = !sameOptionalRequestTarget(req.SourceURL, publicRequest.SourceURL)
+			if sourceURLChanged {
+				oldRoot := ""
+				if publicRequest.SourceURL != nil {
+					oldRoot = uploaderArtifactSourceURL(*publicRequest.SourceURL)
+				}
+				newRoot := uploaderArtifactSourceURL(*req.SourceURL)
+				sourceUploaderChanged = oldRoot != newRoot
+			}
+		}
 		targetsChanged := (req.ArtifactID != nil && !sameOptionalRequestTarget(req.ArtifactID, publicRequest.ArtifactID)) ||
-			(req.FileObjectID != nil && !sameOptionalRequestTarget(req.FileObjectID, publicRequest.FileObjectID))
+			(req.FileObjectID != nil && !sameOptionalRequestTarget(req.FileObjectID, publicRequest.FileObjectID)) ||
+			sourceUploaderChanged
 		if shouldRejectRequestTargetChange(originalStatus, priorAssignmentCount, targetsChanged) {
 			return errAcceptedTargetsImmutable
 		}
@@ -540,6 +584,33 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		targetFileID := publicRequest.FileObjectID
 		if req.FileObjectID != nil {
 			targetFileID = req.FileObjectID
+		}
+		if sourceUploaderChanged && req.ArtifactID == nil && targetFileID == nil && req.SourceURL != nil {
+			newRoot := uploaderArtifactSourceURL(*req.SourceURL)
+			targetArtifactID = nil
+			if strings.HasPrefix(newRoot, "/") {
+				var existingArtifact model.Artifact
+				if err := tx.Where("source_url = ?", newRoot).Order("created_at ASC").First(&existingArtifact).Error; err == nil {
+					targetArtifactID = &existingArtifact.ID
+				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+			}
+			artifactTargetRecomputed = true
+		}
+
+		// Validate a newly supplied artifact ID and ensure it belongs to the new uploader.
+		if req.ArtifactID != nil && sourceUploaderChanged && req.SourceURL != nil {
+			var selectedArtifact model.Artifact
+			if err := tx.Select("id", "source_url").First(&selectedArtifact, "id = ?", *req.ArtifactID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errInvalidArtifact
+				}
+				return err
+			}
+			if uploaderArtifactSourceURL(selectedArtifact.SourceURL) != uploaderArtifactSourceURL(*req.SourceURL) {
+				return errInvalidArtifact
+			}
 		}
 
 		// Validate a newly supplied artifact ID.
@@ -560,7 +631,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		// Validate the effective file target whenever either target
 		// is being changed. This prevents retaining a file that belongs
 		// to a different artifact after changing artifact_id.
-		if (req.FileObjectID != nil || req.ArtifactID != nil) &&
+		if (req.FileObjectID != nil || req.ArtifactID != nil || sourceUploaderChanged) &&
 			targetFileID != nil {
 			query := tx.Model(&model.FileObject{}).
 				Where("id = ?", *targetFileID)
@@ -579,6 +650,22 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 			if count == 0 {
 				return errInvalidFile
+			}
+			if sourceUploaderChanged && req.SourceURL != nil {
+				var targetFile model.FileObject
+				if err := tx.Select("id", "artifact_id").First(&targetFile, "id = ?", *targetFileID).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return errInvalidFile
+					}
+					return err
+				}
+				var fileArtifact model.Artifact
+				if err := tx.Select("id", "source_url").First(&fileArtifact, "id = ?", targetFile.ArtifactID).Error; err != nil {
+					return err
+				}
+				if uploaderArtifactSourceURL(fileArtifact.SourceURL) != uploaderArtifactSourceURL(*req.SourceURL) {
+					return errInvalidFile
+				}
 			}
 		}
 
@@ -601,6 +688,9 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		updates := map[string]any{
 			"updated_at": now,
+		}
+		if artifactTargetRecomputed {
+			updates["artifact_id"] = targetArtifactID
 		}
 
 		// Assign the artifact to an author as part of preservation approval.
@@ -767,8 +857,6 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 			}
 		}
 
-		sourceURLChanged := false
-
 		if req.Status != nil {
 			updates["status"] = *req.Status
 			updates["reviewed_by"] = actor.ID
@@ -785,15 +873,8 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 		if req.SourceURL != nil {
 			if publicRequest.RequestType == "preservation" {
-				url, err := uploaderSourceURLForStorage(*req.SourceURL)
-				if err != nil {
-					return errUrlValidationFailed
-				}
-				req.SourceURL = &url
-
-				// Compare normalized URLs, not the raw request value.
-				sourceURLChanged = publicRequest.SourceURL == nil ||
-					*req.SourceURL != *publicRequest.SourceURL
+				// The URL was normalized and its uploader-root lock acquired
+				// before the request row lock above.
 
 				// Check for duplicates only when the URL actually changes.
 				// Otherwise, the existing request could conflict with itself.
@@ -1101,6 +1182,14 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 
 	if req.CreatorName != nil {
 		publicRequest.CreatorName = req.CreatorName
+	}
+	if artifactTargetRecomputed {
+		publicRequest.ArtifactID = nil
+		if assignedArtifactID != "" {
+			publicRequest.ArtifactID = &assignedArtifactID
+		} else if publicRequest.ArtifactID != nil {
+			publicRequest.ArtifactID = publicRequest.ArtifactID
+		}
 	}
 
 	if req.SourceURL != nil {
