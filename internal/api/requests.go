@@ -593,10 +593,11 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 		if req.FileObjectID != nil {
 			targetFileID = req.FileObjectID
 		}
-		if sourceUploaderChanged && req.ArtifactID == nil && targetFileID == nil && req.SourceURL != nil {
+		if sourceUploaderChanged && req.ArtifactID == nil && req.SourceURL != nil {
 			newRoot := uploaderArtifactSourceURL(*req.SourceURL)
 			targetArtifactID = nil
-			if strings.HasPrefix(newRoot, "/") {
+			artifactTargetRecomputed = true
+			if targetFileID == nil && strings.HasPrefix(newRoot, "/") {
 				var existingArtifact model.Artifact
 				if err := tx.Where("source_url = ?", newRoot).Order("created_at ASC").First(&existingArtifact).Error; err == nil {
 					targetArtifactID = &existingArtifact.ID
@@ -604,7 +605,6 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 					return err
 				}
 			}
-			artifactTargetRecomputed = true
 		}
 
 		// Validate a newly supplied artifact ID and ensure it belongs to the new uploader.
