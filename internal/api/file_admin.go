@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
@@ -232,6 +233,10 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request *model.Publ
 		} else if request.ArtifactID == nil || *request.ArtifactID != file.ArtifactID {
 			return errors.New("deletion request must target this file or its artifact")
 		}
+	}
+	// Serialize all deletion entry points with task claims and replica commits.
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", file.ID).Error; err != nil {
+		return err
 	}
 	if file.DeletedAt.Valid {
 		return nil
