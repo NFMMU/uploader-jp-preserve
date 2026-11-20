@@ -34,6 +34,36 @@ func replicaClaim(s *Server, node model.Node) *httptest.ResponseRecorder {
 	return w
 }
 
+func TestClaimRejectsUnsafeSurplusDeletionIntegration(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, node, _ := retryFixture(t, db)
+	retryExec(t, db, "UPDATE nodes SET last_seen_at = now(), online_since = now() - interval '10 minutes' WHERE id = ?", node.ID)
+	retryExec(t, db, "UPDATE placements SET status = 'deleting' WHERE file_object_id = ? AND node_id = ?", file.ID, node.ID)
+	task := model.Task{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", AttemptCount: 0}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := replicaClaim(s, node)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("unsafe surplus deletion claim: %d %s", response.Code, response.Body)
+	}
+	var gotTask model.Task
+	if err := db.First(&gotTask, "id = ?", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotTask.Status != "failed" || gotTask.LastError == nil || !strings.Contains(*gotTask.LastError, "insufficient stable copies") {
+		t.Fatalf("unsafe surplus task was not made retryable: %+v", gotTask)
+	}
+	var placement model.Placement
+	if err := db.First(&placement, "file_object_id = ? AND node_id = ?", file.ID, node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if placement.Status != "error" {
+		t.Fatalf("unsafe surplus placement status = %q, want error", placement.Status)
+	}
+}
+
 func TestClaimSerializesWithFileDeletionIntegration(t *testing.T) {
 	db := retryTestDB(t)
 	s, file, node, task := retryFixture(t, db)
