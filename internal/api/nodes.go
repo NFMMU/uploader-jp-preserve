@@ -777,11 +777,24 @@ func (s *Server) retryFailedTask(
 	errNoAlternativeNode := &retryRejection{reason: "no online storage node available"}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Discover the immutable file foreign key without locking, then use the
+		// global file -> task lock order shared by deletion and result handling.
+		var taskSnapshot model.Task
+		if err := tx.Select("id", "file_object_id").First(&taskSnapshot, "id = ?", taskID).Error; err != nil {
+			return err
+		}
+		var file model.FileObject
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&file, "id = ?", taskSnapshot.FileObjectID).Error; err != nil {
+			return err
+		}
 		var task model.Task
-
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&task, "id = ?", taskID).Error; err != nil {
 			return err
+		}
+		if task.FileObjectID != file.ID {
+			return errTaskNotRetryable
 		}
 
 		if task.Status != "failed" {
@@ -790,12 +803,6 @@ func (s *Server) retryFailedTask(
 
 		if task.TaskType != "store" && task.TaskType != "source_fetch" && task.TaskType != "delete" {
 			return errTaskNotRetryable
-		}
-
-		var file model.FileObject
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&file, "id = ?", task.FileObjectID).Error; err != nil {
-			return err
 		}
 
 		if task.TaskType == "delete" {
