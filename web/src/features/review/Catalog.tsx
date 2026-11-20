@@ -904,12 +904,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							選択解除
 						</button>
 					</div>
-					<button
-						type="button"
+					<button type="button"
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
-						type={"button"}
 					>
 						選択したファイルを削除
 					</button>
@@ -953,12 +951,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 						{role === "admin" && (
 							<>
-								<button
-									type="button"
+								<button type="button"
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
-									type={"button"}
 								>
 									選択したファイルを削除
 								</button>
@@ -1340,8 +1336,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button
-								type="submit"
+							<button type="submit"
 								className="primary"
 								disabled={
 									busy ||
@@ -1350,7 +1345,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(!!sourceURL.trim() && !acceptSourceTerms) ||
 									policy === "pending"
 								}
-								type="submit"
 							>
 								<CloudUpload size={16} />
 								{busy
@@ -1449,8 +1443,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								閉じる
 							</button>
-							<button
-								type="button"
+							<button type="button"
 								className="primary"
 								onClick={savePolicy}
 								disabled={
@@ -1459,7 +1452,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(role === "author" &&
 										!["allowed", "restricted"].includes(policy))
 								}
-								type={"button"}
 							>
 								設定を保存
 							</button>
