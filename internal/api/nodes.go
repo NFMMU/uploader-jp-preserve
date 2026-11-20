@@ -1100,7 +1100,7 @@ func retryFailedDeletionTx(tx *gorm.DB, task model.Task, file model.FileObject, 
 	if file.DeletionRequestedAt == nil {
 		// A failed surplus deletion must still leave the required copies and
 		// spare on stable nodes. Never redirect it to a different placement.
-		safe, err := surplusDeletionSafeTx(tx, file.ID, *task.TargetNodeID, now, false)
+		safe, err := surplusDeletionSafeTx(tx, file.ID, *task.TargetNodeID, now, true)
 		if err != nil {
 			return err
 		}
