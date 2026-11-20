@@ -69,7 +69,7 @@ SELECT id AS duplicate_id, keep_id FROM canonical WHERE id <> keep_id;
 
 -- Do not widen author access by unioning assignments from duplicate artifacts.
 -- Abort the migration when assignments differ so an operator can reconcile them explicitly.
-DO $
+DO $guard$
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -84,7 +84,7 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'GetUploader Artifact merge blocked: duplicate artifacts have different author assignments; reconcile author_artifact rows before retrying migration';
   END IF;
-END $;
+END $guard$;
 
 UPDATE file_objects f SET artifact_id = m.keep_id
 FROM getuploader_artifact_merge m WHERE f.artifact_id = m.duplicate_id;
