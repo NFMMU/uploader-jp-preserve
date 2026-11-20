@@ -1973,6 +1973,47 @@ footer > span {
 	font-size: 10px;
 	color: #777;
 }
+.request-filter-bar {
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+.request-list-controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1 1 520px;
+	min-width: 0;
+}
+.request-search-box {
+	max-width: none;
+	min-width: 180px;
+	min-height: 36px;
+}
+.request-search-box input {
+	font-size: 12px;
+}
+.request-filter-select {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: #666;
+	font-size: 11px;
+	white-space: nowrap;
+}
+.request-filter-select select {
+	min-width: 108px;
+	min-height: 36px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	padding: 0 8px;
+	background: #fff;
+	color: #333;
+	font: inherit;
+}
+.request-filter-select select:focus {
+	outline: 1px solid #777;
+	border-color: #777;
+}
 .review-request-list {
 	display: grid;
 	gap: 10px;
@@ -2147,6 +2188,22 @@ footer > span {
 	font-size: 10px;
 }
 @media (max-width: 760px) {
+	.request-list-controls {
+		flex-basis: 100%;
+		flex-wrap: wrap;
+	}
+	.request-search-box {
+		flex-basis: 100%;
+		max-width: none;
+	}
+	.request-filter-select {
+		flex: 1;
+		justify-content: space-between;
+	}
+	.request-filter-select select {
+		flex: 1;
+		min-width: 0;
+	}
 	.review-summary-grid {
 		gap: 6px;
 	}
