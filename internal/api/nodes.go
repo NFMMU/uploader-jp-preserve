@@ -1321,7 +1321,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		}
 		claimed.Task.Status = "running"
 		claimed.Task.AttemptCount++
-		claimed.LeaseToken = &leaseToken
+		claimed.LeaseToken = leaseToken
 		return nil
 	})
 	if err != nil {
@@ -1474,7 +1474,9 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		placementNodeID = valueOrEmpty(task.TargetNodeID)
 	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if task.TaskType == "delete" && req.Status == "success" {
+		if task.TaskType == "delete" {
+			// Both success and failure paths lock file -> task before changing
+			// task or placement state. This matches deletion and claim ordering.
 			var lockedFile model.FileObject
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
 				return err
