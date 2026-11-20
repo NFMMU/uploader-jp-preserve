@@ -3,9 +3,9 @@ BEGIN;
 
 -- File and request rows retain the individual download ID; listing paths collapse to the root.
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
+  SELECT id, regexp_replace(split_part(source_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i') AS path
   FROM file_objects
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
+  WHERE split_part(source_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, CASE
@@ -18,9 +18,9 @@ normalized AS (
 UPDATE file_objects f SET source_url = n.source_url FROM normalized n WHERE f.id = n.id;
 
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
+  SELECT id, regexp_replace(split_part(source_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i') AS path
   FROM public_requests
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
+  WHERE split_part(source_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, CASE
@@ -34,9 +34,9 @@ UPDATE public_requests r SET source_url = n.source_url FROM normalized n WHERE r
 
 -- Artifacts must contain only the uploader root, including historical /name/pageN values.
 WITH cleaned AS (
-  SELECT id, regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i') AS path
+  SELECT id, regexp_replace(split_part(source_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i') AS path
   FROM artifacts
-  WHERE source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR source_url LIKE '/%'
+  WHERE split_part(source_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/' OR source_url LIKE '/%'
 ),
 normalized AS (
   SELECT id, '/' || split_part(trim(both '/' FROM split_part(path, '?', 1)), '/', 1) AS source_url
@@ -67,6 +67,25 @@ WITH canonical AS (
 )
 SELECT id AS duplicate_id, keep_id FROM canonical WHERE id <> keep_id;
 
+-- Do not widen author access by unioning assignments from duplicate artifacts.
+-- Abort the migration when assignments differ so an operator can reconcile them explicitly.
+DO $
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM getuploader_artifact_merge m
+    WHERE EXISTS (
+      (SELECT user_id FROM author_artifact WHERE artifact_id = m.duplicate_id
+       EXCEPT SELECT user_id FROM author_artifact WHERE artifact_id = m.keep_id)
+      UNION ALL
+      (SELECT user_id FROM author_artifact WHERE artifact_id = m.keep_id
+       EXCEPT SELECT user_id FROM author_artifact WHERE artifact_id = m.duplicate_id)
+    )
+  ) THEN
+    RAISE EXCEPTION 'GetUploader Artifact merge blocked: duplicate artifacts have different author assignments; reconcile author_artifact rows before retrying migration';
+  END IF;
+END $;
+
 UPDATE file_objects f SET artifact_id = m.keep_id
 FROM getuploader_artifact_merge m WHERE f.artifact_id = m.duplicate_id;
 
@@ -84,11 +103,11 @@ DELETE FROM artifacts a USING getuploader_artifact_merge m WHERE a.id = m.duplic
 -- Only GetUploader absolute URLs and our stored path keys participate in registry merging.
 WITH mapped AS (
   SELECT normalized_url, origin, public_request_id, created_at,
-         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
-           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
-           ELSE normalized_url END AS path_url
+         CASE WHEN split_part(normalized_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/'
+           THEN regexp_replace(split_part(normalized_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i')
+           ELSE split_part(normalized_url, '#', 1) END AS path_url
   FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR normalized_url LIKE '/%'
+  WHERE split_part(normalized_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/' OR normalized_url LIKE '/%'
 ),
 canonical AS (
   SELECT normalized_url,
@@ -111,14 +130,14 @@ WHERE r.normalized_url = c.normalized_url AND c.position > 1;
 -- Rewrite only matching registry records; query strings remain on individual download URLs.
 WITH mapped AS (
   SELECT normalized_url, source_url,
-         CASE WHEN normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
-           THEN regexp_replace(normalized_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
-           ELSE normalized_url END AS path_url,
-         CASE WHEN source_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/'
-           THEN regexp_replace(source_url, '^https://(ux|uu)[.]getuploader[.]com(:443)?', '', 'i')
-           ELSE source_url END AS source_path
+         CASE WHEN split_part(normalized_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/'
+           THEN regexp_replace(split_part(normalized_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i')
+           ELSE split_part(normalized_url, '#', 1) END AS path_url,
+         CASE WHEN split_part(source_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/'
+           THEN regexp_replace(split_part(source_url, '#', 1), '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?', '', 'i')
+           ELSE split_part(source_url, '#', 1) END AS source_path
   FROM source_url_registry
-  WHERE normalized_url ~* '^https://(ux|uu)[.]getuploader[.]com(:443)?/' OR normalized_url LIKE '/%'
+  WHERE split_part(normalized_url, '#', 1) ~* '^https://(ux|uu)[.]getuploader[.]com[.]?(:443)?/' OR normalized_url LIKE '/%'
 ),
 normalized AS (
   SELECT normalized_url,
