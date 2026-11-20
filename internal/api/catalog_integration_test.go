@@ -303,6 +303,7 @@ func TestGetUploaderArtifactMergeRejectsDifferentAuthorAssignmentsIntegration(t 
 func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	db, _ := catalogTestDB(t)
 
+	catalogExec(t, db, "CREATE TABLE users (id uuid PRIMARY KEY)")
 	catalogExec(t, db, `CREATE TABLE author_artifact (
 		user_id uuid NOT NULL,
 		artifact_id uuid NOT NULL,
