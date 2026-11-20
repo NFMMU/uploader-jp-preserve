@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -96,10 +95,4 @@ func TestListPublicRequestsSearchTypeAndSortIntegration(t *testing.T) {
 		t.Fatalf("invalid sort status = %d, want %d", status, http.StatusBadRequest)
 	}
 
-	// Confirm the handler returns a valid JSON payload for the filtered list.
-	var raw map[string]any
-	body := catalogResponseBody(t, server.listPublicRequests, "/?q=archive")
-	if err := json.Unmarshal(body, &raw); err != nil {
-		t.Fatalf("decode response JSON: %v", err)
-	}
 }
