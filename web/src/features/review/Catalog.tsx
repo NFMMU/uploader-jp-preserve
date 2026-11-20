@@ -904,7 +904,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							選択解除
 						</button>
 					</div>
-					<button type="button"
+					<button
+						type="button"
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
@@ -951,7 +952,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</button>
 						{role === "admin" && (
 							<>
-								<button type="button"
+								<button
+						type="button"
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
@@ -1336,7 +1338,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button type="submit"
+							<button
+							type="submit"
 								className="primary"
 								disabled={
 									busy ||
@@ -1443,7 +1446,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								閉じる
 							</button>
-							<button type="button"
+							<button
+						type="button"
 								className="primary"
 								onClick={savePolicy}
 								disabled={
