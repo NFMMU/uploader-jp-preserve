@@ -552,14 +552,15 @@ func TestClearFailedTasksPreservesDeletionTasksIntegration(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("clear failed tasks: %d %s", response.Code, response.Body)
 	}
-	var remaining model.Task
-	if err := db.First(&remaining, "id = ?", deletionTask.ID).Error; err != nil {
+	var remainingDeletion model.Task
+	if err := db.First(&remainingDeletion, "id = ?", deletionTask.ID).Error; err != nil {
 		t.Fatalf("failed deletion task must remain retryable: %v", err)
 	}
-	if remaining.Status != "failed" || remaining.TaskType != "delete" {
-		t.Fatalf("deletion task was modified: %+v", remaining)
+	if remainingDeletion.Status != "failed" || remainingDeletion.TaskType != "delete" {
+		t.Fatalf("deletion task was modified: %+v", remainingDeletion)
 	}
-	if err := db.First(&remaining, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remaining, err)
+	var remainingStore model.Task
+	if err := db.First(&remainingStore, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remainingStore, err)
 	}
 }
