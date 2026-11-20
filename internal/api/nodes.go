@@ -1042,12 +1042,19 @@ func (s *Server) retryFailedTask(
 func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Time, lockPlacements bool) (bool, error) {
 	stableCutoff := now.Add(-surplusReplicaCooldown)
 	nodeCutoff := now.Add(-2 * time.Minute)
+	var counts struct {
+		Healthy  int64
+		Unstable int64
+	}
 	if lockPlacements {
 		var locked []struct {
-			ID string
+			ID         string
+			OnlineSince *time.Time
+			VerifiedAt  *time.Time
+			LastSeenAt  *time.Time
 		}
 		if err := tx.Raw(`
-			SELECT p.id
+			SELECT p.id, n.online_since, p.verified_at, n.last_seen_at
 			FROM placements AS p
 			JOIN nodes AS n ON n.id = p.node_id
 			WHERE p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified'
@@ -1057,17 +1064,27 @@ func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Ti
 		`, fileID, targetNodeID, nodeCutoff).Scan(&locked).Error; err != nil {
 			return false, err
 		}
-	}
-	var counts struct {
-		Healthy  int64
-		Unstable int64
-	}
-	if err := tx.Table("placements AS p").
-		Select("COUNT(*) AS healthy, COUNT(*) FILTER (WHERE n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?) AS unstable", stableCutoff, stableCutoff).
-		Joins("JOIN nodes AS n ON n.id = p.node_id").
-		Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, targetNodeID, nodeCutoff).
-		Scan(&counts).Error; err != nil {
-		return false, err
+		// A lock wait can make a previously recent heartbeat stale. Re-evaluate
+		// freshness after acquiring locks, using only the rows actually locked.
+		nodeCutoff = time.Now().UTC().Add(-2 * time.Minute)
+		for _, placement := range locked {
+			if placement.LastSeenAt == nil || placement.LastSeenAt.Before(nodeCutoff) {
+				continue
+			}
+			counts.Healthy++
+			if placement.OnlineSince == nil || placement.OnlineSince.After(stableCutoff) ||
+				placement.VerifiedAt == nil || placement.VerifiedAt.After(stableCutoff) {
+				counts.Unstable++
+			}
+		}
+	} else {
+		if err := tx.Table("placements AS p").
+			Select("COUNT(*) AS healthy, COUNT(*) FILTER (WHERE n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?) AS unstable", stableCutoff, stableCutoff).
+			Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, targetNodeID, nodeCutoff).
+			Scan(&counts).Error; err != nil {
+			return false, err
+		}
 	}
 	return counts.Healthy >= requiredReplicaCount+1 && counts.Unstable == 0, nil
 }
@@ -1274,7 +1291,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			}
 			lockedTask := model.Task{}
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-				Where("id = ? AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))", candidate.ID, maxTaskAttempts).
+				Where("id = ? AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now())) AND ((task_type IN ('store', 'delete') AND target_node_id = ?) OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL)) OR (task_type = 'replicate' AND source_node_id = ?))", candidate.ID, maxTaskAttempts, node.ID, node.ID, node.ID).
 				First(&lockedTask).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					skippedTaskIDs = append(skippedTaskIDs, candidate.ID)
@@ -1481,15 +1498,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		placementNodeID = valueOrEmpty(task.TargetNodeID)
 	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if task.TaskType == "delete" {
-			// Both success and failure paths lock file -> task before changing
-			// task or placement state. This matches deletion and claim ordering.
-			var lockedFile model.FileObject
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
-				return err
-			}
-			file = lockedFile
+		// All task types lock file -> task before changing task or placement state.
+		// This matches retryFailedTask and prevents lock-order inversions.
+		var lockedFile model.FileObject
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
+			return err
 		}
+		file = lockedFile
 		updates := map[string]any{"status": nextStatus, "lease_until": nil, "lease_token": nil, "updated_at": now}
 		if req.Status == "failure" {
 			updates["last_error"] = req.Error

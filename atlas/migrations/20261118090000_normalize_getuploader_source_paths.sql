@@ -1,10 +1,13 @@
 -- Canonicalize GetUploader URLs, merge uploader Artifacts, and retain independent registries.
 BEGIN;
 
--- Freeze author-assignment writers before any request/artifact rewrites.
--- Use the same request -> user -> assignment order as application transactions
--- so the guard below remains valid until duplicate artifacts are removed.
-LOCK TABLE public_requests, users, author_artifact IN SHARE ROW EXCLUSIVE MODE;
+-- Drain and block request transactions before acquiring locks on tables they
+-- may write later. ACCESS EXCLUSIVE conflicts with SELECT ... FOR UPDATE's
+-- table-level ROW SHARE lock, so no request can hold a request row while waiting
+-- for a users/author_artifact lock owned by this migration.
+LOCK TABLE public_requests IN ACCESS EXCLUSIVE MODE;
+-- Match the application write order for user and author-assignment records.
+LOCK TABLE users, author_artifact IN SHARE ROW EXCLUSIVE MODE;
 
 -- File and request rows retain the individual download ID; listing paths collapse to the root.
 WITH cleaned AS (
