@@ -42,10 +42,6 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
 
-	useEffect(() => {
-		setPage(1);
-	}, [query, limit]);
-
 	async function createArtifact(event: React.FormEvent) {
 		event.preventDefault();
 		setBusy(true);
@@ -96,7 +92,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<Search size={17} />
 						<input
 							value={query}
-							onChange={(event) => setQuery(event.target.value)}
+							onChange={(event) => {
+								setQuery(event.target.value);
+								setPage(1);
+							}}
 							placeholder="作品名・作者・作品ID・元ページURLで検索"
 							aria-label="作品を検索"
 						/>
@@ -127,7 +126,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<button
 							className="secondary"
 							type="button"
-							onClick={() => setQuery("")}
+							onClick={() => {
+								setQuery("");
+								setPage(1);
+							}}
 						>
 							検索をクリア
 						</button>
@@ -177,7 +179,10 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 				total={total}
 				loading={data.loading}
 				onPageChange={setPage}
-				onLimitChange={setLimit}
+				onLimitChange={(nextLimit) => {
+					setLimit(nextLimit);
+					setPage(1);
+				}}
 			/>
 			{createOpen && (
 				<Modal title="作品を登録" close={() => setCreateOpen(false)}>
@@ -231,7 +236,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button className="primary" disabled={busy} type="submit">
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -291,16 +296,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [reason, setReason] = useState("");
 
 	let filePath = `/catalog/files?page=${page}&limit=${limit}`;
-	if (query.trim()) filePath += "&q=" + encodeURIComponent(query.trim());
+	if (query.trim()) filePath += `&q=${encodeURIComponent(query.trim())}`;
 	if (preservationFilter)
-		filePath +=
-			"&preservation_status=" + encodeURIComponent(preservationFilter);
+		filePath += `&preservation_status=${encodeURIComponent(preservationFilter)}`;
 	if (policyFilter)
-		filePath += "&redistribution_policy=" + encodeURIComponent(policyFilter);
+		filePath += `&redistribution_policy=${encodeURIComponent(policyFilter)}`;
 	if (publicationFilter)
-		filePath += "&publication=" + encodeURIComponent(publicationFilter);
+		filePath += `&publication=${encodeURIComponent(publicationFilter)}`;
 	if (linkedArtifactID)
-		filePath += "&artifact_id=" + encodeURIComponent(linkedArtifactID);
+		filePath += `&artifact_id=${encodeURIComponent(linkedArtifactID)}`;
 
 	const f = useData(api, filePath, refresh + unused);
 	const files: Obj[] = f.data.items || [];
@@ -345,7 +349,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		return () => {
 			live = false;
 		};
-	}, [linkedFileID, f.loading, f.data.items]);
+	}, [api, linkedFileID, f.loading, f.data.items, nav, notify, role]);
 
 	function resetAddFileForm() {
 		setPendingFileId("");
@@ -379,6 +383,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		setSelectedIDs([]);
 	}, [linkedArtifactID]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: これは意図した動作
 	useEffect(() => {
 		setPage(1);
 	}, [
@@ -426,7 +431,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		if (selectedIDs.length === 0) return;
 		if (
 			!window.confirm(
-				`選択した ${selectedIDs.length} 件のファイルを論理削除します。続行しますか？`,
+				`選択した ${selectedIDs.length} 件のファイルを各保存ノードから物理削除します。削除処理を開始しますか？`,
 			)
 		)
 			return;
@@ -446,8 +451,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setRefreshDummy((x) => x + 1);
 			notify(
 				failures.length
-					? `${selectedIDs.length - failures.length} 件を削除、${failures.length} 件失敗しました`
-					: `${selectedIDs.length} 件を削除しました`,
+					? `${selectedIDs.length - failures.length} 件の削除依頼を受け付け、${failures.length} 件は受付に失敗しました`
+					: `${selectedIDs.length} 件の削除依頼を受け付けました`,
 			);
 		} finally {
 			setBusy(false);
@@ -455,7 +460,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	}
 
 	async function deleteSingleFile(id: string) {
-		if (!window.confirm("このファイルを論理削除しますか？")) return;
+		if (!window.confirm("このファイルを各保存ノードから物理削除しますか？"))
+			return;
 		try {
 			await api(`/catalog/files/${encodeURIComponent(id)}`, {
 				method: "DELETE",
@@ -463,7 +469,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			setSelectedIDs((current) =>
 				current.filter((selectedID) => selectedID !== id),
 			);
-			notify("ファイルを削除しました");
+			notify("物理削除を予約しました");
 			setRefreshDummy((x) => x + 1);
 		} catch (error) {
 			notify((error as Error).message);
@@ -747,6 +753,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
+								type={"button"}
 							>
 								<Download size={16} /> CSV出力
 							</button>
@@ -851,7 +858,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+							type={"button"}
+						>
 							選択解除
 						</button>
 					</div>
@@ -859,6 +870,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
+						type={"button"}
 					>
 						選択したファイルを削除
 					</button>
@@ -868,7 +880,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
-						<button className="small-btn" onClick={() => setSelectedIDs([])}>
+						<button
+							className="small-btn"
+							onClick={() => setSelectedIDs([])}
+							type={"button"}
+						>
 							選択解除
 						</button>
 					</div>
@@ -891,6 +907,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
 							}
+							type={"button"}
 						>
 							公開条件を一括変更
 						</button>
@@ -900,18 +917,21 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
+									type={"button"}
 								>
 									選択したファイルを削除
 								</button>
 								<button
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
+									type={"button"}
 								>
 									一括公開
 								</button>
 								<button
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
+									type={"button"}
 								>
 									一括公開停止
 								</button>
@@ -1054,7 +1074,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy}>
+							<button className="primary" disabled={busy} type="submit">
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1286,6 +1306,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(!!sourceURL.trim() && !acceptSourceTerms) ||
 									policy === "pending"
 								}
+								type="submit"
 							>
 								<CloudUpload size={16} />
 								{busy
@@ -1377,7 +1398,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							/>
 						</label>
 						<div className="modal-actions">
-							<button className="secondary" onClick={() => setDetail(null)}>
+							<button
+								className="secondary"
+								onClick={() => setDetail(null)}
+								type={"button"}
+							>
 								閉じる
 							</button>
 							<button
@@ -1389,6 +1414,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									(role === "author" &&
 										!["allowed", "restricted"].includes(policy))
 								}
+								type={"button"}
 							>
 								設定を保存
 							</button>

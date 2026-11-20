@@ -958,7 +958,7 @@ func (s *Server) patchPublicRequest(c *gin.Context) {
 					if err := queueFileDeletionTx(
 						tx,
 						file,
-						nextRequest,
+						&nextRequest,
 						actor.ID,
 						req.Reason,
 					); err != nil {

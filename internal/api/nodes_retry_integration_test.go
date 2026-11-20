@@ -259,6 +259,50 @@ func TestRetryStoreTaskIntegration(t *testing.T) {
 	})
 }
 
+func TestRetryStorePendingDeletionIntegration(t *testing.T) {
+	for _, bulk := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bulk=%t", bulk), func(t *testing.T) {
+			db := retryTestDB(t)
+			s, file, _, task := retryFixture(t, db)
+			retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = now(), public_download_enabled = false WHERE id = ?", file.ID)
+			if bulk {
+				response := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(response)
+				c.Request = httptest.NewRequest(http.MethodPost, "/tasks/retry-all", nil)
+				c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+				s.retryAll(c)
+				var body struct {
+					Succeeded int `json:"succeeded"`
+					Failed    int `json:"failed"`
+					Skipped   int `json:"skipped"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				if response.Code != http.StatusAccepted || body.Succeeded != 0 || body.Failed != 0 || body.Skipped != 1 {
+					t.Fatalf("bulk retry: %d %s", response.Code, response.Body)
+				}
+			} else if response := retryRequest(s, task.ID); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "file object is pending deletion") {
+				t.Fatalf("retry: %d %s", response.Code, response.Body)
+			}
+			var got model.Task
+			if err := db.First(&got, "id = ?", task.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != "failed" || got.AttemptCount != task.AttemptCount || got.LastError == nil || *got.LastError != *task.LastError {
+				t.Fatalf("rejected task changed: %+v", got)
+			}
+			var placement model.Placement
+			if err := db.First(&placement, "file_object_id = ?", file.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if placement.Status != "error" {
+				t.Fatalf("rejected placement changed: %+v", placement)
+			}
+		})
+	}
+}
+
 func TestRetryErrorHandlingIntegration(t *testing.T) {
 	const internalDetail = "synthetic database failure with private details"
 
@@ -379,5 +423,143 @@ func injectRetryAuditError(t *testing.T, db *gorm.DB, taskID, detail string) {
 		}
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRetryDeleteTaskIntegration(t *testing.T) {
+	for _, scenario := range []string{"single", "bulk", "duplicate", "deleted", "missing target", "other node active", "surplus unsafe", "surplus safe"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := retryTestDB(t)
+			s, file, node, task := retryFixture(t, db)
+			retryExec(t, db, "UPDATE tasks SET task_type = 'delete', lease_token = ?, lease_until = now() WHERE id = ?", uuid.NewString(), task.ID)
+			retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = now(), preservation_status = 'verified', redistribution_policy = 'unknown', public_download_enabled = false WHERE id = ?", file.ID)
+			want := http.StatusAccepted
+			switch scenario {
+			case "duplicate":
+				retryExec(t, db, "INSERT INTO tasks (task_type, file_object_id, target_node_id, status) VALUES ('delete', ?, ?, 'queued')", file.ID, node.ID)
+				want = http.StatusConflict
+			case "deleted":
+				retryExec(t, db, "UPDATE placements SET status = 'deleted' WHERE file_object_id = ?", file.ID)
+				want = http.StatusConflict
+			case "missing target":
+				retryExec(t, db, "UPDATE tasks SET target_node_id = NULL WHERE id = ?", task.ID)
+				want = http.StatusConflict
+			case "other node active":
+				other := model.Node{Name: "other", NodeType: "B", Status: "offline"}
+				if err := db.Create(&other).Error; err != nil {
+					t.Fatal(err)
+				}
+				retryExec(t, db, "INSERT INTO tasks (task_type, file_object_id, target_node_id, status) VALUES ('delete', ?, ?, 'queued')", file.ID, other.ID)
+			case "surplus safe":
+				retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = NULL WHERE id = ?", file.ID)
+				for range 3 {
+					other := model.Node{Name: uuid.NewString(), NodeType: "B", Status: "online"}
+					if err := db.Create(&other).Error; err != nil {
+						t.Fatal(err)
+					}
+					retryExec(t, db, "UPDATE nodes SET last_seen_at = now(), online_since = now() - interval '10 minutes' WHERE id = ?", other.ID)
+					retryExec(t, db, "INSERT INTO placements (file_object_id, node_id, storage_key, status, verified_at) VALUES (?, ?, 'synthetic', 'verified', now() - interval '10 minutes')", file.ID, other.ID)
+				}
+			case "surplus unsafe":
+				retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = NULL WHERE id = ?", file.ID)
+				want = http.StatusConflict
+			}
+			if scenario == "bulk" {
+				response := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(response)
+				c.Request = httptest.NewRequest(http.MethodPost, "/tasks/retry-all", nil)
+				c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+				s.retryAll(c)
+				if response.Code != http.StatusAccepted || !strings.Contains(response.Body.String(), `"succeeded":1`) {
+					t.Fatalf("bulk: %d %s", response.Code, response.Body)
+				}
+			} else if response := retryRequest(s, task.ID); response.Code != want {
+				t.Fatalf("retry: %d %s; want %d", response.Code, response.Body, want)
+			}
+			var got model.Task
+			if err := db.First(&got, "id = ?", task.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if want != http.StatusAccepted {
+				if got.Status != "failed" || got.AttemptCount != 5 {
+					t.Fatalf("rejected task changed: %+v", got)
+				}
+				return
+			}
+			if got.Status != "queued" || got.AttemptCount != 0 || got.TargetNodeID == nil || *got.TargetNodeID != node.ID || got.LastError != nil || got.LeaseToken != nil || got.LeaseUntil != nil {
+				t.Fatalf("unexpected retry: %+v", got)
+			}
+			var placement model.Placement
+			if err := db.First(&placement, "file_object_id = ? AND node_id = ?", file.ID, node.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if placement.Status != "deleting" || placement.StorageKey != "objects/"+file.ID+"/"+task.ID {
+				t.Fatalf("unexpected placement: %+v", placement)
+			}
+			if err := db.First(&file, "id = ?", file.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if file.DeletedAt.Valid || file.PublicDownloadEnabled || file.PreservationStatus != "verified" {
+				t.Fatalf("file changed prematurely: %+v", file)
+			}
+			if response := retryRequest(s, task.ID); response.Code != http.StatusConflict {
+				t.Fatalf("second retry: %d", response.Code)
+			}
+			if scenario == "single" || scenario == "surplus safe" {
+				lease := uuid.NewString()
+				retryExec(t, db, "UPDATE tasks SET status = 'running', attempt_count = 1, lease_token = ?, lease_until = now() + interval '5 minutes' WHERE id = ?", lease, task.ID)
+				response := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(response)
+				c.Request = httptest.NewRequest(http.MethodPost, "/result", strings.NewReader(fmt.Sprintf(`{"lease_token":%q,"status":"success"}`, lease)))
+				c.Request.Header.Set("Content-Type", "application/json")
+				c.Params = gin.Params{{Key: "taskID", Value: task.ID}}
+				c.Set("currentNode", nodeContext{Node: node})
+				s.nodeTaskResult(c)
+				if response.Code != http.StatusOK {
+					t.Fatalf("result: %d %s", response.Code, response.Body)
+				}
+				var completed model.FileObject
+				if err := db.Unscoped().First(&completed, "id = ?", file.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if completed.DeletedAt.Valid != (scenario == "single") {
+					t.Fatalf("unexpected logical deletion: %+v", completed)
+				}
+			}
+		})
+	}
+}
+
+func TestClearFailedTasksPreservesDeletionTasksIntegration(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, node, storeTask := retryFixture(t, db)
+	deletionTask := model.Task{
+		TaskType:     "delete",
+		FileObjectID: file.ID,
+		TargetNodeID: &node.ID,
+		Status:       "failed",
+		AttemptCount: maxTaskAttempts,
+	}
+	if err := db.Create(&deletionTask).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(response)
+	c.Request = httptest.NewRequest(http.MethodPost, "/tasks/clear-failed", nil)
+	c.Set("currentUser", model.User{ID: uuid.NewString(), Email: "admin@example.invalid"})
+	s.clearFailedTasks(c)
+	if response.Code != http.StatusOK {
+		t.Fatalf("clear failed tasks: %d %s", response.Code, response.Body)
+	}
+	var remaining model.Task
+	if err := db.First(&remaining, "id = ?", deletionTask.ID).Error; err != nil {
+		t.Fatalf("failed deletion task must remain retryable: %v", err)
+	}
+	if remaining.Status != "failed" || remaining.TaskType != "delete" {
+		t.Fatalf("deletion task was modified: %+v", remaining)
+	}
+	if err := db.First(&remaining, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remaining, err)
 	}
 }

@@ -19,7 +19,7 @@ import (
 func mypageTestServer(t *testing.T) *Server {
 	t.Helper()
 	db, _ := catalogTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.AuthorArtifact{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.AuditLog{}, &model.AuthorArtifact{}, &model.Artifact{}, &model.FileObject{}, &model.Node{}, &model.Placement{}, &model.Task{}); err != nil {
 		t.Fatal(err)
 	}
 	return &Server{db: db, logger: slog.Default()}
@@ -187,15 +187,15 @@ func TestMypageArtifactAccessIntegration(t *testing.T) {
 	mypageError(t, rec, http.StatusForbidden, "artifact access denied")
 }
 
-func TestMypageSoftDeleteIntegration(t *testing.T) {
+func TestMypagePhysicalDeletionQueueIntegration(t *testing.T) {
 	for _, tc := range []struct {
 		name, role                 string
 		assigned, pending, missing bool
 		status                     int
 	}{
-		{name: "assigned author", role: "author", assigned: true, status: http.StatusNoContent},
+		{name: "assigned author", role: "author", assigned: true, status: http.StatusAccepted},
 		{name: "unassigned author", role: "author", status: http.StatusForbidden},
-		{name: "admin without assignment", role: "admin", status: http.StatusNoContent},
+		{name: "admin without assignment", role: "admin", status: http.StatusAccepted},
 		{name: "pending author", role: "author", assigned: true, pending: true, status: http.StatusConflict},
 		{name: "pending admin", role: "admin", pending: true, status: http.StatusConflict},
 		{name: "missing file", role: "admin", missing: true, status: http.StatusNotFound},
@@ -216,9 +216,16 @@ func TestMypageSoftDeleteIntegration(t *testing.T) {
 				if err := s.db.Create(&file).Error; err != nil {
 					t.Fatal(err)
 				}
-			}
-			if err := s.db.AutoMigrate(&model.Task{}); err != nil {
-				t.Fatal(err)
+				if !tc.pending {
+					node := model.Node{Name: "delete-test-node", NodeType: "A", Status: "online"}
+					if err := s.db.Create(&node).Error; err != nil {
+						t.Fatal(err)
+					}
+					placement := model.Placement{FileObjectID: file.ID, NodeID: node.ID, StorageKey: "objects/" + file.ID, Status: "verified"}
+					if err := s.db.Create(&placement).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			rec := mypageRequest(t, http.MethodDelete, "/:id", "/"+file.ID, "", &actor, s.deleteFileObject)
 			if rec.Code != tc.status {
@@ -231,23 +238,30 @@ func TestMypageSoftDeleteIntegration(t *testing.T) {
 			if err := s.db.Unscoped().First(&stored, "id = ?", file.ID).Error; err != nil {
 				t.Fatalf("physical file record lost: %v", err)
 			}
-			if stored.DeletedAt.Valid != (tc.status == http.StatusNoContent) {
+			if tc.status == http.StatusAccepted {
+				if stored.DeletedAt.Valid || stored.DeletionRequestedAt == nil {
+					t.Fatalf("expected pending physical deletion, got deleted_at=%v deletion_requested_at=%v", stored.DeletedAt, stored.DeletionRequestedAt)
+				}
+			} else if stored.DeletedAt.Valid != (tc.status == http.StatusNoContent) {
 				t.Fatalf("deleted=%v", stored.DeletedAt.Valid)
 			}
 			if stored.SizeBytes != file.SizeBytes || stored.OriginalFilename != file.OriginalFilename {
 				t.Fatal("file metadata was changed")
 			}
 			var tasks int64
-			// Soft deletion must never enqueue physical deletion work.
 			if err := s.db.Model(&model.Task{}).Count(&tasks).Error; err != nil {
 				t.Fatal(err)
 			}
-			if tasks != 0 {
-				t.Fatal("physical deletion task created")
+			wantTasks := int64(0)
+			if tc.status == http.StatusAccepted {
+				wantTasks = 1
 			}
-			if tc.status == http.StatusNoContent {
+			if tasks != wantTasks {
+				t.Fatalf("delete tasks=%d want %d", tasks, wantTasks)
+			}
+			if tc.status == http.StatusAccepted {
 				again := mypageRequest(t, http.MethodDelete, "/:id", "/"+file.ID, "", &actor, s.deleteFileObject)
-				mypageError(t, again, http.StatusNotFound, "file object not found")
+				mypageError(t, again, http.StatusConflict, "file deletion has already been requested")
 			}
 		})
 	}

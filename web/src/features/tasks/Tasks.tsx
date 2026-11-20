@@ -33,7 +33,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 	const clearFailedTasks = async () => {
 		try {
 			await api("/operations/tasks/clear-failed", { method: "POST" });
-			notify("失敗タスクのレコードをクリアしました");
+			notify("失敗した削除タスクを除くレコードをクリアしました");
 			setLocalRefresh((x) => x + 1);
 		} catch (e) {
 			notify((e as Error).message);
@@ -76,11 +76,16 @@ export function Tasks({ api, refresh, notify, role }: any) {
 				actions={
 					<>
 						{role === "admin" && (
-							<button className="secondary" onClick={() => clearFailedTasks()}>
+							<button
+								className="secondary"
+								onClick={() => clearFailedTasks()}
+								type={"button"}
+							>
 								<DeleteIcon size={16} /> 失敗レコードの削除
 							</button>
 						)}
 						<button
+							type={"button"}
 							className="secondary"
 							onClick={() => setLocalRefresh((x) => x + 1)}
 						>
@@ -99,6 +104,7 @@ export function Tasks({ api, refresh, notify, role }: any) {
 						["completed", "成功"],
 					].map(([v, l]) => (
 						<button
+							type={"button"}
 							key={v}
 							className={filter === v ? "active" : ""}
 							onClick={() => {
@@ -183,9 +189,14 @@ export function Tasks({ api, refresh, notify, role }: any) {
 									{role === "admin" &&
 										x.status === "failed" &&
 										(x.task_type === "store" ||
-											x.task_type === "source_fetch") &&
+											x.task_type === "source_fetch" ||
+											x.task_type === "delete") &&
 										x.target_node_id != null && (
-											<button className="small-btn" onClick={() => retry(x.id)}>
+											<button
+												className="small-btn"
+												onClick={() => retry(x.id)}
+												type={"button"}
+											>
 												再試行
 											</button>
 										)}

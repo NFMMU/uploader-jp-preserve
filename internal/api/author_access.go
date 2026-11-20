@@ -47,7 +47,7 @@ func (s *Server) requireAuthorFileArtifactAccess() gin.HandlerFunc {
 		var file model.FileObject
 		if err := s.db.WithContext(c.Request.Context()).
 			Select("id", "artifact_id").
-			First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", c.Param("id")).Error; err != nil {
+			First(&file, "id = ? AND deleted_at IS NULL", c.Param("id")).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "file object not found"})
 			} else {
@@ -92,8 +92,8 @@ func (s *Server) requireAuthorArtifactAccess() gin.HandlerFunc {
 	}
 }
 
-// deleteFileObject hides the file from the catalog using soft deletion and retains
-// stored copies. Physical deletion belongs to the approved deletion-request flow.
+// deleteFileObject queues physical deletion on every node that stores the file.
+// The file remains auditable until every known placement reports successful deletion.
 func (s *Server) deleteFileObject(c *gin.Context) {
 	actor, ok := hooks.CurrentUser(c)
 	if !ok {
@@ -127,14 +127,7 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 		if file.DeletionRequestedAt != nil {
 			return errFileDeletionAlreadyRequested
 		}
-		result := tx.Delete(&file)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		return nil
+		return queueFileDeletionTx(tx, file, nil, actor.ID, "Manual deletion from the catalog")
 	})
 	if err != nil {
 		switch {
@@ -152,5 +145,5 @@ func (s *Server) deleteFileObject(c *gin.Context) {
 	}
 
 	s.audit(c, &actor, "file_object", c.Param("id"), "file_object.delete", "success", nil)
-	c.Status(http.StatusNoContent)
+	c.Status(http.StatusAccepted)
 }

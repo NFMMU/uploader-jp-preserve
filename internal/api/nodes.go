@@ -524,9 +524,7 @@ func (s *Server) clearFailedTasks(c *gin.Context) {
 	var affectedCount int64
 	actor, _ := hooks.CurrentUser(c)
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		result := tx.Where(model.Task{
-			Status: "failed",
-		}).Delete(nil)
+		result := tx.Where("status = ? AND task_type <> ?", "failed", "delete").Delete(&model.Task{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -790,7 +788,7 @@ func (s *Server) retryFailedTask(
 			return errTaskNotRetryable
 		}
 
-		if task.TaskType != "store" && task.TaskType != "source_fetch" {
+		if task.TaskType != "store" && task.TaskType != "source_fetch" && task.TaskType != "delete" {
 			return errTaskNotRetryable
 		}
 
@@ -798,6 +796,14 @@ func (s *Server) retryFailedTask(
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 			return err
+		}
+
+		if task.TaskType == "delete" {
+			return retryFailedDeletionTx(tx, task, file, actor, now)
+		}
+
+		if task.TaskType == "store" && file.DeletionRequestedAt != nil {
+			return &retryRejection{reason: "file object is pending deletion"}
 		}
 
 		if file.PreservationStatus == "verified" {
@@ -1021,6 +1027,63 @@ func (s *Server) retryFailedTask(
 	})
 }
 
+// retryFailedDeletionTx preserves the original node and storage key. The caller
+// holds the task and file locks, serializing retries for the same file.
+func retryFailedDeletionTx(tx *gorm.DB, task model.Task, file model.FileObject, actor model.User, now time.Time) error {
+	if task.TargetNodeID == nil || file.DeletedAt.Valid {
+		return &retryRejection{reason: "deletion has no target or is already complete"}
+	}
+	var placement model.Placement
+	if err := tx.Where("file_object_id = ? AND node_id = ?", file.ID, *task.TargetNodeID).First(&placement).Error; err != nil {
+		return err
+	}
+	if placement.Status != "error" && placement.Status != "deleting" {
+		return &retryRejection{reason: "target placement is no longer pending failed deletion"}
+	}
+	var active int64
+	query := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued','running')", file.ID)
+	if file.DeletionRequestedAt != nil {
+		// Other nodes may continue deleting independently.
+		query = query.Where("task_type <> 'delete' OR target_node_id = ?", *task.TargetNodeID)
+	}
+	if err := query.Count(&active).Error; err != nil {
+		return err
+	}
+	if active > 0 {
+		return &retryRejection{reason: "another active task prevents deletion retry"}
+	}
+	if file.DeletionRequestedAt == nil {
+		// A failed surplus deletion must still leave the required copies and
+		// spare on stable nodes. Never redirect it to a different placement.
+		var counts struct {
+			Healthy  int64
+			Unstable int64
+		}
+		stableCutoff := now.Add(-surplusReplicaCooldown)
+		if err := tx.Table("placements AS p").
+			Select("COUNT(*) AS healthy, COUNT(*) FILTER (WHERE n.online_since IS NULL OR n.online_since > ? OR p.verified_at IS NULL OR p.verified_at > ?) AS unstable", stableCutoff, stableCutoff).
+			Joins("JOIN nodes AS n ON n.id = p.node_id").
+			Where("p.file_object_id = ? AND p.node_id <> ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", file.ID, *task.TargetNodeID, now.Add(-2*time.Minute)).
+			Scan(&counts).Error; err != nil {
+			return err
+		}
+		if counts.Healthy < requiredReplicaCount+1 || counts.Unstable > 0 {
+			return &retryRejection{reason: "insufficient stable copies for surplus deletion retry"}
+		}
+	}
+	if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{
+		"status": "queued", "attempt_count": 0, "last_error": nil,
+		"lease_token": nil, "lease_until": nil, "updated_at": now,
+	}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.Placement{}).Where("id = ?", placement.ID).Update("status", "deleting").Error; err != nil {
+		return err
+	}
+	reason := "Administrator retried failed deletion on original node " + *task.TargetNodeID
+	return tx.Create(&model.AuditLog{ActorID: &actor.ID, ActorLabel: actor.Email, TargetType: "task", TargetID: &task.ID, Action: "task.retry", Result: "success", Reason: &reason}).Error
+}
+
 func (s *Server) retryTask(c *gin.Context) {
 	taskID := c.Param("id")
 
@@ -1103,7 +1166,10 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 	}
 	noTask := false
 	leaseToken := uuid.NewString()
-	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	db := s.db.WithContext(c.Request.Context())
+	// Finish lease housekeeping before taking file locks: deletion locks files
+	// before tasks, so retaining task locks here would invert that order.
+	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
     UPDATE tasks
     SET status = 'failed',
@@ -1127,10 +1193,18 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			(SELECT file_object_id FROM tasks WHERE task_type IN ('store','delete') AND target_node_id = ? AND status = 'failed' AND last_error = 'task lease expired after maximum attempts')`, node.ID, node.ID).Error; err != nil {
 			return err
 		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not expire tasks"})
+		return
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Raw(`
-    SELECT *
-    FROM tasks
-    WHERE
+    SELECT tasks.*
+    FROM tasks JOIN file_objects AS f ON f.id = tasks.file_object_id
+    WHERE (tasks.task_type = 'delete' OR (f.deleted_at IS NULL AND f.deletion_requested_at IS NULL))
+        AND
         (
             (task_type IN ('store', 'delete') AND target_node_id = ?)
             OR (task_type = 'source_fetch' AND (target_node_id = ? OR target_node_id IS NULL))
@@ -1141,9 +1215,9 @@ func (s *Server) claimNodeTask(c *gin.Context) {
             status = 'queued'
             OR (status = 'running' AND lease_until < NOW())
         )
-    ORDER BY priority DESC, created_at ASC
+    ORDER BY tasks.priority DESC, tasks.created_at ASC
     LIMIT 1
-    FOR UPDATE SKIP LOCKED
+    FOR UPDATE OF f SKIP LOCKED
 		`, node.ID, node.ID, node.ID, maxTaskAttempts).Scan(&claimed.Task).Error
 		if err != nil {
 			return err
@@ -1151,6 +1225,15 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 		if claimed.Task.ID == "" {
 			noTask = true
 			return nil
+		}
+		// The file lock serializes claims with deletion. Recheck the task under
+		// its own lock in case a result arrived while selecting the file.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("id = ? AND attempt_count < ? AND (status = 'queued' OR (status = 'running' AND lease_until < now()))", claimed.Task.ID, maxTaskAttempts).First(&claimed.Task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				noTask = true
+				return nil
+			}
+			return err
 		}
 		if claimed.Task.TaskType == "source_fetch" {
 			claimed.Task.TargetNodeID = &node.ID
@@ -1321,6 +1404,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		placementNodeID = valueOrEmpty(task.TargetNodeID)
 	}
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if task.TaskType == "delete" && req.Status == "success" {
+			var lockedFile model.FileObject
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedFile, "id = ?", file.ID).Error; err != nil {
+				return err
+			}
+			file = lockedFile
+		}
 		updates := map[string]any{"status": nextStatus, "lease_until": nil, "lease_token": nil, "updated_at": now}
 		if req.Status == "failure" {
 			updates["last_error"] = req.Error
@@ -1562,8 +1652,13 @@ func (s *Server) replicaContent(c *gin.Context) {
 	}
 	now := time.Now().UTC()
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Lock the file before the task, matching deletion and claim ordering.
+		var currentFile model.FileObject
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&currentFile, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", file.ID).Error; err != nil {
+			return err
+		}
 		var locked model.Task
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&locked).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("id = ? AND task_type = 'replicate' AND source_node_id = ? AND status = 'running' AND lease_token = ? AND lease_until > now()", taskID, node.ID, lease).First(&locked).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]any{"task_type": "store", "source_node_id": nil, "status": "queued", "attempt_count": 0, "last_error": nil, "lease_until": nil, "lease_token": nil, "updated_at": now}).Error; err != nil {

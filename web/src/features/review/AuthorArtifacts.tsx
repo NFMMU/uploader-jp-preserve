@@ -1,11 +1,4 @@
-import {
-	Archive,
-	ArrowUpRight,
-	Files,
-	FolderOpen,
-	Search,
-	UserRound,
-} from "lucide-react";
+import { Archive, ArrowUpRight, Files, FolderOpen, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Heading } from "@/components/common/Heading";
