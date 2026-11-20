@@ -743,7 +743,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								type="button"
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
-								type={"button"}
 							>
 								<Download size={16} /> CSV出力
 							</button>
@@ -946,7 +945,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
 							}
-							type={"button"}
 						>
 							公開条件を一括変更
 						</button>
@@ -964,7 +962,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									type="button"
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
-									type={"button"}
 								>
 									一括公開
 								</button>
@@ -972,7 +969,6 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									type="button"
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
-									type={"button"}
 								>
 									一括公開停止
 								</button>
