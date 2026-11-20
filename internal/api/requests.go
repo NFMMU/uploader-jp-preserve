@@ -231,8 +231,19 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			strpos(LOWER(COALESCE(contact, '') COLLATE "C"), ?) > 0 OR
 			strpos(LOWER(COALESCE(details, '') COLLATE "C"), ?) > 0 OR
 			strpos(LOWER(COALESCE(source_url, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(external_url, '') COLLATE "C"), ?) > 0
-		)`, term, term, term, term, term, term, term)
+			strpos(LOWER(COALESCE(external_url, '') COLLATE "C"), ?) > 0 OR
+			EXISTS (
+				SELECT 1 FROM file_objects f
+				WHERE f.id = public_requests.file_object_id
+				AND strpos(LOWER(COALESCE(f.original_filename, '') COLLATE "C"), ?) > 0
+			) OR
+			EXISTS (
+				SELECT 1 FROM artifacts a
+				LEFT JOIN file_objects f ON f.id = public_requests.file_object_id
+				WHERE a.id = COALESCE(public_requests.artifact_id, f.artifact_id)
+				AND strpos(LOWER(COALESCE(a.title, '') COLLATE "C"), ?) > 0
+			)
+		)`, term, term, term, term, term, term, term, term, term)
 	}
 	createdAtOrder := c.DefaultQuery("sort", "desc")
 	if createdAtOrder != "asc" && createdAtOrder != "desc" {
