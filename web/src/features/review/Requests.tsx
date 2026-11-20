@@ -21,7 +21,13 @@ type RequestsProps = {
 	bumpRefresh?: () => void;
 };
 
-export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsProps) {
+export function Requests({
+	api,
+	refresh,
+	notify,
+	role,
+	bumpRefresh,
+}: RequestsProps) {
 	const nav = useNavigate();
 
 	// 実データの取得
@@ -431,9 +437,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 			<div className="review-summary-grid">
 				<button
 					type="button"
-					className={
-						`review-summary-card ${filter === "pending" ? "selected" : ""}`
-					}
+					className={`review-summary-card ${filter === "pending" ? "selected" : ""}`}
 					onClick={() => {
 						setFilter("pending");
 						setPage(1);
@@ -446,9 +450,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 				</button>
 				<button
 					type="button"
-					className={
-						`review-summary-card ${filter === "in_review" ? "selected" : ""}`
-					}
+					className={`review-summary-card ${filter === "in_review" ? "selected" : ""}`}
 					onClick={() => {
 						setFilter("in_review");
 						setPage(1);
@@ -461,9 +463,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 				</button>
 				<button
 					type="button"
-					className={
-						`review-summary-card ${filter === "all" ? "selected" : ""}`
-					}
+					className={`review-summary-card ${filter === "all" ? "selected" : ""}`}
 					onClick={() => {
 						setFilter("all");
 						setPage(1);
@@ -485,7 +485,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 						["rejected", "却下"],
 						["closed", "終了"],
 					].map(([v, l]) => (
-						<button type="button"
+						<button
+							type="button"
 							key={v}
 							className={filter === v ? "active" : ""}
 							onClick={() => {
@@ -507,10 +508,10 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 							placeholder="申請内容・申請者・URLを検索"
 							aria-label="申請を検索"
 							onChange={(event) => {
-							setSearchInput(event.target.value);
-							setPage(1);
-							setSelectedRequestIDs([]);
-						}}
+								setSearchInput(event.target.value);
+								setPage(1);
+								setSelectedRequestIDs([]);
+							}}
 						/>
 					</label>
 					<label className="request-filter-select">
@@ -519,10 +520,10 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 							value={requestType}
 							aria-label="申請種別で絞り込む"
 							onChange={(event) => {
-							setRequestType(event.target.value);
-							setPage(1);
-							setSelectedRequestIDs([]);
-						}}
+								setRequestType(event.target.value);
+								setPage(1);
+								setSelectedRequestIDs([]);
+							}}
 						>
 							<option value="all">すべて</option>
 							<option value="preservation">保全</option>
@@ -550,7 +551,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 					</label>
 				</div>
 				{role === "admin" && (
-					<button type="button"
+					<button
+						type="button"
 						className="secondary"
 						disabled={bulkPreserveBusy}
 						onClick={() => {
@@ -573,7 +575,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 				<section className="bulk-toolbar panel">
 					<div className="bulk-toolbar-title">
 						<b>{selectedRequestIDs.length} 件の申請を選択中</b>
-						<button type="button"
+						<button
+							type="button"
 							className="small-btn"
 							onClick={() => setSelectedRequestIDs([])}
 						>
@@ -583,7 +586,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 					<div className="bulk-toolbar-controls">
 						{role === "admin" && (
 							<>
-								<button type="button"
+								<button
+									type="button"
 									className="primary"
 									disabled={
 										bulkPreserveBusy ||
@@ -610,7 +614,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 									/>{" "}
 									利用規約を確認しました
 								</label>
-								<button type="button"
+								<button
+									type="button"
 									className="secondary"
 									disabled={bulkPreserveBusy || bulkReviewBusy}
 									onClick={() => bulkReview("accepted")}
@@ -619,7 +624,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 								</button>
 							</>
 						)}
-						<button type="button"
+						<button
+							type="button"
 							className="secondary"
 							disabled={bulkPreserveBusy || bulkReviewBusy}
 							onClick={() => bulkReview("rejected")}
@@ -720,7 +726,8 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 								)}
 							</div>
 							<div className="review-request-actions">
-								<button type="button"
+								<button
+									type="button"
 									className="primary"
 									onClick={() =>
 										nav(`/admin/requests/${encodeURIComponent(x.id)}`)
@@ -729,13 +736,14 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: RequestsPr
 									申請ページを開く <span>→</span>
 								</button>
 								{(x.file_object_id || x.artifact_id) && (
-									<button type="button"
+									<button
+										type="button"
 										className="secondary"
 										onClick={() => {
-										const fileQuery = x.file_object_id
-											? `file_id=${encodeURIComponent(x.file_object_id)}`
-											: `artifact_id=${encodeURIComponent(x.artifact_id)}`;
-										nav(`/admin/review?tab=files&${fileQuery}`);
+											const fileQuery = x.file_object_id
+												? `file_id=${encodeURIComponent(x.file_object_id)}`
+												: `artifact_id=${encodeURIComponent(x.artifact_id)}`;
+											nav(`/admin/review?tab=files&${fileQuery}`);
 										}}
 									>
 										ファイル一覧
