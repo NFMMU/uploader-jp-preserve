@@ -637,7 +637,7 @@ func splitSQLStatements(sql string) []string {
 }
 ); end >= 0 {
 				tag := sql[i : i+end+2]
-				if strings.Trim(tag, "$") == "" || strings.Trim(tag, "$") != "" {
+				{
 					dollarTag = tag
 					i += len(tag) - 1
 				}
@@ -653,6 +653,42 @@ func splitSQLStatements(sql string) []string {
 		statements = append(statements, statement)
 	}
 	return statements
+}
+
+func TestGetUploaderArtifactMergeRejectsDifferentAuthorAssignmentsIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	catalogExec(t, db, `CREATE TABLE author_artifact (
+		user_id uuid NOT NULL,
+		artifact_id uuid NOT NULL,
+		created_at timestamptz NOT NULL DEFAULT now(),
+		PRIMARY KEY (artifact_id, user_id)
+	)`)
+	catalogExec(t, db, `CREATE TEMP TABLE getuploader_artifact_merge (
+		duplicate_id uuid NOT NULL,
+		keep_id uuid NOT NULL
+	)`)
+	duplicateID, keepID, authorID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	catalogExec(t, db, "INSERT INTO getuploader_artifact_merge (duplicate_id, keep_id) VALUES (?, ?)", duplicateID, keepID)
+	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?)", authorID, duplicateID)
+
+	migration, err := os.ReadFile("../../atlas/migrations/20261118090000_normalize_getuploader_source_paths.sql")
+	if err != nil {
+		t.Fatalf("read GetUploader migration: %v", err)
+	}
+	sql := string(migration)
+	start := strings.Index(sql, "DO $guard$")
+	if start < 0 {
+		t.Fatal("author-assignment guard not found in migration")
+	}
+	end := strings.Index(sql[start:], "$guard$;")
+	if end < 0 {
+		t.Fatal("author-assignment guard terminator not found in migration")
+	}
+	guard := sql[start : start+end+len("$guard$;")]
+	err = db.Exec(guard).Error
+	if err == nil || !strings.Contains(err.Error(), "different author assignments") {
+		t.Fatalf("guard error=%v, want author-assignment mismatch error", err)
+	}
 }
 
 func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
