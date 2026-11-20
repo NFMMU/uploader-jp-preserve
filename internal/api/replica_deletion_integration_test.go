@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,7 +25,9 @@ import (
 func replicaClaim(s *Server, node model.Node) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/claim", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, "/claim", nil).WithContext(ctx)
 	c.Set("currentNode", nodeContext{Node: node})
 	s.claimNodeTask(c)
 	c.Writer.WriteHeaderNow()
