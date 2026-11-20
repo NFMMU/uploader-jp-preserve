@@ -236,7 +236,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy} type="submit">
+							<button type="submit" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "登録してファイルを追加"}
 							</button>
 						</div>
@@ -349,7 +349,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		return () => {
 			live = false;
 		};
-	}, [api, linkedFileID, f.loading, f.data.items, nav, notify, role]);
+	}, [linkedFileID, role, f.loading, f.data.items, api, notify, nav]);
 
 	function resetAddFileForm() {
 		setPendingFileId("");
@@ -381,19 +381,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Reset selection whenever the artifact context changes.
 	useEffect(() => {
 		setSelectedIDs([]);
-	}, [linkedArtifactID]);
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: これは意図した動作
-	useEffect(() => {
 		setPage(1);
-	}, [
-		query,
-		preservationFilter,
-		policyFilter,
-		publicationFilter,
-		linkedArtifactID,
-		limit,
-	]);
+	}, [linkedArtifactID]);
 
 	function openMetadata(x: Obj) {
 		setMetadata(x);
@@ -751,6 +740,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						)}
 						{role !== "author" && (
 							<button
+								type="button"
 								className="secondary"
 								onClick={() => downloadExport("csv", notify)}
 								type={"button"}
@@ -789,19 +779,61 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					</>
 				}
 			/>
+			{(role === "admin" || role === "reviewer") &&
+				linkedArtifactID &&
+				artifactRecord && (
+					<section
+						className="panel related-requests-panel"
+						aria-labelledby="related-preservation-requests"
+					>
+						<div className="panel-heading">
+							<h2 id="related-preservation-requests">関連するリクエスト</h2>
+							<span className="muted">
+								{(artifactData.data.related_requests || []).length} 件
+							</span>
+						</div>
+						{(artifactData.data.related_requests || []).length > 0 ? (
+							<ul className="related-request-list">
+								{(artifactData.data.related_requests || []).map(
+									(request: Obj) => (
+										<li key={request.id}>
+											<a
+												href={`/admin/requests/${encodeURIComponent(request.id)}`}
+											>
+												<strong>{request.title || "タイトル未設定"}</strong>
+												<span>
+													{request.status} ·{" "}
+													{new Date(request.created_at).toLocaleString("ja-JP")}
+												</span>
+											</a>
+										</li>
+									),
+								)}
+							</ul>
+						) : (
+							<p className="muted">関連する保全リクエストはありません。</p>
+						)}
+					</section>
+				)}
 			<div className="filter-bar file-filter-bar">
 				<div className="search-box">
 					<Search size={17} />
 					<input
 						value={query}
-						onChange={(e) => setQuery(e.target.value)}
+						onChange={(e) => {
+							setQuery(e.target.value);
+							setPage(1);
+						}}
 						placeholder="作品名・ファイル名・作者・IDで検索"
 					/>
 				</div>
 				<select
 					aria-label="保全状態で絞り込み"
 					value={preservationFilter}
-					onChange={(e) => setPreservationFilter(e.target.value)}
+					onChange={(e) => {
+						setPreservationFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">すべての保全状態</option>
 					<option value="uncollected">未取得</option>
@@ -815,7 +847,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<select
 					aria-label="公開条件で絞り込み"
 					value={policyFilter}
-					onChange={(e) => setPolicyFilter(e.target.value)}
+					onChange={(e) => {
+						setPolicyFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">すべての公開条件</option>
 					{(role === "author"
@@ -839,7 +874,10 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				<select
 					aria-label="公開状態で絞り込み"
 					value={publicationFilter}
-					onChange={(e) => setPublicationFilter(e.target.value)}
+					onChange={(e) => {
+						setPublicationFilter(e.target.value);
+						setPage(1);
+					}}
 				>
 					<option value="">公開状態：すべて</option>
 					<option value="public">公開中</option>
@@ -859,14 +897,15 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
 						<button
+							type="button"
 							className="small-btn"
 							onClick={() => setSelectedIDs([])}
-							type={"button"}
 						>
 							選択解除
 						</button>
 					</div>
 					<button
+						type="button"
 						className="danger-btn"
 						disabled={busy}
 						onClick={deleteSelectedFiles}
@@ -881,9 +920,9 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					<div className="bulk-toolbar-title">
 						<b>{selectedIDs.length} 件を選択中</b>
 						<button
+							type="button"
 							className="small-btn"
 							onClick={() => setSelectedIDs([])}
-							type={"button"}
 						>
 							選択解除
 						</button>
@@ -903,6 +942,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</select>
 						</label>
 						<button
+							type="button"
 							className="secondary"
 							onClick={() =>
 								runBulk("policy", { redistribution_policy: bulkPolicy })
@@ -914,6 +954,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						{role === "admin" && (
 							<>
 								<button
+									type="button"
 									className="danger-btn"
 									disabled={busy}
 									onClick={deleteSelectedFiles}
@@ -922,6 +963,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									選択したファイルを削除
 								</button>
 								<button
+									type="button"
 									className="primary"
 									onClick={() => runBulk("publication", { enabled: true })}
 									type={"button"}
@@ -929,6 +971,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									一括公開
 								</button>
 								<button
+									type="button"
 									className="secondary"
 									onClick={() => runBulk("publication", { enabled: false })}
 									type={"button"}
@@ -1074,7 +1117,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							>
 								キャンセル
 							</button>
-							<button className="primary" disabled={busy} type="submit">
+							<button type="submit" className="primary" disabled={busy}>
 								{busy ? "登録中…" : "次へ"}
 							</button>
 						</div>
@@ -1298,6 +1341,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								キャンセル
 							</button>
 							<button
+								type="submit"
 								className="primary"
 								disabled={
 									busy ||
@@ -1399,13 +1443,14 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						</label>
 						<div className="modal-actions">
 							<button
+								type="button"
 								className="secondary"
 								onClick={() => setDetail(null)}
-								type={"button"}
 							>
 								閉じる
 							</button>
 							<button
+								type="button"
 								className="primary"
 								onClick={savePolicy}
 								disabled={

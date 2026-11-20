@@ -56,9 +56,11 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 	)`, cutoff)
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
+		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			artifacts.title COLLATE "case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE "case_insensitive" LIKE ?
 			OR COALESCE(artifacts.description, '') COLLATE "case_insensitive" LIKE ? OR artifacts.source_url COLLATE "case_insensitive" LIKE ?
+			OR (? <> '' AND artifacts.source_url = ?)
 			OR EXISTS (
 				SELECT 1 FROM file_objects f
 				WHERE f.artifact_id = artifacts.id AND f.original_filename COLLATE "case_insensitive" LIKE ?
@@ -72,7 +74,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 					  AND n.status = 'online' AND n.last_seen_at >= ?
 				  )
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, cutoff)
+		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, cutoff)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -97,7 +99,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		}
 		items = append(items, publicCatalogArtifact{
 			ID: artifact.ID, Title: artifact.Title, CreatorName: artifact.CreatorName,
-			SourceURL: artifact.SourceURL, Description: artifact.Description,
+			SourceURL: uploaderSourceURLForAccess(artifact.SourceURL), Description: artifact.Description,
 			CreatedAt: artifact.CreatedAt, Files: files,
 		})
 	}
@@ -146,6 +148,7 @@ func (s *Server) getPublicArtifact(c *gin.Context) {
 		})
 		return
 	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 
 	var files []publicCatalogFile
 	if isAll {

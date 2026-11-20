@@ -78,7 +78,8 @@ func checkUploaderListingCandidates(ctx context.Context, found []uploaderListing
 			duplicates++
 			continue
 		}
-		if registered[normalized] {
+		storedURL, storageErr := uploaderSourceURLForStorage(normalized)
+		if storageErr == nil && (registered[storedURL] || registered[normalized]) {
 			seen[normalized] = true
 			duplicates++
 			continue
@@ -183,9 +184,12 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 		lookupSeen := make(map[string]bool, len(found))
 		for _, item := range found {
 			normalized, err := normalizeUploaderURL(item.URL)
-			if err == nil && !lookupSeen[normalized] {
-				lookupSeen[normalized] = true
-				lookupURLs = append(lookupURLs, normalized)
+			if err == nil {
+				storedURL, storageErr := uploaderSourceURLForStorage(normalized)
+				if storageErr == nil && !lookupSeen[storedURL] {
+					lookupSeen[storedURL] = true
+					lookupURLs = append(lookupURLs, storedURL)
+				}
 			}
 		}
 		registeredURLs := make([]string, 0, len(lookupURLs))
@@ -239,11 +243,16 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			title = title[:500]
 		}
 		requestID := uuid.NewString()
+		storedURL, storageErr := uploaderSourceURLForStorage(item.URL)
+		if storageErr != nil {
+			failed++
+			continue
+		}
 		duplicate := false
 		var requestCreated bool
 		err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 			reserve := tx.Exec(`INSERT INTO source_url_registry (normalized_url, source_url, origin, created_at, updated_at)
-				VALUES (?, ?, 'auto_collection', now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, item.URL, item.URL)
+				VALUES (?, ?, 'auto_collection', now(), now()) ON CONFLICT (normalized_url) DO NOTHING`, storedURL, storedURL)
 			if reserve.Error != nil {
 				return reserve.Error
 			}
@@ -253,33 +262,40 @@ func (s *Server) collectUploaderURLs(c *gin.Context) {
 			}
 
 			var existingFile model.FileObject
-			fileErr := tx.Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", item.URL).First(&existingFile).Error
+			fileErr := tx.Where("split_part(trim(source_url), '#', 1) = ? AND deleted_at IS NULL", storedURL).First(&existingFile).Error
 			if fileErr == nil {
 				duplicate = true
-				return tx.Exec("UPDATE source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", item.URL).Error
+				return tx.Exec("UPDATE source_url_registry SET origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", storedURL).Error
 			}
 			if !errors.Is(fileErr, gorm.ErrRecordNotFound) {
 				return fileErr
 			}
 
 			var existingRequest model.PublicRequest
-			requestErr := tx.Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", item.URL).Order("created_at ASC").First(&existingRequest).Error
+			requestErr := tx.Where("request_type = 'preservation' AND split_part(trim(source_url), '#', 1) = ?", storedURL).Order("created_at ASC").First(&existingRequest).Error
 			if requestErr == nil {
 				duplicate = true
-				return tx.Exec("UPDATE source_url_registry SET public_request_id = ?, origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", existingRequest.ID, item.URL).Error
+				return tx.Exec("UPDATE source_url_registry SET public_request_id = ?, origin = 'catalogued', updated_at = now() WHERE normalized_url = ?", existingRequest.ID, storedURL).Error
 			}
 			if !errors.Is(requestErr, gorm.ErrRecordNotFound) {
 				return requestErr
 			}
 
+			var artifactID *string
+			var linkedArtifact model.Artifact
+			if err := tx.Where("source_url = ?", uploaderArtifactSourceURL(storedURL)).Order("created_at ASC").First(&linkedArtifact).Error; err == nil {
+				artifactID = &linkedArtifact.ID
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 			preserveRequest := model.PublicRequest{
-				ID: requestID, RequestType: "preservation", Status: "pending", Title: new(title),
-				SourceURL: new(item.URL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
+				ID: requestID, RequestType: "preservation", Status: "pending", Title: new(title), ArtifactID: artifactID,
+				SourceURL: new(storedURL), Details: fmt.Sprintf("Web上から自動収集した候補です。開始URL: %s。内容・権利情報を確認し、必要な場合のみ保全を開始してください。自動収集ではダウンロードや一般公開を行いません。", seed),
 			}
 			if err := tx.Create(&preserveRequest).Error; err != nil {
 				return err
 			}
-			if err := tx.Exec("UPDATE source_url_registry SET public_request_id = ?, updated_at = now() WHERE normalized_url = ?", preserveRequest.ID, item.URL).Error; err != nil {
+			if err := tx.Exec("UPDATE source_url_registry SET public_request_id = ?, updated_at = now() WHERE normalized_url = ?", preserveRequest.ID, storedURL).Error; err != nil {
 				return err
 			}
 			requestCreated = true

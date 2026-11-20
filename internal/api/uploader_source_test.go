@@ -166,3 +166,75 @@ func TestSourceFetchFailureIsPermanent(t *testing.T) {
 		t.Fatal("transient network failures should remain eligible for automatic retry")
 	}
 }
+
+func TestUploaderSourceURLForStorage(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"https://uu.getuploader.com/MMDkaz/index/date/desc/2", "/MMDkaz"},
+		{"https://ux.getuploader.com/MMDkaz/", "/MMDkaz"},
+		{"https://uu.getuploader.com/MMDkaz/download/7", "/MMDkaz/download/7"},
+		{"https://ux.getuploader.com/MMDkaz/download/8?token=abc", "/MMDkaz/download/8?token=abc"},
+		{"/MMDkaz/download/9", "/MMDkaz/download/9"},
+		{"https://uploader.jp/", "https://uploader.jp/"},
+		{"https://EXAMPLE.Uploader.JP.:443/download/7?token=abc/#fragment", "https://example.uploader.jp/download/7?token=abc/"},
+		{"https://uu.getuploader.com/A/DOWNLOAD/7/", "/A/download/7"},
+		{"/A/download/7/?token=abc/", "/A/download/7?token=abc/"},
+		{"https://example.uploader.jp/download/7#first", "https://example.uploader.jp/download/7"},
+		{"https://example.uploader.jp/download/7#second", "https://example.uploader.jp/download/7"},
+	}
+	for _, tc := range cases {
+		got, err := uploaderSourceURLForStorage(tc.raw)
+		if err != nil {
+			t.Errorf("uploaderSourceURLForStorage(%q): %v", tc.raw, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("uploaderSourceURLForStorage(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestUploaderArtifactSearchKeys(t *testing.T) {
+	cases := []struct {
+		raw                    string
+		wantFile, wantArtifact string
+	}{
+		{
+			raw:          "https://uu.getuploader.com/MMDkaz/index/date/desc/2",
+			wantFile:     "/MMDkaz",
+			wantArtifact: "/MMDkaz",
+		},
+		{
+			raw:          "https://ux.getuploader.com/MMDkaz/download/7",
+			wantFile:     "/MMDkaz/download/7",
+			wantArtifact: "/MMDkaz",
+		},
+		{
+			raw:          "https://uploader.jp/",
+			wantFile:     "https://uploader.jp/",
+			wantArtifact: "https://uploader.jp/",
+		},
+	}
+	for _, tc := range cases {
+		gotFile, gotArtifact := uploaderArtifactSearchKeys(tc.raw)
+		if gotFile != tc.wantFile || gotArtifact != tc.wantArtifact {
+			t.Errorf("uploaderArtifactSearchKeys(%q) = (%q, %q), want (%q, %q)",
+				tc.raw, gotFile, gotArtifact, tc.wantFile, tc.wantArtifact)
+		}
+	}
+}
+
+func TestUploaderArtifactSourceURL(t *testing.T) {
+	cases := map[string]string{
+		"/MMDkaz/download/7":          "/MMDkaz",
+		"/MMDkaz":                     "/MMDkaz",
+		"https://uploader.jp/account": "https://uploader.jp/account",
+	}
+	for raw, want := range cases {
+		if got := uploaderArtifactSourceURL(raw); got != want {
+			t.Errorf("uploaderArtifactSourceURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

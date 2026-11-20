@@ -40,12 +40,12 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 		updates["creator_name"] = trimOptional(req.CreatorName)
 	}
 	if req.SourceURL != nil {
-		validated, err := validateUploaderURL(*req.SourceURL)
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 			return
 		}
-		updates["source_url"] = validated
+		updates["source_url"] = uploaderArtifactSourceURL(validated)
 	}
 	if req.Description != nil {
 		updates["description"] = trimOptional(req.Description)
@@ -67,6 +67,7 @@ func (s *Server) updateArtifactMetadata(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "artifact", artifact.ID, "artifact.metadata.update", "success", req.Reason)
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact})
 }
 
@@ -100,7 +101,7 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 		if strings.TrimSpace(*req.SourceURL) == "" {
 			updates["source_url"] = nil
 		} else {
-			validated, err := validateUploaderURL(*req.SourceURL)
+			validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 				return
@@ -123,6 +124,9 @@ func (s *Server) updateFileMetadata(c *gin.Context) {
 	if err := db.First(&file, "id = ?", file.ID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load updated file"})
 		return
+	}
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
 	}
 	c.JSON(http.StatusOK, gin.H{"file": file})
 }
