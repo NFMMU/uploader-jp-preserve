@@ -250,6 +250,56 @@ func TestPublicCatalogPaginationIntegration(t *testing.T) {
 	}
 }
 
+func splitSQLStatements(sql string) []string {
+	var statements []string
+	start := 0
+	var quote byte
+	inDollarQuote := false
+	for i := 0; i < len(sql); i++ {
+		if inDollarQuote {
+			if strings.HasPrefix(sql[i:], "$guard$") {
+				i += len("$guard$") - 1
+				inDollarQuote = false
+			}
+			continue
+		}
+		if quote != 0 {
+			if sql[i] == quote {
+				if i+1 < len(sql) && sql[i+1] == quote { i++; continue }
+				quote = 0
+			}
+			continue
+		}
+		switch sql[i] {
+		case 39, 34:
+			quote = sql[i]
+		case 36:
+			if strings.HasPrefix(sql[i:], "$guard$") { inDollarQuote = true; i += len("$guard$") - 1 }
+		case ';':
+			if statement := strings.TrimSpace(sql[start:i]); statement != "" { statements = append(statements, statement) }
+			start = i + 1
+		}
+	}
+	if statement := strings.TrimSpace(sql[start:]); statement != "" { statements = append(statements, statement) }
+	return statements
+}
+func TestGetUploaderArtifactMergeRejectsDifferentAuthorAssignmentsIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	catalogExec(t, db, "CREATE TABLE author_artifact (user_id uuid NOT NULL, artifact_id uuid NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (artifact_id, user_id))")
+	catalogExec(t, db, "CREATE TEMP TABLE getuploader_artifact_merge (duplicate_id uuid NOT NULL, keep_id uuid NOT NULL)")
+	duplicateID, keepID, authorID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	catalogExec(t, db, "INSERT INTO getuploader_artifact_merge (duplicate_id, keep_id) VALUES (?, ?)", duplicateID, keepID)
+	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?)", authorID, duplicateID)
+	migration, err := os.ReadFile("../../atlas/migrations/20261118090000_normalize_getuploader_source_paths.sql")
+	if err != nil { t.Fatalf("read GetUploader migration: %v", err) }
+	sql := string(migration)
+	start := strings.Index(sql, "DO $guard$")
+	if start < 0 { t.Fatal("author-assignment guard not found in migration") }
+	end := strings.Index(sql[start:], "$guard$;")
+	if end < 0 { t.Fatal("author-assignment guard terminator not found in migration") }
+	err = db.Exec(sql[start : start+end+len("$guard$;")]).Error
+	if err == nil || !strings.Contains(err.Error(), "different author assignments") { t.Fatalf("guard error=%v, want author-assignment mismatch error", err) }
+}
 func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	db, _ := catalogTestDB(t)
 
@@ -268,8 +318,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		updated_at timestamptz NOT NULL DEFAULT now()
 	)`)
 
-	oldest := model.Artifact{CreatedAt: time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC), Title: "MMDkaz oldest", SourceURL: "https://uu.getuploader.com/MMDkaz/index/date/desc/2"}
-	duplicate := model.Artifact{CreatedAt: time.Date(2026, time.November, 2, 0, 0, 0, 0, time.UTC), Title: "MMDkaz duplicate", SourceURL: "https://ux.getuploader.com:443/MMDkaz/page2"}
+	oldest := model.Artifact{CreatedAt: time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC), Title: "MMDkaz oldest", SourceURL: "https://uu.getuploader.com/MMDkaz/index/date/desc/2#artifact"}
+	duplicate := model.Artifact{CreatedAt: time.Date(2026, time.November, 2, 0, 0, 0, 0, time.UTC), Title: "MMDkaz duplicate", SourceURL: "https://ux.getuploader.com:443/MMDkaz/page2#duplicate"}
 	unrelated := model.Artifact{Title: "unrelated uploader", SourceURL: "https://uploader.jp/account"}
 	for _, artifact := range []*model.Artifact{&oldest, &duplicate, &unrelated} {
 		if err := db.Create(artifact).Error; err != nil {
@@ -277,8 +327,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		}
 	}
 
-	file7URL := "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7"
-	file8URL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/"
+	file7URL := "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7#file7"
+	file8URL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/#file8"
 	file7 := model.FileObject{
 		ArtifactID: oldest.ID, OriginalFilename: "seven.zip", SizeBytes: 7,
 		PreservationStatus: "stored", RedistributionPolicy: "unknown", SourceURL: &file7URL,
@@ -293,8 +343,8 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		}
 	}
 
-	requestWithFileURL := "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7"
-	requestWithoutFileURL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/"
+	requestWithFileURL := "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7#request7"
+	requestWithoutFileURL := "https://ux.getuploader.com/MMDkaz/download/8/?token=abc/#request8"
 	requestWithFile := model.PublicRequest{
 		RequestType: "preservation", Status: "pending", FileObjectID: &file7.ID,
 		SourceURL: &requestWithFileURL, Details: "file-linked request",
@@ -310,16 +360,16 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	}
 
 	authorID := uuid.NewString()
-	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?)", authorID, duplicate.ID)
+	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?), (?, ?)", authorID, oldest.ID, authorID, duplicate.ID)
 
 	registryRows := []struct {
 		normalized string
 		source     string
 		origin     string
 	}{
-		{"https://uu.getuploader.com/MMDkaz/index/date/desc/1", "https://uu.getuploader.com/MMDkaz/index/date/desc/1", "catalogued"},
-		{"https://ux.getuploader.com:443/MMDkaz/page2", "https://ux.getuploader.com:443/MMDkaz/page2", "catalogued"},
-		{"https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7", "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7", "catalogued"},
+		{"https://uu.getuploader.com/MMDkaz/index/date/desc/1#registry", "https://uu.getuploader.com/MMDkaz/index/date/desc/1#registry", "catalogued"},
+		{"https://ux.getuploader.com:443/MMDkaz/page2#registry", "https://ux.getuploader.com:443/MMDkaz/page2#registry", "catalogued"},
+		{"https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7#registry", "https://uu.getuploader.com:443/MMDkaz/DOWNLOAD/7/extra?token=file7#registry", "catalogued"},
 		{"/MMDkaz/download/7", "/MMDkaz/download/7", "catalogued"},
 		{"/MMDkaz/download/8/?token=abc/", "/MMDkaz/DOWNLOAD/8/?token=abc/", "catalogued"},
 		{"https://example.uploader.jp/index/1", "https://example.uploader.jp/index/1", "public_request"},
@@ -347,7 +397,7 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	migrationSQL := strings.Join(sqlLines, "\n")
 	migrationSQL = strings.Replace(migrationSQL, "BEGIN;", "", 1)
 	migrationSQL = strings.Replace(migrationSQL, "COMMIT;", "", 1)
-	for i, statement := range strings.Split(migrationSQL, ";") {
+	for i, statement := range splitSQLStatements(migrationSQL) {
 		statement = strings.TrimSpace(statement)
 		if statement == "" {
 			continue
