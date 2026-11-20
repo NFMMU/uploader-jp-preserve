@@ -1,4 +1,4 @@
-import { AlertTriangle, ClipboardList, ExternalLink } from "lucide-react";
+import { AlertTriangle, ClipboardList, ExternalLink, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Heading } from "@/components/common/Heading";
@@ -15,10 +15,25 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	const [filter, setFilter] = useState("pending");
 	const [page, setPage] = useState(1);
 	const [limit, setLimit] = useState(20);
+	const [searchInput, setSearchInput] = useState("");
+	const [search, setSearch] = useState("");
+	const [requestType, setRequestType] = useState("all");
+	const [createdAtOrder, setCreatedAtOrder] = useState<"desc" | "asc">("desc");
 
-	const requestPath =
-		`/moderation/public-requests?page=${page}&limit=${limit}` +
-		(filter !== "all" ? `&status=${encodeURIComponent(filter)}` : "");
+	useEffect(() => {
+		const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
+		return () => window.clearTimeout(timer);
+	}, [searchInput]);
+
+	const requestParams = new URLSearchParams({
+		page: String(page),
+		limit: String(limit),
+		sort: createdAtOrder,
+	});
+	if (filter !== "all") requestParams.set("status", filter);
+	if (requestType !== "all") requestParams.set("request_type", requestType);
+	if (search) requestParams.set("q", search);
+	const requestPath = `/moderation/public-requests?${requestParams.toString()}`;
 
 	const d = useData(api, requestPath, refresh);
 	const items: Obj[] = d.data.items || [];
@@ -56,7 +71,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 	useEffect(() => {
 		setPage(1);
 		setSelectedRequestIDs([]);
-	}, [filter, limit]);
+	}, [filter, limit, requestType, search, createdAtOrder]);
 
 	const [selectedRequestIDs, setSelectedRequestIDs] = useState<string[]>([]);
 	const [bulkPreserveTerms, setBulkPreserveTerms] = useState(false);
@@ -449,7 +464,7 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 					<small>受付済みの申請</small>
 				</button>
 			</div>
-			<div className="filter-bar">
+			<div className="filter-bar request-filter-bar">
 				<div className="filter-tabs">
 					{[
 						["pending", "未処理"],
@@ -470,6 +485,47 @@ export function Requests({ api, refresh, notify, role, bumpRefresh }: any) {
 							{l}
 						</button>
 					))}
+				</div>
+				<div className="request-list-controls">
+					<label className="search-box request-search-box">
+						<Search size={16} aria-hidden="true" />
+						<input
+							type="search"
+							value={searchInput}
+							placeholder="申請内容・申請者・URLを検索"
+							aria-label="申請を検索"
+							onChange={(event) => setSearchInput(event.target.value)}
+						/>
+					</label>
+					<label className="request-filter-select">
+						<span>種別</span>
+						<select
+							value={requestType}
+							aria-label="申請種別で絞り込む"
+							onChange={(event) => setRequestType(event.target.value)}
+						>
+							<option value="all">すべて</option>
+							<option value="preservation">保全</option>
+							<option value="deletion">削除</option>
+							<option value="takedown">公開停止</option>
+							<option value="external_publication">移設先情報</option>
+							<option value="redistribution_assistance">再配布相談</option>
+							<option value="publisher_assistance">配布代行</option>
+						</select>
+					</label>
+					<label className="request-filter-select">
+						<span>作成日時</span>
+						<select
+							value={createdAtOrder}
+							aria-label="作成日時の並び順"
+							onChange={(event) =>
+								setCreatedAtOrder(event.target.value as "desc" | "asc")
+							}
+						>
+							<option value="desc">新しい順</option>
+							<option value="asc">古い順</option>
+						</select>
+					</label>
 				</div>
 				{role === "admin" && (
 					<button
