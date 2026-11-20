@@ -245,14 +245,17 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			)
 		)`, term, term, term, term, term, term, term, term, term)
 	}
-	createdAtOrder := c.DefaultQuery("sort", "desc")
-	if createdAtOrder != "asc" && createdAtOrder != "desc" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be asc or desc"})
-		return
-	}
-	order := "public_requests.created_at DESC, public_requests.id DESC"
-	if createdAtOrder == "asc" {
-		order = "public_requests.created_at ASC, public_requests.id ASC"
+	createdAtOrder := c.Query("sort")
+	order := "CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC, public_requests.id ASC"
+	if createdAtOrder != "" {
+		if createdAtOrder != "asc" && createdAtOrder != "desc" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be asc or desc"})
+			return
+		}
+		order = "public_requests.created_at DESC, public_requests.id DESC"
+		if createdAtOrder == "asc" {
+			order = "public_requests.created_at ASC, public_requests.id ASC"
+		}
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
