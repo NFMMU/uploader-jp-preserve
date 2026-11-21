@@ -131,7 +131,7 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 	if sourceURL == "" && file.SourceURL != nil {
 		sourceURL = strings.TrimSpace(*file.SourceURL)
 	}
-	validatedURL, err := validateUploaderURL(sourceURL)
+	validatedURL, err := uploaderSourceURLForStorage(sourceURL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "provide an HTTPS uploader.jp/getuploader.com download-page URL"})
 		return
@@ -521,7 +521,7 @@ func (s *Server) discoverUploaderFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a listing URL and confirmation of uploader.jp terms are required"})
 		return
 	}
-	listingURL, err := validateUploaderURL(req.ListingURL)
+	listingURL, err := validateUploaderURL(uploaderSourceURLForAccess(req.ListingURL))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "provide an HTTPS uploader.jp/getuploader.com listing URL"})
 		return

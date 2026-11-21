@@ -2992,6 +2992,54 @@ footer > span {
 	color: #777;
 }
 
+.related-requests-panel {
+	margin-bottom: 16px;
+}
+.related-request-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0;
+}
+.related-request-list li + li {
+	border-top: 1px solid #eee;
+}
+.related-request-list a {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 11px 2px;
+	color: inherit;
+	text-decoration: none;
+}
+.related-request-list a:hover strong {
+	text-decoration: underline;
+}
+.related-request-list strong {
+	min-width: 0;
+	font-size: 12px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+.related-request-list span {
+	flex: 0 0 auto;
+	color: #777;
+	font-size: 10px;
+	text-align: right;
+}
+@media (max-width: 600px) {
+	.related-request-list a {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.related-request-list span {
+		text-align: left;
+	}
+}
+
 /* Administrator notices */
 .admin-notices {
 	max-width: 980px;

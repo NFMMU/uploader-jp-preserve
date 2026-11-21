@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -41,14 +42,16 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
+		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
+			OR (? <> '' AND source_url = ?)
 			OR id IN (
 				SELECT artifact_id FROM file_objects
 				WHERE deleted_at IS NULL
 				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -70,6 +73,9 @@ func (s *Server) listArtifacts(c *gin.Context) {
 	}
 	items := make([]artifactListItem, 0, len(artifacts))
 	artifactIDs := make([]string, 0, len(artifacts))
+	for i := range artifacts {
+		artifacts[i].SourceURL = uploaderSourceURLForAccess(artifacts[i].SourceURL)
+	}
 	for _, artifact := range artifacts {
 		artifactIDs = append(artifactIDs, artifact.ID)
 		items = append(items, artifactListItem{Artifact: artifact})
@@ -108,19 +114,64 @@ func (s *Server) createArtifact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "title and a valid uploader.jp source_url are required"})
 		return
 	}
-	source, err := validateUploaderURL(req.SourceURL)
+	source, err := uploaderSourceURLForStorage(req.SourceURL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS URL on uploader.jp"})
 		return
 	}
-	artifact := model.Artifact{Title: strings.TrimSpace(req.Title), CreatorName: trimOptional(req.CreatorName), SourceURL: source, Description: trimOptional(req.Description)}
-	if err := s.db.WithContext(c.Request.Context()).Create(&artifact).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create artifact"})
+	source = uploaderArtifactSourceURL(source)
+	db := s.db.WithContext(c.Request.Context())
+	var artifact model.Artifact
+	created := false
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if strings.HasPrefix(source, "/") {
+			if err := lockUploaderArtifactRoots(tx, source); err != nil {
+				return err
+			}
+			if err := tx.Where("source_url = ?", source).Order("created_at ASC").First(&artifact).Error; err == nil {
+				// Reuse the uploader-level artifact.
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+		if artifact.ID == "" {
+			artifact = model.Artifact{
+				Title: strings.TrimSpace(req.Title),
+				CreatorName: trimOptional(req.CreatorName),
+				SourceURL: source,
+				Description: trimOptional(req.Description),
+			}
+			if err := tx.Create(&artifact).Error; err != nil {
+				return err
+			}
+			created = true
+		}
+		if strings.HasPrefix(source, "/") {
+			if err := tx.Model(&model.PublicRequest{}).
+				Where(
+					"request_type = 'preservation' AND artifact_id IS NULL AND (source_url = ? OR left(source_url, length(?) + 1) = ? || '/')",
+					source, source, source,
+				).
+				Update("artifact_id", artifact.ID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create or reuse artifact"})
 		return
 	}
-	actor, _ := hooks.CurrentUser(c)
-	s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
-	c.JSON(http.StatusCreated, artifact)
+	if created {
+		actor, _ := hooks.CurrentUser(c)
+		s.audit(c, &actor, "artifact", artifact.ID, "artifact.create", "success", nil)
+	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	c.JSON(status, artifact)
 }
 
 func (s *Server) getArtifact(c *gin.Context) {
@@ -135,7 +186,38 @@ func (s *Server) getArtifact(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load artifact files"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files})
+	var requests []model.PublicRequest
+	if actor, ok := hooks.CurrentUser(c); ok && (actor.Role == "admin" || actor.Role == "reviewer") {
+		if err := s.db.WithContext(c.Request.Context()).Where("artifact_id = ? AND request_type = 'preservation'", artifact.ID).Order("created_at DESC").Find(&requests).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load related preservation requests"})
+			return
+		}
+	}
+	artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
+	for i := range files {
+		if files[i].SourceURL != nil {
+			files[i].SourceURL = new(uploaderSourceURLForAccess(*files[i].SourceURL))
+		}
+	}
+	type relatedPreservationRequest struct {
+		ID        string    `json:"id"`
+		Status    string    `json:"status"`
+		Title     *string   `json:"title,omitempty"`
+		SourceURL *string   `json:"source_url,omitempty"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	relatedRequests := make([]relatedPreservationRequest, 0, len(requests))
+	for _, request := range requests {
+		var sourceURL *string
+		if request.SourceURL != nil {
+			sourceURL = new(uploaderSourceURLForAccess(*request.SourceURL))
+		}
+		relatedRequests = append(relatedRequests, relatedPreservationRequest{
+			ID: request.ID, Status: request.Status, Title: request.Title,
+			SourceURL: sourceURL, CreatedAt: request.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": relatedRequests})
 }
 
 func (s *Server) createFileObject(c *gin.Context) {
@@ -167,7 +249,7 @@ func (s *Server) createFileObject(c *gin.Context) {
 		return
 	}
 	if req.SourceURL != nil {
-		validated, err := validateUploaderURL(*req.SourceURL)
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
 			return
@@ -201,6 +283,9 @@ func (s *Server) createFileObject(c *gin.Context) {
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+	}
 	c.JSON(http.StatusCreated, file)
 }
 
@@ -224,18 +309,21 @@ func (s *Server) listFiles(c *gin.Context) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		pattern := "%" + q + "%"
+		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
 			OR original_filename COLLATE "case_insensitive" LIKE ?
 			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
+			OR (? <> '' AND file_objects.source_url = ?)
 			OR artifact_id IN (
 				SELECT id FROM artifacts
 				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
 				OR title COLLATE "case_insensitive" LIKE ?
 				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
 				OR source_url COLLATE "case_insensitive" LIKE ?
+				OR (? <> '' AND source_url = ?)
 			)
-		)`, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
@@ -321,12 +409,16 @@ func (s *Server) listFiles(c *gin.Context) {
 			return
 		}
 		for _, artifact := range records {
+			artifact.SourceURL = uploaderSourceURLForAccess(artifact.SourceURL)
 			artifacts[artifact.ID] = artifact
 		}
 	}
 	items := make([]fileListItem, 0, len(files))
 	for _, file := range files {
 		artifact := artifacts[file.ArtifactID]
+		if file.SourceURL != nil {
+			file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
+		}
 		items = append(items, fileListItem{FileObject: file, ArtifactTitle: artifact.Title, ArtifactSourceURL: artifact.SourceURL, CreatorName: artifact.CreatorName, ArtifactDescription: artifact.Description})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "limit": limit, "total": total})
@@ -353,6 +445,9 @@ func (s *Server) getFileObject(c *gin.Context) {
 	if err := s.db.WithContext(c.Request.Context()).Where("file_object_id = ?", file.ID).Order("created_at DESC").Find(&policies).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load policy history"})
 		return
+	}
+	if file.SourceURL != nil {
+		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))
 	}
 	c.JSON(http.StatusOK, gin.H{"file": file, "policy_history": policies})
 }
@@ -551,6 +646,98 @@ func validateUploaderURL(raw string) (string, error) {
 	}
 
 	return u.String(), nil
+}
+
+// uploaderSourceURLForStorage keeps GetUploader references host-independent.
+// ux.getuploader.com and uu.getuploader.com are aliases for the same uploader.
+func uploaderSourceURLForStorage(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "/") {
+		raw = "https://uu.getuploader.com" + raw
+	}
+	validated, err := validateUploaderURL(raw)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(validated)
+	if err != nil {
+		return "", errInvalidURL
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if host != "ux.getuploader.com" && host != "uu.getuploader.com" {
+		u.Host = host
+		u.Fragment = ""
+		u.RawFragment = ""
+		return u.String(), nil
+	}
+	segments := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
+	if len(segments) == 0 || segments[0] == "" {
+		return "", errInvalidURL
+	}
+	storedPath := "/" + segments[0]
+	if len(segments) >= 3 && strings.EqualFold(segments[1], "download") && segments[2] != "" {
+		storedPath += "/download/" + segments[2]
+		if u.RawQuery != "" {
+			storedPath += "?" + u.RawQuery
+		}
+	}
+	return storedPath, nil
+}
+
+// uploaderArtifactSourceURL collapses a GetUploader file URL to its uploader root.
+func uploaderArtifactSourceURL(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		parts := strings.Split(strings.Trim(stored, "/"), "/")
+		if len(parts) > 0 && parts[0] != "" {
+			return "/" + parts[0]
+		}
+	}
+	return stored
+}
+
+// uploaderSourceURLForAccess expands a stored path for HTTP requests and links.
+func uploaderSourceURLForAccess(stored string) string {
+	if strings.HasPrefix(stored, "/") {
+		return "https://uu.getuploader.com" + stored
+	}
+	return stored
+}
+
+// uploaderArtifactSearchKeys returns the normalized file and Artifact keys for
+// a URL pasted into a catalog search box.
+func uploaderArtifactSearchKeys(raw string) (string, string) {
+	stored, err := uploaderSourceURLForStorage(raw)
+	if err != nil {
+		return "", ""
+	}
+	return stored, uploaderArtifactSourceURL(stored)
+}
+
+// lockUploaderArtifactRoots serializes GetUploader get-or-create operations.
+// Keys are acquired in sorted order so a request changing uploaders cannot
+// deadlock with another request changing the route in the opposite direction.
+func lockUploaderArtifactRoots(tx *gorm.DB, sourceURLs ...string) error {
+	unique := make(map[string]struct{})
+	for _, sourceURL := range sourceURLs {
+		if strings.TrimSpace(sourceURL) == "" {
+			continue
+		}
+		root := uploaderArtifactSourceURL(sourceURL)
+		if strings.HasPrefix(root, "/") {
+			unique[root] = struct{}{}
+		}
+	}
+	roots := make([]string, 0, len(unique))
+	for root := range unique {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	for _, root := range roots {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", root).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateHTTPURL(raw string) (string, error) {

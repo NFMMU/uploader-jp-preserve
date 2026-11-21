@@ -426,6 +426,25 @@ func injectRetryAuditError(t *testing.T, db *gorm.DB, taskID, detail string) {
 	}
 }
 
+func TestRetrySourceFetchPendingDeletionIntegration(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, _, task := retryFixture(t, db)
+	prepareSourceFetchRetry(t, db, file, task)
+	retryExec(t, db, "UPDATE file_objects SET deletion_requested_at = now() WHERE id = ?", file.ID)
+
+	response := retryRequest(s, task.ID)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("source-fetch retry while deletion is pending: %d %s", response.Code, response.Body)
+	}
+	var got model.Task
+	if err := db.First(&got, "id = ?", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "failed" || got.AttemptCount != task.AttemptCount {
+		t.Fatalf("pending deletion changed source-fetch task: %+v", got)
+	}
+}
+
 func TestRetryDeleteTaskIntegration(t *testing.T) {
 	for _, scenario := range []string{"single", "bulk", "duplicate", "deleted", "missing target", "other node active", "surplus unsafe", "surplus safe"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -552,14 +571,15 @@ func TestClearFailedTasksPreservesDeletionTasksIntegration(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("clear failed tasks: %d %s", response.Code, response.Body)
 	}
-	var remaining model.Task
-	if err := db.First(&remaining, "id = ?", deletionTask.ID).Error; err != nil {
+	var remainingDeletion model.Task
+	if err := db.First(&remainingDeletion, "id = ?", deletionTask.ID).Error; err != nil {
 		t.Fatalf("failed deletion task must remain retryable: %v", err)
 	}
-	if remaining.Status != "failed" || remaining.TaskType != "delete" {
-		t.Fatalf("deletion task was modified: %+v", remaining)
+	if remainingDeletion.Status != "failed" || remainingDeletion.TaskType != "delete" {
+		t.Fatalf("deletion task was modified: %+v", remainingDeletion)
 	}
-	if err := db.First(&remaining, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remaining, err)
+	var remainingStore model.Task
+	if err := db.First(&remainingStore, "id = ?", storeTask.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("failed storage task should be cleared, task=%+v err=%v", remainingStore, err)
 	}
 }
