@@ -223,27 +223,26 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "q must be at most 200 characters"})
 			return
 		}
-		term := strings.ToLower(search)
 		query = query.Where(`(
-			strpos(LOWER(COALESCE(title, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(creator_name, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(submitter_name, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(contact, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(details, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(source_url, '') COLLATE "C"), ?) > 0 OR
-			strpos(LOWER(COALESCE(external_url, '') COLLATE "C"), ?) > 0 OR
+			strpos(COALESCE(public_requests.title, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.creator_name, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.submitter_name, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.contact, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.details, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.source_url, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.external_url, '') COLLATE public."case_insensitive", ?) > 0 OR
 			EXISTS (
 				SELECT 1 FROM file_objects f
 				WHERE f.id = public_requests.file_object_id
-				AND strpos(LOWER(COALESCE(f.original_filename, '') COLLATE "C"), ?) > 0
+				AND strpos(f.original_filename COLLATE public."case_insensitive", ?) > 0
 			) OR
 			EXISTS (
 				SELECT 1 FROM artifacts a
 				LEFT JOIN file_objects f ON f.id = public_requests.file_object_id
 				WHERE a.id = COALESCE(public_requests.artifact_id, f.artifact_id)
-				AND strpos(LOWER(COALESCE(a.title, '') COLLATE "C"), ?) > 0
+				AND strpos(a.title COLLATE public."case_insensitive", ?) > 0
 			)
-		)`, term, term, term, term, term, term, term, term, term)
+		)`, search, search, search, search, search, search, search, search, search)
 	}
 	createdAtOrder := c.Query("sort")
 	order := "CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC, public_requests.id ASC"

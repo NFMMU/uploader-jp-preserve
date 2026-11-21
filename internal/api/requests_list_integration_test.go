@@ -40,6 +40,22 @@ func TestListPublicRequestsSearchTypeAndSortIntegration(t *testing.T) {
 			Details:     "preserve this mirror",
 			CreatedAt:   createdAt(1),
 		},
+		// Control: same status/type as the requests above but matches no search term.
+		{
+			RequestType: "preservation",
+			Status:      "pending",
+			Title:       title("Garden shed"),
+			Details:     "keep this item",
+			CreatedAt:   createdAt(4),
+		},
+		// Non-ASCII title used to prove case-insensitive matching on both sides.
+		{
+			RequestType: "takedown",
+			Status:      "pending",
+			Title:       title("Äpp"),
+			Details:     "non-ascii probe",
+			CreatedAt:   createdAt(5),
+		},
 	}
 	for i := range requests {
 		if err := db.Create(&requests[i]).Error; err != nil {
@@ -84,6 +100,55 @@ func TestListPublicRequestsSearchTypeAndSortIntegration(t *testing.T) {
 	}
 	if response.Total != 1 || len(response.Items) != 1 || response.Items[0].ID != requests[1].ID {
 		t.Fatalf("deletion filter returned total/items = %d/%d", response.Total, len(response.Items))
+	}
+	for _, item := range response.Items {
+		if item.ID == requests[3].ID {
+			t.Fatalf("filtered list returned control request %s", requests[3].ID)
+		}
+	}
+
+	// Regression: all=true combined with q used to fail with ambiguous columns (HTTP 500).
+	response = struct {
+		Items []publicRequestListItem `json:"items"`
+		Total int64                   `json:"total"`
+	}{}
+	status = catalogResponse(
+		t,
+		server.listPublicRequests,
+		"/?all=true&q=archive&sort=asc&page=1&limit=20",
+		&response,
+	)
+	if status != http.StatusOK {
+		t.Fatalf("all-mode search status = %d, want %d", status, http.StatusOK)
+	}
+	if response.Total != 3 || len(response.Items) != 3 {
+		t.Fatalf("all-mode search total/items = %d/%d, want 3/3", response.Total, len(response.Items))
+	}
+	wantOrder := []string{requests[2].ID, requests[1].ID, requests[0].ID}
+	for i, want := range wantOrder {
+		if response.Items[i].ID != want {
+			t.Fatalf("all-mode search order[%d] = %s, want %s", i, response.Items[i].ID, want)
+		}
+	}
+	for _, item := range response.Items {
+		if item.ID == requests[3].ID || item.ID == requests[4].ID {
+			t.Fatalf("all-mode search returned unmatched request %s", item.ID)
+		}
+	}
+
+	// Non-ASCII title must match a differently-cased search term.
+	status = catalogResponse(
+		t,
+		server.listPublicRequests,
+		"/?all=true&q=ÄPP&sort=asc&page=1&limit=20",
+		&response,
+	)
+	if status != http.StatusOK {
+		t.Fatalf("non-ascii search status = %d, want %d", status, http.StatusOK)
+	}
+	if response.Total != 1 || len(response.Items) != 1 || response.Items[0].ID != requests[4].ID {
+		t.Fatalf("non-ascii search returned total/items = %d/%d, want 1/1 with request %s",
+			response.Total, len(response.Items), requests[4].ID)
 	}
 
 	status = catalogResponse(t, server.listPublicRequests, "/?request_type=unknown", &struct{}{})
