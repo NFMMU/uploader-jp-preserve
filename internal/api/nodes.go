@@ -1429,6 +1429,10 @@ func (s *Server) nodeTaskContent(c *gin.Context) {
 	_, _ = io.Copy(c.Writer, f)
 }
 
+// errStaleTaskLease はファイルロック待ちの間にタスクが再取得され、結果报告
+// 時点でリースが古くなっていたことを示す。
+var errStaleTaskLease = errors.New("task lease is no longer valid")
+
 func (s *Server) nodeTaskResult(c *gin.Context) {
 	node, ok := currentNode(c)
 	if !ok {
@@ -1482,13 +1486,6 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		req.Status = "failure"
 		req.Error = fmt.Sprintf("integrity verification failed: expected size=%d sha256=%s, received size=%d sha256=%s", file.SizeBytes, valueOrEmpty(file.Sha256), req.SizeBytes, req.Sha256)
 	}
-	terminal := req.Status == "failure" && (task.AttemptCount >= maxTaskAttempts || (task.TaskType == "source_fetch" && sourceFetchFailureIsPermanent(req.Error)))
-	nextStatus := "queued"
-	if req.Status == "success" {
-		nextStatus = "completed"
-	} else if terminal {
-		nextStatus = "failed"
-	}
 	if req.Status == "failure" && strings.TrimSpace(req.Error) == "" {
 		req.Error = "node agent reported task failure"
 	}
@@ -1497,6 +1494,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	if task.TaskType == "replicate" {
 		placementNodeID = valueOrEmpty(task.TargetNodeID)
 	}
+	var nextStatus string
 	err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// All task types lock file -> task before changing task or placement state.
 		// This matches retryFailedTask and prevents lock-order inversions.
@@ -1505,6 +1503,23 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 			return err
 		}
 		file = lockedFile
+		// ファイルロック待ちの間にリース期限切れで再取得された場合があるため、
+		// ロック内で最新の status と lease_token を再確認する。
+		var lockedTask model.Task
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedTask, "id = ?", task.ID).Error; err != nil {
+			return err
+		}
+		if lockedTask.Status != "running" || valueOrEmpty(lockedTask.LeaseToken) != req.LeaseToken {
+			return errStaleTaskLease
+		}
+		task = lockedTask
+		terminal := req.Status == "failure" && (task.AttemptCount >= maxTaskAttempts || (task.TaskType == "source_fetch" && sourceFetchFailureIsPermanent(req.Error)))
+		nextStatus = "queued"
+		if req.Status == "success" {
+			nextStatus = "completed"
+		} else if terminal {
+			nextStatus = "failed"
+		}
 		updates := map[string]any{"status": nextStatus, "lease_until": nil, "lease_token": nil, "updated_at": now}
 		if req.Status == "failure" {
 			updates["last_error"] = req.Error
@@ -1562,6 +1577,10 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		return recomputeFilePreservation(tx, file.ID)
 	})
 	if err != nil {
+		if errors.Is(err, errStaleTaskLease) {
+			c.JSON(http.StatusConflict, gin.H{"error": "task lease is no longer valid"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not record task result"})
 		return
 	}
