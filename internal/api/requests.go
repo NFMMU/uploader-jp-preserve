@@ -211,6 +211,51 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		}
 		query = query.Where("status = ?", status)
 	}
+	if requestType := c.Query("request_type"); requestType != "" {
+		if !requestTypes[requestType] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request_type"})
+			return
+		}
+		query = query.Where("request_type = ?", requestType)
+	}
+	if search := strings.TrimSpace(c.Query("q")); search != "" {
+		if len([]rune(search)) > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "q must be at most 200 characters"})
+			return
+		}
+		query = query.Where(`(
+			strpos(COALESCE(public_requests.title, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.creator_name, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.submitter_name, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.contact, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.details, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.source_url, '') COLLATE public."case_insensitive", ?) > 0 OR
+			strpos(COALESCE(public_requests.external_url, '') COLLATE public."case_insensitive", ?) > 0 OR
+			EXISTS (
+				SELECT 1 FROM file_objects f
+				WHERE f.id = public_requests.file_object_id
+				AND strpos(f.original_filename COLLATE public."case_insensitive", ?) > 0
+			) OR
+			EXISTS (
+				SELECT 1 FROM artifacts a
+				LEFT JOIN file_objects f ON f.id = public_requests.file_object_id
+				WHERE a.id = COALESCE(public_requests.artifact_id, f.artifact_id)
+				AND strpos(a.title COLLATE public."case_insensitive", ?) > 0
+			)
+		)`, search, search, search, search, search, search, search, search, search)
+	}
+	createdAtOrder := c.Query("sort")
+	order := "CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC, public_requests.id ASC"
+	if createdAtOrder != "" {
+		if createdAtOrder != "asc" && createdAtOrder != "desc" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sort must be asc or desc"})
+			return
+		}
+		order = "public_requests.created_at DESC, public_requests.id DESC"
+		if createdAtOrder == "asc" {
+			order = "public_requests.created_at ASC, public_requests.id ASC"
+		}
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not count requests"})
@@ -226,7 +271,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			a.title AS linked_artifact_title, COALESCE(public_requests.artifact_id, f.artifact_id) AS linked_artifact_id`).
 			Joins("LEFT JOIN file_objects f ON f.id = public_requests.file_object_id").
 			Joins("LEFT JOIN artifacts a ON a.id = COALESCE(public_requests.artifact_id, f.artifact_id)").
-			Order("CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC").
+			Order(order).
 			Scan(&rows).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 			return
@@ -243,7 +288,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 	}
 
 	var requests []model.PublicRequest
-	requestQuery := query.Order("CASE WHEN status = 'pending' THEN 0 WHEN status = 'in_review' THEN 1 ELSE 2 END, created_at ASC").Offset((page - 1) * limit).Limit(limit)
+	requestQuery := query.Order(order).Offset((page - 1) * limit).Limit(limit)
 	if err := requestQuery.Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not list requests"})
 		return
