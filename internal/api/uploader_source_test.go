@@ -252,6 +252,21 @@ func TestUploaderSourceSearchTerm(t *testing.T) {
 	}
 }
 
+func TestUploaderSourceSearchTermsHostOnly(t *testing.T) {
+	cases := map[string]bool{
+		"uu.getuploader.com":                true,
+		"https://ux.getuploader.com/":       true,
+		"https://uu.getuploader.com/MMDkaz": false,
+		"https://uploader.jp/":              false,
+		"MMDkaz":                            false,
+	}
+	for raw, want := range cases {
+		if _, got := uploaderSourceSearchTerms(raw); got != want {
+			t.Errorf("uploaderSourceSearchTerms(%q) hostOnly = %v, want %v", raw, got, want)
+		}
+	}
+}
+
 func TestUploaderArtifactSourceURL(t *testing.T) {
 	cases := map[string]string{
 		"/MMDkaz/download/7":          "/MMDkaz",

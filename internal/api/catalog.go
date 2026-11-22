@@ -43,7 +43,11 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		query = authorArtifactScope(query, user.ID)
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + uploaderSourceSearchTerm(q) + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
@@ -53,7 +57,7 @@ func (s *Server) listArtifacts(c *gin.Context) {
 				WHERE deleted_at IS NULL
 				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
 			)
-		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -342,7 +346,11 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("deleted_at IS NULL")
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + uploaderSourceSearchTerm(q) + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
@@ -358,7 +366,7 @@ func (s *Server) listFiles(c *gin.Context) {
 				OR source_url COLLATE "case_insensitive" LIKE ?
 				OR (? <> '' AND source_url = ?)
 			)
-		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
+		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, sourceURLPattern, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
@@ -758,9 +766,17 @@ func uploaderArtifactSearchKeys(raw string) (string, string) {
 // to the host-independent path we store, so text search matches normalized rows.
 // Inputs that are not ux/uu GetUploader URLs are returned unchanged.
 func uploaderSourceSearchTerm(raw string) string {
+	term, _ := uploaderSourceSearchTerms(raw)
+	return term
+}
+
+// uploaderSourceSearchTerms also reports hostOnly when the input is just a
+// GetUploader host. Callers then match only stored paths ("/" prefix) for
+// source_url, and keep the original words for every other column.
+func uploaderSourceSearchTerms(raw string) (term string, hostOnly bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return trimmed
+		return trimmed, false
 	}
 	rest := trimmed
 	// Locate the scheme in the original string: lowercasing can change byte
@@ -778,17 +794,17 @@ func uploaderSourceSearchTerm(raw string) string {
 		if strings.HasPrefix(lower, ":443") {
 			rest, lower = rest[len(":443"):], lower[len(":443"):]
 		}
-		if rest == "" {
+		if rest == "" || rest == "/" {
 			// A bare uploader host means every stored uploader path.
-			return "/"
+			return "/", true
 		}
 		if !strings.HasPrefix(rest, "/") {
 			// A look-alike domain such as ux.getuploader.com.example.
-			return trimmed
+			return trimmed, false
 		}
-		return rest
+		return rest, false
 	}
-	return trimmed
+	return trimmed, false
 }
 
 // lockUploaderArtifactRoots serializes GetUploader get-or-create operations.
