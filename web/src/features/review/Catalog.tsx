@@ -1186,111 +1186,116 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								uploader.jp の利用規約を確認し、同意しました
 							</label>
 						)}
-						<div className="form-divider" />
-						<label>
-							またはアップローダーの一覧URL
-							<input
-								type="url"
-								value={listingURL}
-								onChange={(e) => {
-									setListingURL(e.target.value);
-									if (e.target.value.trim()) {
-										setSourceURL("");
-										setAcceptSourceTerms(false);
-										setUpload(null);
-										setPendingFileId("");
-										if (fileInputRef.current) fileInputRef.current.value = "";
-									}
-									setCandidates([]);
-									setSelectedCandidates([]);
-									setBatchStatus("");
-								}}
-								placeholder="https://uu.getuploader.com/名前/"
-							/>
-							<small>
-								一覧ページを調べ、掲載ファイルを選んで順番に取得します（最大100件・最大10ページ）。
-							</small>
-						</label>
-						{listingURL.trim() && (
-							<label className="check-label">
-								<input
-									type="checkbox"
-									checked={acceptListingTerms}
-									onChange={(e) => setAcceptListingTerms(e.target.checked)}
-								/>{" "}
-								uploader.jp の利用規約を確認しました
-							</label>
-						)}
-						<div className="modal-actions">
-							<button
-								type="button"
-								className="secondary"
-								disabled={
-									!listingURL.trim() ||
-									!acceptListingTerms ||
-									discovering ||
-									batchBusy
-								}
-								onClick={discoverListing}
-							>
-								{discovering ? "確認中…" : "一覧を調べる"}
-							</button>
-						</div>
-						{batchStatus && <p className="muted">{batchStatus}</p>}
-						{candidates.length > 0 && (
-							<div className="candidate-list">
-								<div className="candidate-list-head">
-									<b>検出したファイル ({candidates.length})</b>
-									<button
-										type="button"
-										className="small-btn"
-										onClick={() =>
-											setSelectedCandidates(
-												selectedCandidates.length === candidates.length
-													? []
-													: candidates.map((x: Obj) => x.url),
-											)
-										}
-									>
-										{selectedCandidates.length === candidates.length
-											? "選択解除"
-											: "全件選択"}
-									</button>
-								</div>
-								{candidates.map((x: Obj) => (
-									<label className="candidate-row" key={x.url}>
+						{role !== "author" && (
+							<>
+								<div className="form-divider" />
+								<label>
+									またはアップローダーの一覧URL
+									<input
+										type="url"
+										value={listingURL}
+										onChange={(e) => {
+											setListingURL(e.target.value);
+											if (e.target.value.trim()) {
+												setSourceURL("");
+												setAcceptSourceTerms(false);
+												setUpload(null);
+												setPendingFileId("");
+												if (fileInputRef.current)
+													fileInputRef.current.value = "";
+											}
+											setCandidates([]);
+											setSelectedCandidates([]);
+											setBatchStatus("");
+										}}
+										placeholder="https://uu.getuploader.com/名前/"
+									/>
+									<small>
+										一覧ページを調べ、掲載ファイルを選んで順番に取得します（最大100件・最大10ページ）。
+									</small>
+								</label>
+								{listingURL.trim() && (
+									<label className="check-label">
 										<input
 											type="checkbox"
-											checked={selectedCandidates.includes(x.url)}
-											onChange={(e) =>
-												setSelectedCandidates(
-													e.target.checked
-														? [...selectedCandidates, x.url]
-														: selectedCandidates.filter((u) => u !== x.url),
-												)
-											}
-										/>
-										<span>
-											{x.label || x.url}
-											<small>{x.url}</small>
-										</span>
+											checked={acceptListingTerms}
+											onChange={(e) => setAcceptListingTerms(e.target.checked)}
+										/>{" "}
+										uploader.jp の利用規約を確認しました
 									</label>
-								))}
-								<button
-									type="button"
-									className="primary wide"
-									disabled={
-										batchBusy ||
-										selectedCandidates.length === 0 ||
-										policy === "pending"
-									}
-									onClick={importSelected}
-								>
-									{batchBusy
-										? "取得タスク登録中…"
-										: `選択した ${selectedCandidates.length} 件の取得タスクを登録`}
-								</button>
-							</div>
+								)}
+								<div className="modal-actions">
+									<button
+										type="button"
+										className="secondary"
+										disabled={
+											!listingURL.trim() ||
+											!acceptListingTerms ||
+											discovering ||
+											batchBusy
+										}
+										onClick={discoverListing}
+									>
+										{discovering ? "確認中…" : "一覧を調べる"}
+									</button>
+								</div>
+								{batchStatus && <p className="muted">{batchStatus}</p>}
+								{candidates.length > 0 && (
+									<div className="candidate-list">
+										<div className="candidate-list-head">
+											<b>検出したファイル ({candidates.length})</b>
+											<button
+												type="button"
+												className="small-btn"
+												onClick={() =>
+													setSelectedCandidates(
+														selectedCandidates.length === candidates.length
+															? []
+															: candidates.map((x: Obj) => x.url),
+													)
+												}
+											>
+												{selectedCandidates.length === candidates.length
+													? "選択解除"
+													: "全件選択"}
+											</button>
+										</div>
+										{candidates.map((x: Obj) => (
+											<label className="candidate-row" key={x.url}>
+												<input
+													type="checkbox"
+													checked={selectedCandidates.includes(x.url)}
+													onChange={(e) =>
+														setSelectedCandidates(
+															e.target.checked
+																? [...selectedCandidates, x.url]
+																: selectedCandidates.filter((u) => u !== x.url),
+														)
+													}
+												/>
+												<span>
+													{x.label || x.url}
+													<small>{x.url}</small>
+												</span>
+											</label>
+										))}
+										<button
+											type="button"
+											className="primary wide"
+											disabled={
+												batchBusy ||
+												selectedCandidates.length === 0 ||
+												policy === "pending"
+											}
+											onClick={importSelected}
+										>
+											{batchBusy
+												? "取得タスク登録中…"
+												: `選択した ${selectedCandidates.length} 件の取得タスクを登録`}
+										</button>
+									</div>
+								)}
+							</>
 						)}
 						{!listingURL.trim() && (
 							<label>
