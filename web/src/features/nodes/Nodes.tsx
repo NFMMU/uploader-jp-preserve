@@ -12,13 +12,24 @@ import { Stat } from "@/components/common/Stat";
 import { Status } from "@/components/common/Status";
 import { Table } from "@/components/common/Table";
 import { useData } from "@/hooks/useData";
+import { useReconcile } from "@/hooks/useReconcile";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { NodeEnrollmentRequests } from "./NodeEnrollmentRequests";
 
-export function Nodes({ api, refresh, notify, role }: any) {
+type NodesProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+};
+
+export function Nodes({ api, refresh, notify, role }: NodesProps) {
 	const [localRefresh, setLocalRefresh] = useState(0);
 	const d = useData(api, "/operations/nodes", refresh + localRefresh);
+	const reconcile = useReconcile(api, notify, () =>
+		setLocalRefresh((x) => x + 1),
+	);
 	const [deletingRows, setDeletingRows] = useState<string[]>([]);
 	const deleteNode = async (id: string, name: string) => {
 		if (!window.confirm(`本当に「${name}」を削除しますか？`)) return;
@@ -43,18 +54,22 @@ export function Nodes({ api, refresh, notify, role }: any) {
 				actions={
 					role === "admin" ? (
 						<button
+							type="button"
 							className="secondary"
-							onClick={() =>
-								api("/admin/placements/reconcile", { method: "POST" })
-									.then(() => notify("再調整を実行しました"))
-									.catch((e: Error) => notify(e.message))
-							}
+							disabled={reconcile.running}
+							onClick={() => reconcile.start()}
 						>
-							<RefreshCw size={16} /> 保存先を調整
+							<RefreshCw size={16} />{" "}
+							{reconcile.running ? "調整中…" : "保存先を調整"}
 						</button>
 					) : null
 				}
 			/>
+			{reconcile.status && (
+				<div className="policy-warning" role="status">
+					<RefreshCw size={16} /> {reconcile.summary}
+				</div>
+			)}
 			<div className="stat-grid">
 				<Stat
 					label="登録ノード"
@@ -205,6 +220,7 @@ export function Nodes({ api, refresh, notify, role }: any) {
 								<td>
 									<div className="row-actions">
 										<button
+											type="button"
 											className="small-btn"
 											disabled={
 												role === "viewer" || deletingRows.includes(x.id)

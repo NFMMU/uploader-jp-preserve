@@ -23,6 +23,12 @@ type Server struct {
 	enrollmentLimiterMu  sync.Mutex
 	enrollmentAttempts   map[string]enrollmentAttempt
 	publicIntakeAttempts map[string]enrollmentAttempt
+
+	// Placement reconciliation is single-flight: the periodic pass and the
+	// admin button share one gate and one status snapshot.
+	placementReconcileMu    sync.Mutex
+	placementReconcileGate  chan struct{}
+	placementReconcileState placementReconcileSnapshot
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
@@ -141,6 +147,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	admin.POST("/url-collection/search", s.searchUploaderURLs)
 	admin.POST("/url-collection/scan", s.collectUploaderURLs)
 	admin.POST("/placements/reconcile", s.reconcileNow)
+	admin.GET("/placements/reconcile", s.reconcileStatus)
 	admin.GET("/audit-logs", s.listAuditLogs)
 	admin.GET("/oidc-providers", s.listOidcProviders)
 	admin.POST("/oidc-providers", s.createOidcProvider)

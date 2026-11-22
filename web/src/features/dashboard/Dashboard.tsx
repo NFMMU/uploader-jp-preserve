@@ -10,21 +10,35 @@ import {
 	ShieldCheck,
 	Workflow,
 } from "lucide-react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { downloadExport } from "@/api/admin";
 import { Heading } from "@/components/common/Heading";
 import { Stat } from "@/components/common/Stat";
 import { TaskTable } from "@/components/common/TaskTable";
 import { useData } from "@/hooks/useData";
+import { useReconcile } from "@/hooks/useReconcile";
 import type { Obj } from "@/types/common";
 
-export function Dashboard({ api, refresh, notify, role }: any) {
-	const a = useData(api, "/catalog/artifacts", refresh),
-		f = useData(api, "/catalog/files?all=true", refresh),
-		n = useData(api, "/operations/nodes", refresh),
-		t = useData(api, "/operations/tasks", refresh),
-		ft = useData(api, "/operations/tasks?status=failed", refresh),
-		r = useData(api, "/moderation/public-requests?status=pending", refresh);
+type DashboardProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+};
+
+export function Dashboard({ api, refresh, notify, role }: DashboardProps) {
+	const [localRefresh, setLocalRefresh] = useState(0);
+	const dataRefresh = refresh + localRefresh;
+	const a = useData(api, "/catalog/artifacts", dataRefresh),
+		f = useData(api, "/catalog/files?all=true", dataRefresh),
+		n = useData(api, "/operations/nodes", dataRefresh),
+		t = useData(api, "/operations/tasks", dataRefresh),
+		ft = useData(api, "/operations/tasks?status=failed", dataRefresh),
+		r = useData(api, "/moderation/public-requests?status=pending", dataRefresh);
+	const reconcile = useReconcile(api, notify, () =>
+		setLocalRefresh((x) => x + 1),
+	);
 	const files = f.data.items || [],
 		nodes = n.data.items || [],
 		tasks = t.data.items || [];
@@ -43,6 +57,7 @@ export function Dashboard({ api, refresh, notify, role }: any) {
 				actions={
 					<>
 						<button
+							type="button"
 							className="secondary"
 							onClick={() => downloadExport("json", notify)}
 						>
@@ -50,19 +65,23 @@ export function Dashboard({ api, refresh, notify, role }: any) {
 						</button>
 						{role === "admin" && (
 							<button
+								type="button"
 								className="primary"
-								onClick={() =>
-									api("/admin/placements/reconcile", { method: "POST" })
-										.then(() => notify("配置の再調整を実行しました"))
-										.catch((e: Error) => notify(e.message))
-								}
+								disabled={reconcile.running}
+								onClick={() => reconcile.start()}
 							>
-								<RefreshCw size={16} /> 保存先を調整
+								<RefreshCw size={16} />{" "}
+								{reconcile.running ? "調整中…" : "保存先を調整"}
 							</button>
 						)}
 					</>
 				}
 			/>
+			{reconcile.status && (
+				<div className="policy-warning" role="status">
+					<RefreshCw size={16} /> {reconcile.summary}
+				</div>
+			)}
 			<div className="notice">
 				<div className="notice-icon">
 					<ShieldCheck size={19} />

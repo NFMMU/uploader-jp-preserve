@@ -1039,7 +1039,7 @@ func (s *Server) retryFailedTask(
 // claiming a surplus-replica deletion. When lockPlacements is true, it locks
 // the currently qualifying placements and nodes before counting them, so the
 // decision remains valid until the claim transaction commits.
-func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Time, lockPlacements bool) (bool, error) {
+func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Time, lockPlacements bool, minimumHealthy int64) (bool, error) {
 	stableCutoff := now.Add(-surplusReplicaCooldown)
 	nodeCutoff := now.Add(-2 * time.Minute)
 	var counts struct {
@@ -1086,7 +1086,7 @@ func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Ti
 			return false, err
 		}
 	}
-	return counts.Healthy >= requiredReplicaCount+1 && counts.Unstable == 0, nil
+	return deletionSafetySatisfied(counts.Healthy, counts.Unstable, minimumHealthy), nil
 }
 
 // retryFailedDeletionTx preserves the original node and storage key. The caller
@@ -1117,7 +1117,7 @@ func retryFailedDeletionTx(tx *gorm.DB, task model.Task, file model.FileObject, 
 	if file.DeletionRequestedAt == nil {
 		// A failed surplus deletion must still leave the required copies and
 		// spare on stable nodes. Never redirect it to a different placement.
-		safe, err := surplusDeletionSafeTx(tx, file.ID, *task.TargetNodeID, now, true)
+		safe, err := surplusDeletionSafeTx(tx, file.ID, *task.TargetNodeID, now, true, deletionMinimumHealthy(placement.RetireRequestedAt))
 		if err != nil {
 			return err
 		}
@@ -1311,18 +1311,36 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			if claimed.Task.TargetNodeID == nil {
 				return fmt.Errorf("surplus deletion task has no target node")
 			}
-			safe, err := surplusDeletionSafeTx(tx, file.ID, *claimed.Task.TargetNodeID, time.Now().UTC(), true)
+			var targetPlacement model.Placement
+			if err := tx.Where("file_object_id = ? AND node_id = ?", file.ID, *claimed.Task.TargetNodeID).First(&targetPlacement).Error; err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+			}
+			rebalanceDelete := targetPlacement.RetireRequestedAt != nil
+			safe, err := surplusDeletionSafeTx(tx, file.ID, *claimed.Task.TargetNodeID, time.Now().UTC(), true, deletionMinimumHealthy(targetPlacement.RetireRequestedAt))
 			if err != nil {
 				return err
 			}
 			if !safe {
-				const reason = "insufficient stable copies before surplus deletion claim"
+				reason := "insufficient stable copies before surplus deletion claim"
+				if rebalanceDelete {
+					reason = "insufficient stable copies before rebalance deletion claim"
+				}
 				if err := tx.Model(&model.Task{}).Where("id = ?", claimed.Task.ID).Updates(map[string]any{
 					"status": "failed", "last_error": reason, "lease_until": nil, "lease_token": nil, "updated_at": time.Now().UTC(),
 				}).Error; err != nil {
 					return err
 				}
-				if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, *claimed.Task.TargetNodeID).Update("status", "error").Error; err != nil {
+				if rebalanceDelete {
+					// The replacement copy is not safe to rely on yet. Keep the
+					// original replica and cancel the move instead of deleting data.
+					if err := tx.Model(&model.Placement{}).Where("id = ?", targetPlacement.ID).Updates(map[string]any{
+						"status": "verified", "retire_requested_at": nil,
+					}).Error; err != nil {
+						return err
+					}
+				} else if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, *claimed.Task.TargetNodeID).Update("status", "error").Error; err != nil {
 					return err
 				}
 				noTask = true
@@ -1530,7 +1548,7 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 		placementUpdates := map[string]any{"status": "queued"}
 		if req.Status == "success" {
 			if task.TaskType == "delete" {
-				placementUpdates = map[string]any{"status": "deleted"}
+				placementUpdates = map[string]any{"status": "deleted", "retire_requested_at": nil}
 			} else {
 				placementUpdates = map[string]any{"status": "verified", "sha256": strings.ToLower(req.Sha256), "verified_at": now}
 			}
@@ -1555,6 +1573,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 				if err := tx.Create(&entry).Error; err != nil {
 					return err
 				}
+			}
+		}
+		if task.TaskType == "replicate" && terminal && task.SourceNodeID != nil {
+			// The move never produced a usable replacement; release the source
+			// copy so it is not retired later.
+			if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, *task.SourceNodeID).Update("retire_requested_at", nil).Error; err != nil {
+				return err
 			}
 		}
 		if task.TaskType == "replicate" && terminal && (strings.Contains(req.Error, "source placement failed verification") || strings.Contains(req.Error, "could not read source placement") || strings.Contains(req.Error, "source replica failed size or SHA-256 validation")) {

@@ -20,6 +20,9 @@ type Placement struct {
 	Status       string     `gorm:"column:status;type:character varying(32);not null;default:queued" json:"status"`
 	VerifiedAt   *time.Time `gorm:"column:verified_at;type:timestamp with time zone" json:"verified_at"`
 	CreatedAt    time.Time  `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
+	// RetireRequestedAt marks a verified replica that a capacity rebalance will
+	// delete once a replacement copy has been verified on a less-used node.
+	RetireRequestedAt *time.Time `gorm:"column:retire_requested_at;type:timestamp with time zone" json:"retire_requested_at"`
 }
 
 // TableName Placement's table name
