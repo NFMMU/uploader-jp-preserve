@@ -212,6 +212,11 @@ func TestUploaderArtifactSearchKeys(t *testing.T) {
 			wantArtifact: "/MMDkaz",
 		},
 		{
+			raw:          "ux.getuploader.com/MMDkaz/download/7",
+			wantFile:     "/MMDkaz/download/7",
+			wantArtifact: "/MMDkaz",
+		},
+		{
 			raw:          "https://uploader.jp/",
 			wantFile:     "https://uploader.jp/",
 			wantArtifact: "https://uploader.jp/",
@@ -233,6 +238,7 @@ func TestUploaderSourceSearchTerm(t *testing.T) {
 		"ux.getuploader.com/MMDkaz":                    "/MMDkaz",
 		"UU.getuploader.com./MMDkaz?x=1":               "/MMDkaz?x=1",
 		"uu.getuploader.com:443/MMDkaz":                "/MMDkaz",
+		"İ://ux.getuploader.com/MMDkaz":                "/MMDkaz",
 		"uu.getuploader.com":                           "/",
 		"https://ux.getuploader.com/":                  "/",
 		"https://uploader.jp/account":                  "https://uploader.jp/account",

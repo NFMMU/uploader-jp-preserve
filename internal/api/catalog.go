@@ -349,6 +349,7 @@ func (s *Server) listFiles(c *gin.Context) {
 			OR original_filename COLLATE "case_insensitive" LIKE ?
 			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
 			OR (? <> '' AND file_objects.source_url = ?)
+			OR file_objects.source_url COLLATE "case_insensitive" LIKE ?
 			OR artifact_id IN (
 				SELECT id FROM artifacts
 				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
@@ -357,7 +358,7 @@ func (s *Server) listFiles(c *gin.Context) {
 				OR source_url COLLATE "case_insensitive" LIKE ?
 				OR (? <> '' AND source_url = ?)
 			)
-		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
+		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
@@ -740,7 +741,13 @@ func uploaderSourceURLForAccess(stored string) string {
 // uploaderArtifactSearchKeys returns the normalized file and Artifact keys for
 // a URL pasted into a catalog search box.
 func uploaderArtifactSearchKeys(raw string) (string, string) {
-	stored, err := uploaderSourceURLForStorage(raw)
+	trimmed := strings.TrimSpace(raw)
+	lower := strings.ToLower(trimmed)
+	if !strings.Contains(lower, "://") &&
+		(strings.HasPrefix(lower, "ux.getuploader.com") || strings.HasPrefix(lower, "uu.getuploader.com")) {
+		trimmed = "https://" + trimmed
+	}
+	stored, err := uploaderSourceURLForStorage(trimmed)
 	if err != nil {
 		return "", ""
 	}
@@ -755,10 +762,13 @@ func uploaderSourceSearchTerm(raw string) string {
 	if trimmed == "" {
 		return trimmed
 	}
-	rest, lower := trimmed, strings.ToLower(trimmed)
-	if i := strings.Index(lower, "://"); i >= 0 {
-		rest, lower = rest[i+3:], lower[i+3:]
+	rest := trimmed
+	// Locate the scheme in the original string: lowercasing can change byte
+	// lengths for some runes, so an index from the folded copy would not be safe.
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+3:]
 	}
+	lower := strings.ToLower(rest)
 	for _, host := range []string{"ux.getuploader.com", "uu.getuploader.com"} {
 		if !strings.HasPrefix(lower, host) {
 			continue
