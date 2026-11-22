@@ -30,6 +30,8 @@ type FileObject struct {
 	DeletionRequestedAt     *time.Time     `gorm:"column:deletion_requested_at;type:timestamp with time zone" json:"deletion_requested_at"`
 	DeletedAt               gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp with time zone;index:file_objects_deleted_at_idx,priority:1" json:"deleted_at"`
 	SourcePasswordEncrypted *string        `gorm:"column:source_password_encrypted;type:text" json:"source_password_encrypted"`
+	ReplacedByFileObjectID  *string        `gorm:"column:replaced_by_file_object_id;type:uuid" json:"replaced_by_file_object_id"`
+	ReplacedByUserID        *string        `gorm:"column:replaced_by_user_id;type:uuid" json:"replaced_by_user_id"`
 }
 
 // TableName FileObject's table name

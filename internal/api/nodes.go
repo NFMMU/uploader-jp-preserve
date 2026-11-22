@@ -1587,6 +1587,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	if req.Status == "success" && task.TaskType == "store" {
 		_ = os.Remove(filepath.Join(s.cfg.StagingDir, task.ID))
 	}
+	// 差し替えられた旧ファイルの退役を再試行する。結果処理のトランザクションと
+	// ロック順序（置換先 → 旧ファイル）を揃えるため、別トランザクションから実行する。
+	if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		return retireSelfIfReplaced(tx, file.ID)
+	}); err != nil {
+		s.logger.Error("could not retire replaced file", "file_id", file.ID, "error", err)
+	}
 	var updatedFile model.FileObject
 	_ = s.db.WithContext(c.Request.Context()).Select("preservation_status").First(&updatedFile, "id = ?", file.ID).Error
 	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": updatedFile.PreservationStatus})
@@ -1847,7 +1854,97 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	} else if active == 0 && healthy == 0 {
 		status = "error"
 	}
-	return tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error
+	if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error; err != nil {
+		return err
+	}
+	return retireReplacedFileIfVerified(tx, fileID, status)
+}
+
+// retireReplacedFileIfVerified requests physical deletion of the files that the
+// verified file replaced.
+func retireReplacedFileIfVerified(tx *gorm.DB, fileID, status string) error {
+	if status != "verified" {
+		return nil
+	}
+	var oldFiles []model.FileObject
+	if err := tx.Where("replaced_by_file_object_id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Find(&oldFiles).Error; err != nil {
+		return err
+	}
+	for _, oldFile := range oldFiles {
+		if err := retireReplacedFile(tx, oldFile, fileID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// retireSelfIfReplaced retries retirement of a replaced file once its own tasks
+// have finished and the replacement is verified. It locks the replacement before
+// the old file (replacement → old), matching the lock order used when the
+// replacement's own result retires the old file.
+func retireSelfIfReplaced(tx *gorm.DB, fileID string) error {
+	var file model.FileObject
+	if err := tx.First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if file.ReplacedByFileObjectID == nil {
+		return nil
+	}
+	// 置換先の状態変更を退役完了まで直列化するため、状態を読む際に共有ロックを取る。
+	var replacement model.FileObject
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Select("id", "preservation_status").
+		First(&replacement, "id = ?", *file.ReplacedByFileObjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if replacement.PreservationStatus != "verified" {
+		return nil
+	}
+	return retireReplacedFile(tx, file, replacement.ID)
+}
+
+// retireReplacedFile requests deletion of one replaced file unless it still has
+// an active preservation task. The task completion retries retirement via
+// retireSelfIfReplaced.
+func retireReplacedFile(tx *gorm.DB, oldFile model.FileObject, newFileID string) error {
+	// タスク件数確認の前に旧ファイルの行をロックし、旧ファイル向けのタスク作成と
+	// 削除依頼を同じ行ロックで直列化する。queueFileDeletionTx は同じ行を同一
+	// トランザクション内で再度ロックするが、順序は一貫している。
+	var locked model.FileObject
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&locked, "id = ?", oldFile.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if locked.DeletedAt.Valid || locked.DeletionRequestedAt != nil {
+		return nil
+	}
+	var active int64
+	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued','running')", oldFile.ID).Count(&active).Error; err != nil {
+		return err
+	}
+	if active > 0 {
+		return nil
+	}
+	actorID := ""
+	if locked.ReplacedByUserID != nil {
+		actorID = *locked.ReplacedByUserID
+	}
+	if err := queueFileDeletionTx(tx, locked, nil, actorID, "replaced by verified file "+newFileID); err != nil {
+		if errors.Is(err, errFileDeletionAlreadyRequested) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func valueOrEmpty(value *string) string {

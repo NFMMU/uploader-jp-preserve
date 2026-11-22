@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
@@ -220,17 +222,65 @@ func (s *Server) getArtifact(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"artifact": artifact, "files": files, "related_requests": relatedRequests})
 }
 
-func (s *Server) createFileObject(c *gin.Context) {
-	var req struct {
-		OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
-		SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
-		Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
-		MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
-		SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
-		Description          *string `json:"description" binding:"omitempty,max=20000"`
-		RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
-		Representative       *string `json:"representative" binding:"omitempty,uuid"`
+// fileObjectPayload is the shared request body for creating a file object and
+// for replacing one with a new version.
+type fileObjectPayload struct {
+	OriginalFilename     string  `json:"original_filename" binding:"required,min=1,max=500"`
+	SizeBytes            int64   `json:"size_bytes" binding:"gte=0"`
+	Sha256               *string `json:"sha256" binding:"omitempty,len=64"`
+	MediaType            *string `json:"media_type" binding:"omitempty,max=255"`
+	SourceURL            *string `json:"source_url" binding:"omitempty,max=4096"`
+	Description          *string `json:"description" binding:"omitempty,max=20000"`
+	RedistributionPolicy string  `json:"redistribution_policy" binding:"omitempty"`
+	Representative       *string `json:"representative" binding:"omitempty,uuid"`
+}
+
+// validateFileObjectPayload checks the payload and normalizes its values in
+// place. It returns the effective redistribution policy.
+func (s *Server) validateFileObjectPayload(ctx context.Context, req *fileObjectPayload) (string, error) {
+	policy := strings.TrimSpace(req.RedistributionPolicy)
+	if policy == "" {
+		policy = "unknown"
 	}
+	if !redistributionPolicies[policy] {
+		return "", errors.New("invalid redistribution_policy")
+	}
+	if req.SourceURL != nil {
+		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
+		if err != nil {
+			return "", errors.New("source_url must be an HTTPS uploader.jp/getuploader.com URL")
+		}
+		req.SourceURL = &validated
+	}
+	if req.Sha256 != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.Sha256))
+		if !isHexDigest(value) {
+			return "", errors.New("sha256 must be 64 hexadecimal characters")
+		}
+		req.Sha256 = &value
+	}
+	if req.Representative != nil {
+		var reviewer model.User
+		if err := s.db.WithContext(ctx).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
+			return "", errors.New("representative must be an active reviewer or administrator")
+		}
+	}
+	return policy, nil
+}
+
+// newFileObjectFromPayload builds an uncollected, unpublished file object for
+// the given artifact.
+func newFileObjectFromPayload(artifactID string, req fileObjectPayload, policy string) model.FileObject {
+	return model.FileObject{
+		ArtifactID: artifactID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
+		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
+		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
+		Description: trimOptional(req.Description),
+	}
+}
+
+func (s *Server) createFileObject(c *gin.Context) {
+	var req fileObjectPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file object payload"})
 		return
@@ -240,48 +290,32 @@ func (s *Server) createFileObject(c *gin.Context) {
 		notFoundOrError(c, err, "artifact")
 		return
 	}
-	policy := strings.TrimSpace(req.RedistributionPolicy)
-	if policy == "" {
-		policy = "unknown"
-	}
-	if !redistributionPolicies[policy] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
+	policy, err := s.validateFileObjectPayload(c.Request.Context(), &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.SourceURL != nil {
-		validated, err := uploaderSourceURLForStorage(*req.SourceURL)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "source_url must be an HTTPS uploader.jp/getuploader.com URL"})
+	file := newFileObjectFromPayload(artifact.ID, req, policy)
+	actor, _ := hooks.CurrentUser(c)
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if actor.Role == "author" {
+			var assignment model.AuthorArtifact
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("user_id = ? AND artifact_id = ?", actor.ID, artifact.ID).
+				Take(&assignment).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&file).Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
 			return
 		}
-		req.SourceURL = &validated
-	}
-	if req.Sha256 != nil {
-		value := strings.ToLower(strings.TrimSpace(*req.Sha256))
-		if !isHexDigest(value) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "sha256 must be 64 hexadecimal characters"})
-			return
-		}
-		req.Sha256 = &value
-	}
-	if req.Representative != nil {
-		var reviewer model.User
-		if err := s.db.WithContext(c.Request.Context()).First(&reviewer, "id = ?", *req.Representative).Error; err != nil || reviewer.DisabledAt != nil || (reviewer.Role != "reviewer" && reviewer.Role != "admin") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "representative must be an active reviewer or administrator"})
-			return
-		}
-	}
-	file := model.FileObject{
-		ArtifactID: artifact.ID, OriginalFilename: strings.TrimSpace(req.OriginalFilename), SizeBytes: req.SizeBytes,
-		Sha256: req.Sha256, MediaType: trimOptional(req.MediaType), SourceURL: trimOptional(req.SourceURL), PreservationStatus: "uncollected",
-		RedistributionPolicy: policy, Representative: req.Representative, PublicDownloadEnabled: false,
-		Description: trimOptional(req.Description),
-	}
-	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})
 		return
 	}
-	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
 	if file.SourceURL != nil {
 		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))

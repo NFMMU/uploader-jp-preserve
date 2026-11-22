@@ -294,7 +294,13 @@ func queueFileDeletionTx(tx *gorm.DB, file model.FileObject, request *model.Publ
 		auditReason += " [request_id=" + request.ID + "]"
 	}
 	targetID := file.ID
-	entry := model.AuditLog{ActorID: &actorID, ActorLabel: "user:" + actorID, TargetType: "file_object", TargetID: &targetID, Action: "file_object.deletion.requested", Result: "success", Reason: trimOptional(&auditReason)}
+	entry := model.AuditLog{TargetType: "file_object", TargetID: &targetID, Action: "file_object.deletion.requested", Result: "success", Reason: trimOptional(&auditReason)}
+	if actorID != "" {
+		entry.ActorID = &actorID
+		entry.ActorLabel = "user:" + actorID
+	} else {
+		entry.ActorLabel = "system"
+	}
 	return tx.Create(&entry).Error
 }
 

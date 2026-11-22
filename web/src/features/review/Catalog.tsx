@@ -271,6 +271,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [pendingFileId, setPendingFileId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [upload, setUpload] = useState<File | null>(null);
+	const [authorFileName, setAuthorFileName] = useState("");
+	const [authorFileSize, setAuthorFileSize] = useState("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [sourceURL, setSourceURL] = useState("");
 	const [fileDescription, setFileDescription] = useState("");
@@ -507,10 +509,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	async function addFile(e: React.FormEvent) {
 		e.preventDefault();
 		const url = sourceURL.trim();
+		const authorName = authorFileName.trim();
 		if (
 			!artifact ||
-			(!upload && !url) ||
-			(upload && url) ||
+			(role === "author" ? !authorName : !upload && !url) ||
+			(role !== "author" && upload && url) ||
 			(url && !acceptSourceTerms) ||
 			policy === "pending"
 		)
@@ -522,8 +525,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				const file = await api(`/catalog/artifacts/${artifact.id}/files`, {
 					method: "POST",
 					body: JSON.stringify({
-						original_filename: upload?.name || "取得待ち",
-						size_bytes: upload?.size || 0,
+						original_filename:
+							upload?.name || (role === "author" ? authorName : "取得待ち"),
+						size_bytes:
+							upload?.size ||
+							(role === "author" ? Number(authorFileSize) || 0 : 0),
 						media_type: upload?.type || "application/octet-stream",
 						source_url: url || undefined,
 						description: fileDescription,
@@ -533,6 +539,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				});
 				fileId = file.id;
 				setPendingFileId(fileId);
+			}
+			if (role === "author") {
+				// 著作権者はファイル情報を登録できるが、実ファイルの保全は管理者が行う。
+				notify("ファイルを登録しました。実ファイルの保全は管理者が行います。");
+				closeAddFile();
+				setRefreshDummy((x) => x + 1);
+				return;
 			}
 			let ingestResult: any;
 			if (upload) {
@@ -757,15 +770,17 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								作品情報を編集
 							</button>
 						)}
-						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button
-								className="primary"
-								onClick={() => openAddFile(artifactRecord)}
-								type="button"
-							>
-								<Plus size={16} /> ファイルを追加
-							</button>
-						)}
+						{linkedArtifactID &&
+							(role === "admin" || role === "author") &&
+							artifactRecord && (
+								<button
+									className="primary"
+									onClick={() => openAddFile(artifactRecord)}
+									type="button"
+								>
+									<Plus size={16} /> ファイルを追加
+								</button>
+							)}
 						{role === "admin" && !linkedArtifactID && (
 							<button
 								className="primary"
@@ -1037,6 +1052,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									setPolicy={setPolicy}
 									setPub={setPub}
 									openMetadata={openMetadata}
+									onRefresh={() => setRefreshDummy((x) => x + 1)}
 									onDelete={() => deleteSingleFile(x.id)}
 								/>
 							))}
@@ -1124,28 +1140,57 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						<p className="muted">
 							作品: <b>{artifact.title}</b>
 						</p>
+						{role === "author" ? (
+							<>
+								<p className="muted">
+									著作権者はファイル情報のみ登録します。ファイル本体は送信されず、
+									管理者が保全処理を行います。
+								</p>
+								<label>
+									ファイル名 *
+									<input
+										required
+										value={authorFileName}
+										placeholder="例: sample.zip"
+										onChange={(e) => setAuthorFileName(e.target.value)}
+									/>
+								</label>
+								<label>
+									サイズ（バイト）
+									<input
+										type="number"
+										min={0}
+										value={authorFileSize}
+										onChange={(e) => setAuthorFileSize(e.target.value)}
+									/>
+								</label>
+							</>
+						) : (
+							<label>
+								手元のファイル
+								<input
+									ref={fileInputRef}
+									type="file"
+									onChange={(e) => {
+										setUpload(e.target.files?.[0] || null);
+										if (e.target.files?.[0]) {
+											setSourceURL("");
+											setAcceptSourceTerms(false);
+											setListingURL("");
+											setAcceptListingTerms(false);
+											setCandidates([]);
+											setSelectedCandidates([]);
+											setPendingFileId("");
+										}
+									}}
+								/>
+								<small>最大5 GiB。保存先は2ノード必要です。</small>
+							</label>
+						)}
 						<label>
-							手元のファイル
-							<input
-								ref={fileInputRef}
-								type="file"
-								onChange={(e) => {
-									setUpload(e.target.files?.[0] || null);
-									if (e.target.files?.[0]) {
-										setSourceURL("");
-										setAcceptSourceTerms(false);
-										setListingURL("");
-										setAcceptListingTerms(false);
-										setCandidates([]);
-										setSelectedCandidates([]);
-										setPendingFileId("");
-									}
-								}}
-							/>
-							<small>最大5 GiB。保存先は2ノード必要です。</small>
-						</label>
-						<label>
-							または uploader.jp のダウンロードURL
+							{role === "author"
+								? "uploader.jp のダウンロードURL（任意）"
+								: "または uploader.jp のダウンロードURL"}
 							<input
 								type="url"
 								value={sourceURL}
@@ -1176,111 +1221,116 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								uploader.jp の利用規約を確認し、同意しました
 							</label>
 						)}
-						<div className="form-divider" />
-						<label>
-							またはアップローダーの一覧URL
-							<input
-								type="url"
-								value={listingURL}
-								onChange={(e) => {
-									setListingURL(e.target.value);
-									if (e.target.value.trim()) {
-										setSourceURL("");
-										setAcceptSourceTerms(false);
-										setUpload(null);
-										setPendingFileId("");
-										if (fileInputRef.current) fileInputRef.current.value = "";
-									}
-									setCandidates([]);
-									setSelectedCandidates([]);
-									setBatchStatus("");
-								}}
-								placeholder="https://uu.getuploader.com/名前/"
-							/>
-							<small>
-								一覧ページを調べ、掲載ファイルを選んで順番に取得します（最大100件・最大10ページ）。
-							</small>
-						</label>
-						{listingURL.trim() && (
-							<label className="check-label">
-								<input
-									type="checkbox"
-									checked={acceptListingTerms}
-									onChange={(e) => setAcceptListingTerms(e.target.checked)}
-								/>{" "}
-								uploader.jp の利用規約を確認しました
-							</label>
-						)}
-						<div className="modal-actions">
-							<button
-								type="button"
-								className="secondary"
-								disabled={
-									!listingURL.trim() ||
-									!acceptListingTerms ||
-									discovering ||
-									batchBusy
-								}
-								onClick={discoverListing}
-							>
-								{discovering ? "確認中…" : "一覧を調べる"}
-							</button>
-						</div>
-						{batchStatus && <p className="muted">{batchStatus}</p>}
-						{candidates.length > 0 && (
-							<div className="candidate-list">
-								<div className="candidate-list-head">
-									<b>検出したファイル ({candidates.length})</b>
-									<button
-										type="button"
-										className="small-btn"
-										onClick={() =>
-											setSelectedCandidates(
-												selectedCandidates.length === candidates.length
-													? []
-													: candidates.map((x: Obj) => x.url),
-											)
-										}
-									>
-										{selectedCandidates.length === candidates.length
-											? "選択解除"
-											: "全件選択"}
-									</button>
-								</div>
-								{candidates.map((x: Obj) => (
-									<label className="candidate-row" key={x.url}>
+						{role === "admin" && (
+							<>
+								<div className="form-divider" />
+								<label>
+									またはアップローダーの一覧URL
+									<input
+										type="url"
+										value={listingURL}
+										onChange={(e) => {
+											setListingURL(e.target.value);
+											if (e.target.value.trim()) {
+												setSourceURL("");
+												setAcceptSourceTerms(false);
+												setUpload(null);
+												setPendingFileId("");
+												if (fileInputRef.current)
+													fileInputRef.current.value = "";
+											}
+											setCandidates([]);
+											setSelectedCandidates([]);
+											setBatchStatus("");
+										}}
+										placeholder="https://uu.getuploader.com/名前/"
+									/>
+									<small>
+										一覧ページを調べ、掲載ファイルを選んで順番に取得します（最大100件・最大10ページ）。
+									</small>
+								</label>
+								{listingURL.trim() && (
+									<label className="check-label">
 										<input
 											type="checkbox"
-											checked={selectedCandidates.includes(x.url)}
-											onChange={(e) =>
-												setSelectedCandidates(
-													e.target.checked
-														? [...selectedCandidates, x.url]
-														: selectedCandidates.filter((u) => u !== x.url),
-												)
-											}
-										/>
-										<span>
-											{x.label || x.url}
-											<small>{x.url}</small>
-										</span>
+											checked={acceptListingTerms}
+											onChange={(e) => setAcceptListingTerms(e.target.checked)}
+										/>{" "}
+										uploader.jp の利用規約を確認しました
 									</label>
-								))}
-								<button
-									type="button"
-									className="primary wide"
-									disabled={
-										batchBusy ||
-										selectedCandidates.length === 0 ||
-										policy === "pending"
-									}
-									onClick={importSelected}
-								>
-									{batchBusy
-										? "取得タスク登録中…"
-										: `選択した ${selectedCandidates.length} 件の取得タスクを登録`}
-								</button>
-							</div>
+								)}
+								<div className="modal-actions">
+									<button
+										type="button"
+										className="secondary"
+										disabled={
+											!listingURL.trim() ||
+											!acceptListingTerms ||
+											discovering ||
+											batchBusy
+										}
+										onClick={discoverListing}
+									>
+										{discovering ? "確認中…" : "一覧を調べる"}
+									</button>
+								</div>
+								{batchStatus && <p className="muted">{batchStatus}</p>}
+								{candidates.length > 0 && (
+									<div className="candidate-list">
+										<div className="candidate-list-head">
+											<b>検出したファイル ({candidates.length})</b>
+											<button
+												type="button"
+												className="small-btn"
+												onClick={() =>
+													setSelectedCandidates(
+														selectedCandidates.length === candidates.length
+															? []
+															: candidates.map((x: Obj) => x.url),
+													)
+												}
+											>
+												{selectedCandidates.length === candidates.length
+													? "選択解除"
+													: "全件選択"}
+											</button>
+										</div>
+										{candidates.map((x: Obj) => (
+											<label className="candidate-row" key={x.url}>
+												<input
+													type="checkbox"
+													checked={selectedCandidates.includes(x.url)}
+													onChange={(e) =>
+														setSelectedCandidates(
+															e.target.checked
+																? [...selectedCandidates, x.url]
+																: selectedCandidates.filter((u) => u !== x.url),
+														)
+													}
+												/>
+												<span>
+													{x.label || x.url}
+													<small>{x.url}</small>
+												</span>
+											</label>
+										))}
+										<button
+											type="button"
+											className="primary wide"
+											disabled={
+												batchBusy ||
+												selectedCandidates.length === 0 ||
+												policy === "pending"
+											}
+											onClick={importSelected}
+										>
+											{batchBusy
+												? "取得タスク登録中…"
+												: `選択した ${selectedCandidates.length} 件の取得タスクを登録`}
+										</button>
+									</div>
+								)}
+							</>
 						)}
 						{!listingURL.trim() && (
 							<label>
