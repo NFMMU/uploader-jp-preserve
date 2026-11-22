@@ -1587,6 +1587,13 @@ func (s *Server) nodeTaskResult(c *gin.Context) {
 	if req.Status == "success" && task.TaskType == "store" {
 		_ = os.Remove(filepath.Join(s.cfg.StagingDir, task.ID))
 	}
+	// 差し替えられた旧ファイルの退役を再試行する。結果処理のトランザクションと
+	// ロック順序（置換先 → 旧ファイル）を揃えるため、別トランザクションから実行する。
+	if err := s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		return retireSelfIfReplaced(tx, file.ID)
+	}); err != nil {
+		s.logger.Error("could not retire replaced file", "file_id", file.ID, "error", err)
+	}
 	var updatedFile model.FileObject
 	_ = s.db.WithContext(c.Request.Context()).Select("preservation_status").First(&updatedFile, "id = ?", file.ID).Error
 	c.JSON(http.StatusOK, gin.H{"task_id": task.ID, "status": nextStatus, "retrying": nextStatus == "queued", "preservation_status": updatedFile.PreservationStatus})
@@ -1850,10 +1857,7 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error; err != nil {
 		return err
 	}
-	if err := retireReplacedFileIfVerified(tx, fileID, status); err != nil {
-		return err
-	}
-	return retireSelfIfReplaced(tx, fileID)
+	return retireReplacedFileIfVerified(tx, fileID, status)
 }
 
 // retireReplacedFileIfVerified requests physical deletion of the files that the
@@ -1875,7 +1879,9 @@ func retireReplacedFileIfVerified(tx *gorm.DB, fileID, status string) error {
 }
 
 // retireSelfIfReplaced retries retirement of a replaced file once its own tasks
-// have finished and the replacement is verified.
+// have finished and the replacement is verified. It locks the replacement before
+// the old file (replacement → old), matching the lock order used when the
+// replacement's own result retires the old file.
 func retireSelfIfReplaced(tx *gorm.DB, fileID string) error {
 	var file model.FileObject
 	if err := tx.First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {

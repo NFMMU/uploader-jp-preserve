@@ -301,11 +301,13 @@ func TestReplaceFileObjectRetiresAfterOldTasksFinishIntegration(t *testing.T) {
 		t.Fatal("old file should not be retired while its task is active")
 	}
 
-	// 旧ファイルのタスクが完了したら、再計算で退役される。
+	// 旧ファイルのタスクが完了したら、退役が再試行される。
 	if err := s.db.Model(&model.Task{}).Where("id = ?", activeTask.ID).Update("status", "completed").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := recomputeFilePreservation(s.db, oldFile.ID); err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		return retireSelfIfReplaced(tx, oldFile.ID)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.db.Unscoped().First(&oldAfter, "id = ?", oldFile.ID).Error; err != nil {

@@ -148,7 +148,19 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 	}
 	taskID := uuid.NewString()
 	task := model.Task{ID: taskID, TaskType: "source_fetch", FileObjectID: file.ID, TargetNodeID: &node.ID, Status: "queued", Priority: int16(priority)}
+	actor, _ := hooks.CurrentUser(c)
 	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if actor.Role == "author" {
+			var assignment model.AuthorArtifact
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("user_id = ? AND artifact_id = ?", actor.ID, file.ArtifactID).
+				Take(&assignment).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errAuthorArtifactAccessDenied
+				}
+				return err
+			}
+		}
 		// 削除・差し替え退役との競合を避けるため、更新と取得タスク作成の前に
 		// 対象行をロックして状態を再確認する。
 		var locked model.FileObject
@@ -162,6 +174,10 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		return tx.Create(&task).Error
 	})
 	if err != nil {
+		if errors.Is(err, errAuthorArtifactAccessDenied) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+			return
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusConflict, gin.H{"error": "file object is no longer available for source fetch"})
 			return
@@ -169,7 +185,6 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not queue source-fetch task"})
 		return
 	}
-	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.source_fetch.queued", "success", new("agent="+node.Name))
 	c.JSON(http.StatusAccepted, gin.H{
 		"file_object_id":    file.ID,
