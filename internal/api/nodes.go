@@ -430,10 +430,6 @@ func (s *Server) ingestFile(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; create a new file object to ingest a different version"})
 		return
 	}
-	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
-		return
-	}
 	var activeTasks int64
 	if err := s.db.WithContext(c.Request.Context()).Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued', 'running')", file.ID).Count(&activeTasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check existing tasks"})
@@ -815,10 +811,6 @@ func (s *Server) retryFailedTask(
 
 		if file.PreservationStatus == "verified" {
 			return &retryRejection{reason: "file object is already verified"}
-		}
-
-		if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-			return &retryRejection{reason: "redistribution policy is unconfirmed"}
 		}
 
 		// 同じファイルに対する別の実行中・待機中タスクを確認する。
@@ -1644,10 +1636,6 @@ func (s *Server) receiveSourceFetchContent(c *gin.Context) {
 	var file model.FileObject
 	if err := s.db.WithContext(c.Request.Context()).First(&file, "id = ?", task.FileObjectID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load source file"})
-		return
-	}
-	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; source content was not accepted"})
 		return
 	}
 	if strings.Contains(strings.ToLower(c.GetHeader("Content-Type")), "text/html") {

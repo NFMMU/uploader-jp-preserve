@@ -292,7 +292,7 @@ export function FileRow({
 									disabled={!!x.deleted_at || !!x.deletion_requested_at}
 									onClick={() => {
 										setDetail(x);
-										setPolicy(x.redistribution_policy || "unknown");
+										setPolicy(x.redistribution_policy || "unchecked");
 										setPub(!!x.public_download_enabled);
 									}}
 								>
@@ -335,7 +335,7 @@ export function FileRow({
 									disabled={role === "viewer"}
 									onClick={() => {
 										setDetail(x);
-										setPolicy(x.redistribution_policy || "unknown");
+										setPolicy(x.redistribution_policy || "unchecked");
 										setPub(!!x.public_download_enabled);
 									}}
 									type="button"

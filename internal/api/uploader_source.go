@@ -69,10 +69,6 @@ func (s *Server) ingestSourceFile(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "file object is already verified; create a new file object for another version"})
 		return
 	}
-	if isUnconfirmedRedistributionPolicy(file.RedistributionPolicy) {
-		c.JSON(http.StatusConflict, gin.H{"error": "redistribution policy is unconfirmed; set a policy other than pending before preservation"})
-		return
-	}
 
 	if req.ClearPassword != nil && *req.ClearPassword && req.Password != "" {
 		c.JSON(http.StatusBadRequest, gin.H{

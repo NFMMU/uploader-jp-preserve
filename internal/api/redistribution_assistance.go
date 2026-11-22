@@ -352,7 +352,7 @@ func (s *Server) ingestPublicRequestUpload(c *gin.Context) {
 		}
 	}
 	artifact := model.Artifact{Title: strings.TrimSpace(valueOrEmpty(request.Title)), CreatorName: trimOptional(request.CreatorName), SourceURL: artifactSourceURL, Description: &description}
-	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: new("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unknown", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
+	file := model.FileObject{OriginalFilename: *request.IntakeFileName, SizeBytes: written, Sha256: &sha, MediaType: new("application/octet-stream"), PreservationStatus: "uncollected", RedistributionPolicy: "unchecked", PublicDownloadEnabled: false, SourceURL: fileSourceURL}
 	db := s.db.WithContext(c.Request.Context())
 	artifactCreated := false
 	err = db.Transaction(func(tx *gorm.DB) error {

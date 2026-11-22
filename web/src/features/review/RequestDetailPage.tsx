@@ -404,7 +404,7 @@ export function RequestDetailPage({
 							size_bytes: 0,
 							media_type: "application/octet-stream",
 							source_url: request.source_url,
-							redistribution_policy: "unknown",
+							redistribution_policy: "unchecked",
 						}),
 					});
 				}
@@ -489,7 +489,7 @@ export function RequestDetailPage({
 								size_bytes: 0,
 								media_type: "application/octet-stream",
 								source_url: item.url,
-								redistribution_policy: "unknown",
+								redistribution_policy: "unchecked",
 							}),
 						});
 						file = created;
