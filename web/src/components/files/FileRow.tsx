@@ -250,30 +250,29 @@ export function FileRow({
 					{x.deletion_requested_at && !x.deleted_at && (
 						<small className="cell-sub">削除処理中</small>
 					)}
-					{["uncollected", "error"].includes(x.preservation_status) &&
-						role !== "author" && (
-							<button
-								type="button"
-								className="small-btn"
-								disabled={
-									retrying ||
-									role === "viewer" ||
-									!!x.deletion_requested_at ||
-									!!x.deleted_at ||
-									!x.source_url
-								}
-								onClick={() => {
-									setPasswordMode("saved");
-									setRetryError("");
-									setRetryPassword("");
-									setRetryModalOpen(true);
-								}}
-							>
-								{x.preservation_status === "uncollected"
-									? "保全を開始"
-									: "再試行"}
-							</button>
-						)}
+					{["uncollected", "error"].includes(x.preservation_status) && (
+						<button
+							type="button"
+							className="small-btn"
+							disabled={
+								retrying ||
+								role === "viewer" ||
+								!!x.deletion_requested_at ||
+								!!x.deleted_at ||
+								!x.source_url
+							}
+							onClick={() => {
+								setPasswordMode("saved");
+								setRetryError("");
+								setRetryPassword("");
+								setRetryModalOpen(true);
+							}}
+						>
+							{x.preservation_status === "uncollected"
+								? "保全を開始"
+								: "再試行"}
+						</button>
+					)}
 				</td>
 				<td>
 					<Status value={x.redistribution_policy} />
@@ -503,11 +502,17 @@ export function FileRow({
 				<FileReplaceModal
 					file={x}
 					onClose={() => setReplaceOpen(false)}
-					onReplaced={() => {
+					onReplaced={async () => {
 						setMessage(
 							"差し替えを登録しました。新しいファイルの保全が検証されると旧ファイルは削除されます。",
 						);
-						void onRefresh?.();
+						try {
+							await onRefresh?.();
+						} catch {
+							setMessage(
+								"差し替えは登録されましたが、一覧の更新に失敗しました。",
+							);
+						}
 					}}
 				/>
 			)}

@@ -93,7 +93,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	catalog.GET("/files/:id/placements", s.requireRoles("admin", "reviewer"), s.listPlacements)
 	catalog.POST("/files/:id/replicate", s.requireRoles("admin"), s.requestReplica)
 	catalog.POST("/files/:id/ingest", s.requireRoles("admin"), s.ingestFile)
-	catalog.POST("/files/:id/ingest-source", s.requireRoles("admin"), s.ingestSourceFile)
+	catalog.POST("/files/:id/ingest-source", s.requireRoles("admin", "author"), s.requireAuthorFileArtifactAccess(), s.ingestSourceFile)
 	catalog.PATCH("/files/:id/policy", s.requireRoles("admin", "reviewer", "author"), s.requireAuthorFileArtifactAccess(), s.updateFilePolicy)
 	catalog.PATCH("/files/:id/publication", s.requireRoles("admin", "author"), s.requireAuthorFileArtifactAccess(), s.updatePublicationFlag)
 	catalog.POST("/files/:id/downloads", s.requireRoles("admin", "reviewer", "viewer"), s.createDownloadJob)

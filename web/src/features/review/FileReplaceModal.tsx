@@ -10,7 +10,7 @@ export function FileReplaceModal({
 }: {
 	file: Obj;
 	onClose: () => void;
-	onReplaced: () => void;
+	onReplaced: () => void | Promise<void>;
 }) {
 	const [form, setForm] = useState({
 		original_filename: file.original_filename || "",
@@ -41,7 +41,7 @@ export function FileReplaceModal({
 					redistribution_policy: form.redistribution_policy,
 				}),
 			});
-			onReplaced();
+			await onReplaced();
 			onClose();
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "差し替えに失敗しました。");
