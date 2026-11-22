@@ -2,6 +2,7 @@ import { ExternalLink, Files, Pencil, SaveCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { downloadRequestIntakeFile } from "@/api/admin";
+import { saveCatalogFileContent } from "@/api/download";
 import { Heading } from "@/components/common/Heading";
 import { Status } from "@/components/common/Status";
 import { useData } from "@/hooks/useData";
@@ -9,6 +10,7 @@ import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { includeSelectedAuthor } from "./authorSelection.js";
 import { ConversationLinks } from "./ConversationLinks";
+import { ReviewAssist } from "./ReviewAssist";
 
 type RequestDetailPageProps = {
 	api: (path: string, options?: RequestInit) => Promise<Obj>;
@@ -166,6 +168,7 @@ export function RequestDetailPage({
 	const [terms, setTerms] = useState(false);
 	const [preserving, setPreserving] = useState(false);
 	const [preserveMessage, setPreserveMessage] = useState("");
+	const [downloadingFileID, setDownloadingFileID] = useState("");
 	const [intakeIngesting, setIntakeIngesting] = useState(false);
 	const [intakeIngestMessage, setIntakeIngestMessage] = useState("");
 	const [candidates, setCandidates] = useState<Obj[]>([]);
@@ -229,6 +232,25 @@ export function RequestDetailPage({
 			notify((e as Error).message);
 		} finally {
 			setAuthorsLoadingMore(false);
+		}
+	}
+
+	async function downloadRelatedFile(file: Obj) {
+		if (downloadingFileID) return;
+		setDownloadingFileID(String(file.id));
+		let message = "";
+		try {
+			await saveCatalogFileContent(
+				{ id: String(file.id), original_filename: file.original_filename },
+				(next) => {
+					message = next;
+				},
+			);
+			notify(message || "ファイルを保存しました");
+		} catch (e) {
+			notify(message || (e as Error).message);
+		} finally {
+			setDownloadingFileID("");
 		}
 	}
 
@@ -675,6 +697,16 @@ export function RequestDetailPage({
 				}
 				desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
 			/>
+			{request.request_type === "preservation" &&
+				(role === "admin" || role === "reviewer") && (
+					<ReviewAssist
+						request={request}
+						files={files}
+						filesLoading={filesLoading}
+						artifactID={artifactID}
+						navigate={nav}
+					/>
+				)}
 			<div className="request-page-grid">
 				<div className="request-page-main">
 					<section className="panel request-info-panel">
@@ -841,6 +873,18 @@ export function RequestDetailPage({
 												</span>
 											</div>
 										</div>
+										{file.preservation_status === "verified" && (
+											<button
+												type="button"
+												className="secondary"
+												disabled={!!downloadingFileID}
+												onClick={() => downloadRelatedFile(file)}
+											>
+												{downloadingFileID === String(file.id)
+													? "準備中…"
+													: "ダウンロード"}
+											</button>
+										)}
 										<button
 											type="button"
 											className="secondary"
