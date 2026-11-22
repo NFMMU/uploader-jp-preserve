@@ -1904,6 +1904,20 @@ func retireSelfIfReplaced(tx *gorm.DB, fileID string) error {
 // an active preservation task. The task completion retries retirement via
 // retireSelfIfReplaced.
 func retireReplacedFile(tx *gorm.DB, oldFile model.FileObject, newFileID string) error {
+	// タスク件数確認の前に旧ファイルの行をロックし、旧ファイル向けのタスク作成と
+	// 削除依頼を同じ行ロックで直列化する。queueFileDeletionTx は同じ行を同一
+	// トランザクション内で再度ロックするが、順序は一貫している。
+	var locked model.FileObject
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&locked, "id = ?", oldFile.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if locked.DeletedAt.Valid || locked.DeletionRequestedAt != nil {
+		return nil
+	}
 	var active int64
 	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued','running')", oldFile.ID).Count(&active).Error; err != nil {
 		return err
@@ -1912,10 +1926,10 @@ func retireReplacedFile(tx *gorm.DB, oldFile model.FileObject, newFileID string)
 		return nil
 	}
 	actorID := ""
-	if oldFile.ReplacedByUserID != nil {
-		actorID = *oldFile.ReplacedByUserID
+	if locked.ReplacedByUserID != nil {
+		actorID = *locked.ReplacedByUserID
 	}
-	if err := queueFileDeletionTx(tx, oldFile, nil, actorID, "replaced by verified file "+newFileID); err != nil {
+	if err := queueFileDeletionTx(tx, locked, nil, actorID, "replaced by verified file "+newFileID); err != nil {
 		if errors.Is(err, errFileDeletionAlreadyRequested) {
 			return nil
 		}
