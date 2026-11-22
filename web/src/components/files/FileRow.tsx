@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { publicAPI } from "@/api/admin";
 import { Modal } from "@/components/common/Modal";
 import { Status } from "@/components/common/Status";
+import { FileReplaceModal } from "@/features/review/FileReplaceModal";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 
@@ -35,6 +36,7 @@ export function FileRow({
 }) {
 	const [busy, setBusy] = React.useState(false);
 	const [message, setMessage] = useState("");
+	const [replaceOpen, setReplaceOpen] = useState(false);
 
 	type RetryPasswordMode = "saved" | "change" | "clear";
 
@@ -303,6 +305,19 @@ export function FileRow({
 									メタデータ
 								</button>
 								<button
+									className="small-btn"
+									type="button"
+									disabled={
+										busy ||
+										!!x.deleted_at ||
+										!!x.deletion_requested_at ||
+										!!x.replaced_by_file_object_id
+									}
+									onClick={() => setReplaceOpen(true)}
+								>
+									差し替え
+								</button>
+								<button
 									className="danger-btn"
 									type="button"
 									disabled={busy || !!x.deleted_at}
@@ -344,6 +359,19 @@ export function FileRow({
 									onClick={download}
 								>
 									{busy ? "準備中…" : "ダウンロード"}
+								</button>
+								<button
+									className="small-btn"
+									type="button"
+									disabled={
+										busy ||
+										!!x.deleted_at ||
+										!!x.deletion_requested_at ||
+										!!x.replaced_by_file_object_id
+									}
+									onClick={() => setReplaceOpen(true)}
+								>
+									差し替え
 								</button>
 								{role === "admin" && (
 									<button
@@ -466,6 +494,18 @@ export function FileRow({
 						</div>
 					</div>
 				</Modal>
+			)}
+			{replaceOpen && (
+				<FileReplaceModal
+					file={x}
+					onClose={() => setReplaceOpen(false)}
+					onReplaced={() => {
+						setMessage(
+							"差し替えを登録しました。新しいファイルの保全が検証されると旧ファイルは削除されます。",
+						);
+						void onRefresh?.();
+					}}
+				/>
 			)}
 		</>
 	);

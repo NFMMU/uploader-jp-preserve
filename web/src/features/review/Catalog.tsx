@@ -534,6 +534,13 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				fileId = file.id;
 				setPendingFileId(fileId);
 			}
+			if (role === "author") {
+				// 著作権者はファイル情報を登録できるが、実ファイルの保全は管理者が行う。
+				notify("ファイルを登録しました。実ファイルの保全は管理者が行います。");
+				closeAddFile();
+				setRefreshDummy((x) => x + 1);
+				return;
+			}
 			let ingestResult: any;
 			if (upload) {
 				const fd = new FormData();
@@ -757,15 +764,17 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								作品情報を編集
 							</button>
 						)}
-						{linkedArtifactID && role === "admin" && artifactRecord && (
-							<button
-								className="primary"
-								onClick={() => openAddFile(artifactRecord)}
-								type="button"
-							>
-								<Plus size={16} /> ファイルを追加
-							</button>
-						)}
+						{linkedArtifactID &&
+							(role === "admin" || role === "author") &&
+							artifactRecord && (
+								<button
+									className="primary"
+									onClick={() => openAddFile(artifactRecord)}
+									type="button"
+								>
+									<Plus size={16} /> ファイルを追加
+								</button>
+							)}
 						{role === "admin" && !linkedArtifactID && (
 							<button
 								className="primary"
@@ -1037,6 +1046,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									setPolicy={setPolicy}
 									setPub={setPub}
 									openMetadata={openMetadata}
+									onRefresh={() => setRefreshDummy((x) => x + 1)}
 									onDelete={() => deleteSingleFile(x.id)}
 								/>
 							))}

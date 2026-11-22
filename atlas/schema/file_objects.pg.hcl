@@ -71,8 +71,28 @@ table "file_objects" {
     type = timestamptz
     null = true
   }
+  column "replaced_by_file_object_id" {
+    type = uuid
+    null = true
+  }
+  column "replaced_by_user_id" {
+    type = uuid
+    null = true
+  }
   primary_key {
     columns = [column.id]
+  }
+  foreign_key "file_objects_replaced_by_file_object_id_fkey" {
+    columns = [column.replaced_by_file_object_id]
+    ref_columns = [table.file_objects.column.id]
+    on_update = NO_ACTION
+    on_delete = NO_ACTION
+  }
+  foreign_key "file_objects_replaced_by_user_id_fkey" {
+    columns = [column.replaced_by_user_id]
+    ref_columns = [table.users.column.id]
+    on_update = NO_ACTION
+    on_delete = SET NULL
   }
   foreign_key "file_objects_artifact_id_fkey" {
     columns = [column.artifact_id]

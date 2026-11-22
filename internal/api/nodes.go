@@ -1847,7 +1847,35 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	} else if active == 0 && healthy == 0 {
 		status = "error"
 	}
-	return tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error
+	if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error; err != nil {
+		return err
+	}
+	return retireReplacedFileIfVerified(tx, fileID, status)
+}
+
+// retireReplacedFileIfVerified requests physical deletion of the file that the
+// verified file replaced, once the replacement is verified.
+func retireReplacedFileIfVerified(tx *gorm.DB, fileID, status string) error {
+	if status != "verified" {
+		return nil
+	}
+	var oldFiles []model.FileObject
+	if err := tx.Where("replaced_by_file_object_id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Find(&oldFiles).Error; err != nil {
+		return err
+	}
+	for _, oldFile := range oldFiles {
+		actorID := ""
+		if oldFile.ReplacedByUserID != nil {
+			actorID = *oldFile.ReplacedByUserID
+		}
+		if err := queueFileDeletionTx(tx, oldFile, nil, actorID, "replaced by verified file "+fileID); err != nil {
+			if errors.Is(err, errFileDeletionAlreadyRequested) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func valueOrEmpty(value *string) string {
