@@ -250,27 +250,30 @@ export function FileRow({
 					{x.deletion_requested_at && !x.deleted_at && (
 						<small className="cell-sub">削除処理中</small>
 					)}
-					{x.preservation_status === "error" && role !== "author" && (
-						<button
-							type="button"
-							className="small-btn"
-							disabled={
-								retrying ||
-								role === "viewer" ||
-								!!x.deletion_requested_at ||
-								!!x.deleted_at ||
-								!x.source_url
-							}
-							onClick={() => {
-								setPasswordMode("saved");
-								setRetryError("");
-								setRetryPassword("");
-								setRetryModalOpen(true);
-							}}
-						>
-							再試行
-						</button>
-					)}
+					{["uncollected", "error"].includes(x.preservation_status) &&
+						role !== "author" && (
+							<button
+								type="button"
+								className="small-btn"
+								disabled={
+									retrying ||
+									role === "viewer" ||
+									!!x.deletion_requested_at ||
+									!!x.deleted_at ||
+									!x.source_url
+								}
+								onClick={() => {
+									setPasswordMode("saved");
+									setRetryError("");
+									setRetryPassword("");
+									setRetryModalOpen(true);
+								}}
+							>
+								{x.preservation_status === "uncollected"
+									? "保全を開始"
+									: "再試行"}
+							</button>
+						)}
 				</td>
 				<td>
 					<Status value={x.redistribution_policy} />

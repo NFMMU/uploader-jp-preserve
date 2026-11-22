@@ -1887,8 +1887,11 @@ func retireSelfIfReplaced(tx *gorm.DB, fileID string) error {
 	if file.ReplacedByFileObjectID == nil {
 		return nil
 	}
+	// 置換先の状態変更を退役完了まで直列化するため、状態を読む際に共有ロックを取る。
 	var replacement model.FileObject
-	if err := tx.Select("id", "preservation_status").First(&replacement, "id = ?", *file.ReplacedByFileObjectID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Select("id", "preservation_status").
+		First(&replacement, "id = ?", *file.ReplacedByFileObjectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
