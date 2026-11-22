@@ -52,7 +52,7 @@ test("URL cursor boundaries keep later pages stable after earlier URLs are delet
 	const first = locations(await request(pages[0]));
 	const secondBeforeMutation = locations(await request(pages[1]));
 	assert.equal(first.length, 50_000);
-	assert.equal(secondBeforeMutation.length, 10);
+	assert.equal(secondBeforeMutation.length, 12);
 	assert.equal(requests, 3);
 
 	// Remove an entry from the first page and force the ten-minute cache window

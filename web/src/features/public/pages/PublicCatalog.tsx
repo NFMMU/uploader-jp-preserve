@@ -113,6 +113,11 @@ export function PublicCatalog() {
 					<b>配布・再配布の代行を相談する</b>
 					<span>配布先探しや管理の手間を相談する →</span>
 				</Link>
+				<Link to="/copyright-holders" className="public-service-card">
+					<span className="public-service-label">著作権者の方</span>
+					<b>著作権者向けのご案内を見る</b>
+					<span>ダッシュボードと移設先としての利用 →</span>
+				</Link>
 			</section>
 
 			<p className="public-intro">公開が許可されたファイルを掲載しています。</p>

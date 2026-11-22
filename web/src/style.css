@@ -1171,7 +1171,7 @@ footer > span {
 }
 .public-header nav {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: 6px;
 	border-top: 1px solid #eee;
 	padding: 10px 0 12px;
@@ -1784,29 +1784,93 @@ footer > span {
 	font-size: 11px;
 	color: #777;
 }
-.public-legal {
+.public-legal,
+.public-article {
 	max-width: 760px;
 	margin: 0 auto;
 }
-.public-legal h1 {
+.public-legal h1,
+.public-article h1 {
 	margin-bottom: 4px;
 }
-.public-legal h2 {
+.public-legal h2,
+.public-article h2 {
 	font-size: 15px;
 	font-weight: 650;
 	margin: 28px 0 8px;
 	padding-top: 15px;
 	border-top: 1px solid #e5e5e5;
 }
+.public-article h3 {
+	font-size: 13px;
+	font-weight: 650;
+	margin: 18px 0 6px;
+}
 .public-legal p,
-.public-legal li {
+.public-legal li,
+.public-article p,
+.public-article li {
 	font-size: 13px;
 	line-height: 1.9;
 	color: #444;
 	overflow-wrap: anywhere;
 }
-.public-legal ul {
+.public-legal ul,
+.public-article ul,
+.public-article ol {
 	padding-left: 22px;
+}
+.public-article .public-text-link {
+	display: inline-block;
+	margin-bottom: 18px;
+}
+.public-article .public-process h2 {
+	padding-top: 0;
+	border-top: 0;
+}
+.public-article ol.public-flow-steps {
+	list-style: none;
+	padding-left: 0;
+	margin: 22px 0 28px;
+	display: grid;
+	gap: 12px;
+}
+.public-flow-step {
+	border: 1px solid #ddd;
+	border-radius: 5px;
+	padding: 16px 18px;
+	background: #fff;
+}
+.public-article .public-flow-step h2 {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	font-size: 14px;
+	margin: 0 0 8px;
+	padding-top: 0;
+	border-top: 0;
+}
+.public-flow-step-number {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	background: #333;
+	color: #fff;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1;
+}
+.public-flow-step p:last-child,
+.public-flow-step ul:last-child {
+	margin-bottom: 0;
+}
+.public-flow-step .public-text-link {
+	font-size: 12px;
+	margin-bottom: 0;
 }
 .legal-updated {
 	font-size: 11px !important;
@@ -2483,7 +2547,7 @@ footer > span {
 /* Redistribution and publisher assistance pages */
 .public-service-cards {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 	gap: 12px;
 	margin: 24px 0 28px;
 }
