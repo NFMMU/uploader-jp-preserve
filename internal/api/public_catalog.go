@@ -55,7 +55,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		  )
 	)`, cutoff)
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		pattern := "%" + uploaderSourceSearchTerm(q) + "%"
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			artifacts.title COLLATE "case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE "case_insensitive" LIKE ?

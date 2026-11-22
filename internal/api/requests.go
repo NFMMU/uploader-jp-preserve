@@ -248,6 +248,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "q must be at most 200 characters"})
 			return
 		}
+		search = uploaderSourceSearchTerm(search)
 		query = query.Where(`(
 			strpos(COALESCE(public_requests.title, '') COLLATE public."case_insensitive", ?) > 0 OR
 			strpos(COALESCE(public_requests.creator_name, '') COLLATE public."case_insensitive", ?) > 0 OR

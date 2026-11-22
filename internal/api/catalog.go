@@ -43,7 +43,7 @@ func (s *Server) listArtifacts(c *gin.Context) {
 		query = authorArtifactScope(query, user.ID)
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		pattern := "%" + uploaderSourceSearchTerm(q) + "%"
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
@@ -342,7 +342,7 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("deleted_at IS NULL")
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		pattern := "%" + uploaderSourceSearchTerm(q) + "%"
 		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
@@ -745,6 +745,40 @@ func uploaderArtifactSearchKeys(raw string) (string, string) {
 		return "", ""
 	}
 	return stored, uploaderArtifactSourceURL(stored)
+}
+
+// uploaderSourceSearchTerm rewrites a GetUploader URL pasted into a search box
+// to the host-independent path we store, so text search matches normalized rows.
+// Inputs that are not ux/uu GetUploader URLs are returned unchanged.
+func uploaderSourceSearchTerm(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return trimmed
+	}
+	rest, lower := trimmed, strings.ToLower(trimmed)
+	if i := strings.Index(lower, "://"); i >= 0 {
+		rest, lower = rest[i+3:], lower[i+3:]
+	}
+	for _, host := range []string{"ux.getuploader.com", "uu.getuploader.com"} {
+		if !strings.HasPrefix(lower, host) {
+			continue
+		}
+		rest, lower = rest[len(host):], lower[len(host):]
+		rest, lower = strings.TrimPrefix(rest, "."), strings.TrimPrefix(lower, ".")
+		if strings.HasPrefix(lower, ":443") {
+			rest, lower = rest[len(":443"):], lower[len(":443"):]
+		}
+		if rest == "" {
+			// A bare uploader host means every stored uploader path.
+			return "/"
+		}
+		if !strings.HasPrefix(rest, "/") {
+			// A look-alike domain such as ux.getuploader.com.example.
+			return trimmed
+		}
+		return rest
+	}
+	return trimmed
 }
 
 // lockUploaderArtifactRoots serializes GetUploader get-or-create operations.

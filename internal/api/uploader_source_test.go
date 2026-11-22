@@ -226,6 +226,26 @@ func TestUploaderArtifactSearchKeys(t *testing.T) {
 	}
 }
 
+func TestUploaderSourceSearchTerm(t *testing.T) {
+	cases := map[string]string{
+		"https://ux.getuploader.com/MMDkaz/download/7": "/MMDkaz/download/7",
+		"https://uu.getuploader.com/MMDkaz":            "/MMDkaz",
+		"ux.getuploader.com/MMDkaz":                    "/MMDkaz",
+		"UU.getuploader.com./MMDkaz?x=1":               "/MMDkaz?x=1",
+		"uu.getuploader.com:443/MMDkaz":                "/MMDkaz",
+		"uu.getuploader.com":                           "/",
+		"https://ux.getuploader.com/":                  "/",
+		"https://uploader.jp/account":                  "https://uploader.jp/account",
+		"ux.getuploader.com.example/foo":               "ux.getuploader.com.example/foo",
+		"MMDkaz":                                       "MMDkaz",
+	}
+	for raw, want := range cases {
+		if got := uploaderSourceSearchTerm(raw); got != want {
+			t.Errorf("uploaderSourceSearchTerm(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func TestUploaderArtifactSourceURL(t *testing.T) {
 	cases := map[string]string{
 		"/MMDkaz/download/7":          "/MMDkaz",
