@@ -22,7 +22,14 @@ import { FileMetadataModal } from "@/features/review/FileMetadataModal";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-function ArtifactCatalog({ api, refresh, notify, role }: any) {
+type CatalogProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+};
+
+function ArtifactCatalog({ api, refresh, notify, role }: CatalogProps) {
 	const nav = useNavigate();
 	const loc = useLocation();
 	const initialQuery = new URLSearchParams(loc.search).get("q") || "";
@@ -37,7 +44,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 		source_url: "",
 		description: "",
 	});
-	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
+	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`;
 	const data = useData(api, path, refresh);
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
@@ -247,7 +254,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	);
 }
 
-export function Catalog({ api, refresh, notify, role }: any) {
+export function Catalog({ api, refresh, notify, role }: CatalogProps) {
 	const [unused, setRefreshDummy] = useState(0);
 	const loc = useLocation();
 	const nav = useNavigate();
@@ -546,7 +553,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				setRefreshDummy((x) => x + 1);
 				return;
 			}
-			let ingestResult: any;
+			let ingestResult: Obj;
 			if (upload) {
 				const fd = new FormData();
 				fd.append("file", upload);

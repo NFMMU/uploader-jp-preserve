@@ -10,13 +10,21 @@ import type { Obj } from "@/types/common";
 import { includeSelectedAuthor } from "./authorSelection.js";
 import { ConversationLinks } from "./ConversationLinks";
 
+type RequestDetailPageProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+	bumpRefresh?: () => void;
+};
+
 export function RequestDetailPage({
 	api,
 	refresh,
 	notify,
 	role,
 	bumpRefresh,
-}: any) {
+}: RequestDetailPageProps) {
 	const { id = "" } = useParams();
 	const nav = useNavigate();
 	const [localRefresh, setLocalRefresh] = useState(0);
@@ -67,6 +75,7 @@ export function RequestDetailPage({
 		return allFiles;
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh はファイル一覧を再取得するための意図的な依存
 	useEffect(() => {
 		let cancelled = false;
 
@@ -128,6 +137,7 @@ export function RequestDetailPage({
 		localRefresh,
 	]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったらページを先頭に戻す
 	useEffect(() => {
 		setFilesPage(1);
 	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
@@ -162,21 +172,25 @@ export function RequestDetailPage({
 	const [selectedURLs, setSelectedURLs] = useState<string[]>([]);
 	const [isTitleEditing, setIsTitleEditing] = useState<boolean>(false);
 	const [title, setTitle] = useState<string>("タイトル未入力の申請");
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請の状態が変わった時だけ入力欄を初期化する
 	useEffect(() => {
 		if (request) {
 			setStatus(request.status === "pending" ? "in_review" : request.status);
 			setReason("");
 		}
 	}, [request?.id, request?.status]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったら author 選択を初期化する
 	useEffect(() => {
 		setAuthorMode("existing");
 		setAuthorUserID("");
 		setSelectedAuthor(null);
 		setAuthorEmail("");
 	}, [request?.id]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったらタイトルを同期する
 	useEffect(() => {
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が切り替わった時だけ author 候補を再取得する
 	useEffect(() => {
 		if (request?.request_type !== "preservation") return;
 		let cancelled = false;
@@ -366,7 +380,7 @@ export function RequestDetailPage({
 		}
 	}
 	async function beginPreservation() {
-		if (!request || !request.source_url || !terms) return;
+		if (!request?.source_url || !terms) return;
 		setPreserving(true);
 		setPreserveMessage("保全対象を準備しています…");
 		setCandidates([]);
@@ -573,24 +587,23 @@ export function RequestDetailPage({
 		);
 	if (requestData.error || !request)
 		return (
-			<>
-				<Heading
-					eyebrow="申請詳細"
-					title="申請が見つかりません"
-					desc={
-						requestData.error ||
-						"一覧から削除されたか、表示権限がない可能性があります。"
-					}
-					actions={
-						<button
-							className="secondary"
-							onClick={() => nav("/admin/requests")}
-						>
-							申請一覧へ戻る
-						</button>
-					}
-				/>
-			</>
+			<Heading
+				eyebrow="申請詳細"
+				title="申請が見つかりません"
+				desc={
+					requestData.error ||
+					"一覧から削除されたか、表示権限がない可能性があります。"
+				}
+				actions={
+					<button
+						type="button"
+						className="secondary"
+						onClick={() => nav("/admin/requests")}
+					>
+						申請一覧へ戻る
+					</button>
+				}
+			/>
 		);
 	return (
 		<div className="request-page">
@@ -620,53 +633,45 @@ export function RequestDetailPage({
 			<Heading
 				eyebrow="申請詳細"
 				title={
-					<>
-						<div
-							style={{
-								display: "flex",
-								flexDirection: "row",
-								justifyContent: "flex-start",
-								alignItems: "center",
-								gap: "4px",
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "row",
+							justifyContent: "flex-start",
+							alignItems: "center",
+							gap: "4px",
+						}}
+					>
+						{isTitleEditing ? (
+							<input
+								maxLength={500}
+								value={title}
+								onChange={(v) => setTitle(v.target.value)}
+								placeholder="アップローダー・ファイル名"
+								aria-label="申請のタイトル(アップローダー・ファイル名)"
+							/>
+						) : (
+							title ||
+							request.linked_file_name ||
+							request.linked_artifact_title ||
+							"タイトル未入力の申請"
+						)}
+						<button
+							type="button"
+							aria-label={isTitleEditing ? "タイトルを保存" : "タイトルを編集"}
+							className="small-btn"
+							disabled={saving}
+							onClick={() => {
+								if (isTitleEditing) {
+									saveTitle(title);
+								} else {
+									setIsTitleEditing(true);
+								}
 							}}
 						>
-							{isTitleEditing ? (
-								<input
-									maxLength={500}
-									value={title}
-									onChange={(v) => setTitle(v.target.value)}
-									placeholder="アップローダー・ファイル名"
-									aria-label="申請のタイトル(アップローダー・ファイル名)"
-								/>
-							) : (
-								title ||
-								request.linked_file_name ||
-								request.linked_artifact_title ||
-								"タイトル未入力の申請"
-							)}
-							<button
-								type="button"
-								aria-label={
-									isTitleEditing ? "タイトルを保存" : "タイトルを編集"
-								}
-								className="small-btn"
-								disabled={saving}
-								onClick={() => {
-									if (isTitleEditing) {
-										saveTitle(title);
-									} else {
-										setIsTitleEditing(true);
-									}
-								}}
-							>
-								{isTitleEditing ? (
-									<SaveCheck size={12} />
-								) : (
-									<Pencil size={12} />
-								)}
-							</button>
-						</div>
-					</>
+							{isTitleEditing ? <SaveCheck size={12} /> : <Pencil size={12} />}
+						</button>
+					</div>
 				}
 				desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
 			/>
@@ -782,6 +787,7 @@ export function RequestDetailPage({
 							</div>
 							{request.artifact_id && (
 								<button
+									type="button"
 									className="secondary"
 									onClick={() =>
 										nav(
@@ -1060,6 +1066,7 @@ export function RequestDetailPage({
 									/>
 								</label>
 								<button
+									type="button"
 									className="primary wide"
 									disabled={saving || reason.trim().length < 3}
 									onClick={saveStatus}

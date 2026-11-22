@@ -45,7 +45,7 @@ export function FileRow({
 	const [passwordMode, setPasswordMode] =
 		React.useState<RetryPasswordMode>("saved");
 	const [retryPassword, setRetryPassword] = React.useState("");
-	const [retryError, setRetryError] = React.useState("");
+	const [_retryError, setRetryError] = React.useState("");
 
 	async function download() {
 		setBusy(true);

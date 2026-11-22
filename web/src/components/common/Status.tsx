@@ -31,7 +31,7 @@ export function Status({ value }: { value: string }) {
 	};
 	const [label, tone] = map[value] || [value || "—", "gray"];
 	return (
-		<span className={"badge " + tone}>
+		<span className={`badge ${tone}`}>
 			<i />
 			{label}
 		</span>
