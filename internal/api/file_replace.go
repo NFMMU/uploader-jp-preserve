@@ -45,12 +45,14 @@ func (s *Server) replaceFileObject(c *gin.Context) {
 			return errFileAlreadyReplaced
 		}
 		if actor.Role == "author" {
-			allowed, err := s.authorHasArtifact(c, actor.ID, oldFile.ArtifactID)
-			if err != nil {
+			var assignment model.AuthorArtifact
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("user_id = ? AND artifact_id = ?", actor.ID, oldFile.ArtifactID).
+				Take(&assignment).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errAuthorArtifactAccessDenied
+				}
 				return err
-			}
-			if !allowed {
-				return errAuthorArtifactAccessDenied
 			}
 		}
 		created = newFileObjectFromPayload(oldFile.ArtifactID, req, policy)

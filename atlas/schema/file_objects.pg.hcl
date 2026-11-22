@@ -92,7 +92,7 @@ table "file_objects" {
     columns = [column.replaced_by_user_id]
     ref_columns = [table.users.column.id]
     on_update = NO_ACTION
-    on_delete = SET NULL
+    on_delete = SET_NULL
   }
   foreign_key "file_objects_artifact_id_fkey" {
     columns = [column.artifact_id]
@@ -114,6 +114,10 @@ table "file_objects" {
   }
   index "file_objects_deleted_at_idx" {
     columns = [column.deleted_at]
+  }
+  index "file_objects_replaced_by_idx" {
+    columns = [column.replaced_by_file_object_id]
+    where = "replaced_by_file_object_id IS NOT NULL"
   }
   check "file_objects_preservation_status_check" {
     expr = "preservation_status IN ('uncollected', 'queued', 'stored', 'verified', 'degraded', 'missing', 'error')"

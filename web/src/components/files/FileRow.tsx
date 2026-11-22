@@ -364,6 +364,7 @@ export function FileRow({
 									className="small-btn"
 									type="button"
 									disabled={
+										role === "viewer" ||
 										busy ||
 										!!x.deleted_at ||
 										!!x.deletion_requested_at ||

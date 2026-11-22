@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/nfmmu/uploader-archive/internal/gen/model"
 	"github.com/nfmmu/uploader-archive/internal/hooks"
@@ -295,11 +296,26 @@ func (s *Server) createFileObject(c *gin.Context) {
 		return
 	}
 	file := newFileObjectFromPayload(artifact.ID, req, policy)
-	if err := s.db.WithContext(c.Request.Context()).Create(&file).Error; err != nil {
+	actor, _ := hooks.CurrentUser(c)
+	err = s.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if actor.Role == "author" {
+			var assignment model.AuthorArtifact
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+				Where("user_id = ? AND artifact_id = ?", actor.ID, artifact.ID).
+				Take(&assignment).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&file).Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "artifact access denied"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create file object"})
 		return
 	}
-	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "file_object", file.ID, "file_object.create", "success", nil)
 	if file.SourceURL != nil {
 		file.SourceURL = new(uploaderSourceURLForAccess(*file.SourceURL))

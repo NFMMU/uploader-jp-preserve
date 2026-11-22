@@ -1850,11 +1850,14 @@ func recomputeFilePreservation(tx *gorm.DB, fileID string) error {
 	if err := tx.Model(&model.FileObject{}).Where("id = ?", fileID).Update("preservation_status", status).Error; err != nil {
 		return err
 	}
-	return retireReplacedFileIfVerified(tx, fileID, status)
+	if err := retireReplacedFileIfVerified(tx, fileID, status); err != nil {
+		return err
+	}
+	return retireSelfIfReplaced(tx, fileID)
 }
 
-// retireReplacedFileIfVerified requests physical deletion of the file that the
-// verified file replaced, once the replacement is verified.
+// retireReplacedFileIfVerified requests physical deletion of the files that the
+// verified file replaced.
 func retireReplacedFileIfVerified(tx *gorm.DB, fileID, status string) error {
 	if status != "verified" {
 		return nil
@@ -1864,16 +1867,59 @@ func retireReplacedFileIfVerified(tx *gorm.DB, fileID, status string) error {
 		return err
 	}
 	for _, oldFile := range oldFiles {
-		actorID := ""
-		if oldFile.ReplacedByUserID != nil {
-			actorID = *oldFile.ReplacedByUserID
-		}
-		if err := queueFileDeletionTx(tx, oldFile, nil, actorID, "replaced by verified file "+fileID); err != nil {
-			if errors.Is(err, errFileDeletionAlreadyRequested) {
-				continue
-			}
+		if err := retireReplacedFile(tx, oldFile, fileID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// retireSelfIfReplaced retries retirement of a replaced file once its own tasks
+// have finished and the replacement is verified.
+func retireSelfIfReplaced(tx *gorm.DB, fileID string) error {
+	var file model.FileObject
+	if err := tx.First(&file, "id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL", fileID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if file.ReplacedByFileObjectID == nil {
+		return nil
+	}
+	var replacement model.FileObject
+	if err := tx.Select("id", "preservation_status").First(&replacement, "id = ?", *file.ReplacedByFileObjectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if replacement.PreservationStatus != "verified" {
+		return nil
+	}
+	return retireReplacedFile(tx, file, replacement.ID)
+}
+
+// retireReplacedFile requests deletion of one replaced file unless it still has
+// an active preservation task. The task completion retries retirement via
+// retireSelfIfReplaced.
+func retireReplacedFile(tx *gorm.DB, oldFile model.FileObject, newFileID string) error {
+	var active int64
+	if err := tx.Model(&model.Task{}).Where("file_object_id = ? AND status IN ('queued','running')", oldFile.ID).Count(&active).Error; err != nil {
+		return err
+	}
+	if active > 0 {
+		return nil
+	}
+	actorID := ""
+	if oldFile.ReplacedByUserID != nil {
+		actorID = *oldFile.ReplacedByUserID
+	}
+	if err := queueFileDeletionTx(tx, oldFile, nil, actorID, "replaced by verified file "+newFileID); err != nil {
+		if errors.Is(err, errFileDeletionAlreadyRequested) {
+			return nil
+		}
+		return err
 	}
 	return nil
 }

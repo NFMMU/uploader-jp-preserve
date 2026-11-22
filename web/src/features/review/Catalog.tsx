@@ -271,6 +271,8 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [pendingFileId, setPendingFileId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [upload, setUpload] = useState<File | null>(null);
+	const [authorFileName, setAuthorFileName] = useState("");
+	const [authorFileSize, setAuthorFileSize] = useState("");
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [sourceURL, setSourceURL] = useState("");
 	const [fileDescription, setFileDescription] = useState("");
@@ -507,10 +509,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	async function addFile(e: React.FormEvent) {
 		e.preventDefault();
 		const url = sourceURL.trim();
+		const authorName = authorFileName.trim();
 		if (
 			!artifact ||
-			(!upload && !url) ||
-			(upload && url) ||
+			(role === "author" ? !authorName : !upload && !url) ||
+			(role !== "author" && upload && url) ||
 			(url && !acceptSourceTerms) ||
 			policy === "pending"
 		)
@@ -522,8 +525,11 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				const file = await api(`/catalog/artifacts/${artifact.id}/files`, {
 					method: "POST",
 					body: JSON.stringify({
-						original_filename: upload?.name || "取得待ち",
-						size_bytes: upload?.size || 0,
+						original_filename:
+							upload?.name || (role === "author" ? authorName : "取得待ち"),
+						size_bytes:
+							upload?.size ||
+							(role === "author" ? Number(authorFileSize) || 0 : 0),
 						media_type: upload?.type || "application/octet-stream",
 						source_url: url || undefined,
 						description: fileDescription,
@@ -1134,28 +1140,57 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						<p className="muted">
 							作品: <b>{artifact.title}</b>
 						</p>
+						{role === "author" ? (
+							<>
+								<p className="muted">
+									著作権者はファイル情報のみ登録します。ファイル本体は送信されず、
+									管理者が保全処理を行います。
+								</p>
+								<label>
+									ファイル名 *
+									<input
+										required
+										value={authorFileName}
+										placeholder="例: sample.zip"
+										onChange={(e) => setAuthorFileName(e.target.value)}
+									/>
+								</label>
+								<label>
+									サイズ（バイト）
+									<input
+										type="number"
+										min={0}
+										value={authorFileSize}
+										onChange={(e) => setAuthorFileSize(e.target.value)}
+									/>
+								</label>
+							</>
+						) : (
+							<label>
+								手元のファイル
+								<input
+									ref={fileInputRef}
+									type="file"
+									onChange={(e) => {
+										setUpload(e.target.files?.[0] || null);
+										if (e.target.files?.[0]) {
+											setSourceURL("");
+											setAcceptSourceTerms(false);
+											setListingURL("");
+											setAcceptListingTerms(false);
+											setCandidates([]);
+											setSelectedCandidates([]);
+											setPendingFileId("");
+										}
+									}}
+								/>
+								<small>最大5 GiB。保存先は2ノード必要です。</small>
+							</label>
+						)}
 						<label>
-							手元のファイル
-							<input
-								ref={fileInputRef}
-								type="file"
-								onChange={(e) => {
-									setUpload(e.target.files?.[0] || null);
-									if (e.target.files?.[0]) {
-										setSourceURL("");
-										setAcceptSourceTerms(false);
-										setListingURL("");
-										setAcceptListingTerms(false);
-										setCandidates([]);
-										setSelectedCandidates([]);
-										setPendingFileId("");
-									}
-								}}
-							/>
-							<small>最大5 GiB。保存先は2ノード必要です。</small>
-						</label>
-						<label>
-							または uploader.jp のダウンロードURL
+							{role === "author"
+								? "uploader.jp のダウンロードURL（任意）"
+								: "または uploader.jp のダウンロードURL"}
 							<input
 								type="url"
 								value={sourceURL}
@@ -1186,7 +1221,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								uploader.jp の利用規約を確認し、同意しました
 							</label>
 						)}
-						{role !== "author" && (
+						{role === "admin" && (
 							<>
 								<div className="form-divider" />
 								<label>

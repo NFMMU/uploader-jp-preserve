@@ -246,3 +246,72 @@ func TestCreateFileObjectAsAuthorIntegration(t *testing.T) {
 		t.Fatalf("create on other artifact status = %d, want 403, body %s", response.Code, response.Body.String())
 	}
 }
+
+func TestReplaceFileObjectRetiresAfterOldTasksFinishIntegration(t *testing.T) {
+	s := replaceTestServer(t)
+	admin := replaceTestUser(t, s.db, "admin")
+	artifact := replaceTestArtifact(t, s.db)
+	oldFile := replaceTestFile(t, s.db, artifact.ID, "old.bin")
+	activeTask := model.Task{TaskType: "replicate", FileObjectID: oldFile.ID, Status: "queued", AttemptCount: 0}
+	if err := s.db.Create(&activeTask).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	response := replaceRequest(t, s, "/catalog/files/"+oldFile.ID+"/replace", `{"original_filename":"new.bin"}`, &admin)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("replace status = %d, body %s", response.Code, response.Body.String())
+	}
+	var created model.FileObject
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	node1 := model.Node{ID: uuid.NewString(), Name: "n1", NodeType: "storage", Status: "online", LastSeenAt: &now, OnlineSince: &now}
+	node2 := model.Node{ID: uuid.NewString(), Name: "n2", NodeType: "storage", Status: "online", LastSeenAt: &now, OnlineSince: &now}
+	if err := s.db.Create(&node1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&node2).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&model.Placement{FileObjectID: created.ID, NodeID: node1.ID, StorageKey: "a", Status: "verified", VerifiedAt: &now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Create(&model.Placement{FileObjectID: created.ID, NodeID: node2.ID, StorageKey: "b", Status: "verified", VerifiedAt: &now}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 旧ファイルのタスクが残っていても、新ファイルの verified 遷移は確定する。
+	if err := recomputeFilePreservation(s.db, created.ID); err != nil {
+		t.Fatalf("recompute with active old task should not fail: %v", err)
+	}
+	var newFile model.FileObject
+	if err := s.db.First(&newFile, "id = ?", created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if newFile.PreservationStatus != "verified" {
+		t.Fatalf("new file status = %s, want verified", newFile.PreservationStatus)
+	}
+	var oldAfter model.FileObject
+	if err := s.db.Unscoped().First(&oldAfter, "id = ?", oldFile.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if oldAfter.DeletionRequestedAt != nil {
+		t.Fatal("old file should not be retired while its task is active")
+	}
+
+	// 旧ファイルのタスクが完了したら、再計算で退役される。
+	if err := s.db.Model(&model.Task{}).Where("id = ?", activeTask.ID).Update("status", "completed").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := recomputeFilePreservation(s.db, oldFile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Unscoped().First(&oldAfter, "id = ?", oldFile.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if oldAfter.DeletionRequestedAt == nil {
+		t.Fatal("old file should be retired after its tasks finish")
+	}
+}
