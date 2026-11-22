@@ -7,7 +7,9 @@ import {
 	PrivacyPage,
 	TermsPage,
 } from "./legal/LegalPages";
+import { CopyrightHoldersPage } from "./pages/CopyrightHoldersPage";
 import { NoticeDetail } from "./pages/NoticeDetail";
+import { PreservationFlowPage } from "./pages/PreservationFlowPage";
 import { PreservationRequest } from "./pages/PreservationRequest";
 import { PublicArtifactDetail } from "./pages/PublicArtifactDetail";
 import { PublicCatalog } from "./pages/PublicCatalog";
@@ -34,6 +36,8 @@ function PublicSite() {
 						path="/preservation-requests"
 						element={<PreservationRequest />}
 					/>
+					<Route path="/preservation-flow" element={<PreservationFlowPage />} />
+					<Route path="/copyright-holders" element={<CopyrightHoldersPage />} />
 					<Route
 						path="/publisher-support"
 						element={<RedistributionAssistancePage mode="publisher" />}
@@ -57,6 +61,8 @@ function PublicSite() {
 				</div>
 				<div className="footer-right">
 					<Link to="/notices">お知らせ</Link>
+					<Link to="/preservation-flow">保全の流れ</Link>
+					<Link to="/copyright-holders">著作権者の方へ</Link>
 					<Link to="/terms">利用規約</Link>
 					<Link to="/privacy">プライバシー・ポリシー</Link>
 					<Link to="/disclaimer">免責事項</Link>

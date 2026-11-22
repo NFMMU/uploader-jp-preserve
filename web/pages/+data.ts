@@ -51,6 +51,16 @@ export async function data(pageContext: PageContextServer) {
 			title: "保全リクエスト",
 			description: "創作関連アセットの保全について相談できます。",
 		},
+		"/preservation-flow": {
+			title: "当プロジェクトにおける保全の流れ",
+			description:
+				"保全リクエストの受付から、確認・保存・再配布条件の確認・公開までの流れを説明します。",
+		},
+		"/copyright-holders": {
+			title: "著作権者の方へ",
+			description:
+				"著作権者向けダッシュボードと、移設先としてのご利用について説明します。",
+		},
 		/*"/redistribution-support": {
 			title: "再配布の相談",
 			description: "ファイルの再配布や権利者への問い合わせを相談できます。",
