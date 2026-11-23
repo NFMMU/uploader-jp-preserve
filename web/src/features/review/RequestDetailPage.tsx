@@ -77,6 +77,7 @@ export function RequestDetailPage({
 		return allFiles;
 	}
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh は再取得のトリガー、linked_file_name は申請切替の検知用
 	useEffect(() => {
 		let cancelled = false;
 
@@ -138,6 +139,7 @@ export function RequestDetailPage({
 		localRefresh,
 	]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 対象の作品・ファイルが変わったらページを先頭へ戻す
 	useEffect(() => {
 		setFilesPage(1);
 	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
@@ -174,12 +176,14 @@ export function RequestDetailPage({
 	const [selectedURLs, setSelectedURLs] = useState<string[]>([]);
 	const [isTitleEditing, setIsTitleEditing] = useState<boolean>(false);
 	const [title, setTitle] = useState<string>("タイトル未入力の申請");
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請の id/status が変わったときだけ対応状態を同期する
 	useEffect(() => {
 		if (request) {
 			setStatus(request.status === "pending" ? "in_review" : request.status);
 			setReason("");
 		}
 	}, [request?.id, request?.status]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 別の申請を開いたら author 入力を初期化する
 	useEffect(() => {
 		setAuthorMode("existing");
 		setAuthorUserID("");
@@ -188,7 +192,8 @@ export function RequestDetailPage({
 	}, [request?.id]);
 	useEffect(() => {
 		setTitle(request?.title || "");
-	}, [request?.id, request?.title]);
+	}, [request?.title]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったときだけ author 候補を読み直す
 	useEffect(() => {
 		if (request?.request_type !== "preservation") return;
 		let cancelled = false;
@@ -211,7 +216,7 @@ export function RequestDetailPage({
 		return () => {
 			cancelled = true;
 		};
-	}, [request?.id, request?.request_type]);
+	}, [api, notify, request?.id, request?.request_type]);
 
 	async function loadMoreAuthors() {
 		if (authorsLoadingMore || !authorsHasMore) return;
@@ -610,6 +615,7 @@ export function RequestDetailPage({
 					}
 					actions={
 						<button
+							type="button"
 							className="secondary"
 							onClick={() => nav("/admin/requests")}
 						>
@@ -809,6 +815,7 @@ export function RequestDetailPage({
 							</div>
 							{request.artifact_id && (
 								<button
+									type="button"
 									className="secondary"
 									onClick={() =>
 										nav(
@@ -1171,6 +1178,7 @@ export function RequestDetailPage({
 									/>
 								</label>
 								<button
+									type="button"
 									className="primary wide"
 									disabled={saving || reason.trim().length < 3}
 									onClick={saveStatus}
