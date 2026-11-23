@@ -22,7 +22,14 @@ import { FileMetadataModal } from "@/features/review/FileMetadataModal";
 import { useData } from "@/hooks/useData";
 import type { Obj } from "@/types/common";
 
-function ArtifactCatalog({ api, refresh, notify, role }: any) {
+type CatalogProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+};
+
+function ArtifactCatalog({ api, refresh, notify, role }: CatalogProps) {
 	const nav = useNavigate();
 	const loc = useLocation();
 	const initialQuery = new URLSearchParams(loc.search).get("q") || "";
@@ -37,7 +44,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 		source_url: "",
 		description: "",
 	});
-	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? "&q=" + encodeURIComponent(query.trim()) : ""}`;
+	const path = `/catalog/artifacts?page=${page}&limit=${limit}${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`;
 	const data = useData(api, path, refresh);
 	const items: Obj[] = data.data.items || [];
 	const total = Number(data.data.total || 0);
@@ -247,7 +254,7 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 	);
 }
 
-export function Catalog({ api, refresh, notify, role }: any) {
+export function Catalog({ api, refresh, notify, role }: CatalogProps) {
 	const [unused, setRefreshDummy] = useState(0);
 	const loc = useLocation();
 	const nav = useNavigate();
@@ -285,7 +292,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 	const [batchBusy, setBatchBusy] = useState(false);
 	const [batchStatus, setBatchStatus] = useState("");
 	const [priority, setPriority] = useState("3");
-	const [policy, setPolicy] = useState("pending");
+	const [policy, setPolicy] = useState("unchecked");
 	const [pub, setPub] = useState(false);
 	const [form, setForm] = useState({
 		title: "",
@@ -343,7 +350,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			.then((target: Obj) => {
 				if (!live || !target) return;
 				setDetail(target);
-				setPolicy(target.redistribution_policy || "unknown");
+				setPolicy(target.redistribution_policy || "unchecked");
 				setPub(!!target.public_download_enabled);
 			})
 			.catch((e: Error) => live && notify(e.message))
@@ -367,7 +374,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		setSelectedCandidates([]);
 		setBatchStatus("");
 		setPriority("3");
-		setPolicy("pending");
+		setPolicy("unchecked");
 	}
 
 	function openAddFile(targetArtifact: Obj) {
@@ -514,8 +521,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 			!artifact ||
 			(role === "author" ? !authorName : !upload && !url) ||
 			(role !== "author" && upload && url) ||
-			(url && !acceptSourceTerms) ||
-			policy === "pending"
+			(url && !acceptSourceTerms)
 		)
 			return;
 		setBusy(true);
@@ -547,7 +553,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 				setRefreshDummy((x) => x + 1);
 				return;
 			}
-			let ingestResult: any;
+			let ingestResult: Obj;
 			if (upload) {
 				const fd = new FormData();
 				fd.append("file", upload);
@@ -617,8 +623,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		}
 	}
 	async function importSelected() {
-		if (!artifact || selectedCandidates.length === 0 || policy === "pending")
-			return;
+		if (!artifact || selectedCandidates.length === 0) return;
 		const chosen = candidates.filter((x: Obj) =>
 			selectedCandidates.includes(x.url),
 		);
@@ -876,7 +881,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								{ value: "allowed", label: "再配布可" },
 								{ value: "restricted", label: "制限付き" },
 								{ value: "in_progress", label: "確認中" },
-								{ value: "pending", label: "未確認" },
+								{ value: "unchecked", label: "未確認" },
 								{ value: "unknown", label: "不明" },
 							]
 					).map(({ value, label }) => (
@@ -899,7 +904,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 					{role !== "author" && (
 						<>
 							<option value="restricted">制限付き</option>
-							<option value="pending">未確認</option>
+							<option value="unchecked">未確認</option>
 							<option value="unknown">条件不明</option>
 						</>
 					)}
@@ -950,7 +955,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								<option value="allowed">再配布可</option>
 								<option value="restricted">制限付き</option>
 								<option value="in_progress">確認中</option>
-								<option value="pending">未確認</option>
+								<option value="unchecked">未確認</option>
 								<option value="unknown">不明</option>
 							</select>
 						</label>
@@ -1317,11 +1322,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 										<button
 											type="button"
 											className="primary wide"
-											disabled={
-												batchBusy ||
-												selectedCandidates.length === 0 ||
-												policy === "pending"
-											}
+											disabled={batchBusy || selectedCandidates.length === 0}
 											onClick={importSelected}
 										>
 											{batchBusy
@@ -1351,7 +1352,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								disabled={busy || batchBusy}
 								onChange={(e) => setPolicy(e.target.value)}
 							>
-								<option value="pending">未確認（保全不可）</option>
+								<option value="unchecked">未確認</option>
 								<option value="unknown">不明</option>
 								<option value="in_progress">確認中</option>
 								<option value="allowed">許可済み</option>
@@ -1359,7 +1360,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							</select>
 						</label>
 						<p className="muted">
-							保全と一般公開は別の判定です。公開条件が未確認のファイルは保全を開始できません。
+							保全と一般公開は別の判定です。未確認のままでも保全を開始でき、公開条件は保全後に確認できます。
 						</p>
 						<label>
 							保存優先度（0〜5）
@@ -1391,8 +1392,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 									busy ||
 									(!upload && !sourceURL.trim()) ||
 									(!!upload && !!sourceURL.trim()) ||
-									(!!sourceURL.trim() && !acceptSourceTerms) ||
-									policy === "pending"
+									(!!sourceURL.trim() && !acceptSourceTerms)
 								}
 							>
 								<CloudUpload size={16} />
@@ -1445,7 +1445,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 										<option value={policy} disabled>
 											{policy === "unknown"
 												? "不明"
-												: policy === "pending"
+												: policy === "unchecked"
 													? "未確認"
 													: policy === "in_progress"
 														? "確認中"
@@ -1457,7 +1457,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 								{role !== "author" && (
 									<>
 										<option value="unknown">不明</option>
-										<option value="pending">未確認（保全不可）</option>
+										<option value="unchecked">未確認</option>
 										<option value="in_progress">確認中</option>
 									</>
 								)}

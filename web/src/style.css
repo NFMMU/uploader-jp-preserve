@@ -2600,6 +2600,56 @@ footer > span {
 	color: #555;
 	margin: 0;
 }
+.public-faq {
+	display: grid;
+	gap: 10px;
+	margin: 18px 0 26px;
+}
+.public-faq-item {
+	border: 1px solid #ddd;
+	border-radius: 5px;
+	background: #fff;
+	padding: 14px 16px;
+}
+.public-article .public-faq dt,
+.public-article .public-faq dd {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.8;
+	overflow-wrap: anywhere;
+}
+.public-article .public-faq dt {
+	font-weight: 650;
+	color: #202124;
+}
+.public-article .public-faq dd {
+	margin-top: 9px;
+	padding-top: 9px;
+	border-top: 1px dashed #e5e5e5;
+	color: #444;
+}
+.public-faq-badge {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin-top: 1px;
+	border-radius: 50%;
+	background: #333;
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1;
+}
+.public-faq-badge-answer {
+	background: #eee;
+	color: #555;
+}
 .public-request-form input[type="file"] {
 	padding: 8px;
 	background: #fafafa;
