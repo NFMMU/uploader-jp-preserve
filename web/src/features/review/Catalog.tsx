@@ -15,6 +15,7 @@ import { downloadExport } from "@/api/admin";
 import { Heading } from "@/components/common/Heading";
 import { Modal } from "@/components/common/Modal";
 import { Pagination } from "@/components/common/Pagination";
+import { Status } from "@/components/common/Status";
 import { Table } from "@/components/common/Table";
 import { FileRow } from "@/components/files/FileRow";
 import { ArtifactMetadataModal } from "@/features/review/ArtifactMetadataModal";
@@ -70,7 +71,13 @@ function ArtifactCatalog({ api, refresh, notify, role }: any) {
 						<button
 							className="secondary"
 							type="button"
-							onClick={() => downloadExport("csv", notify)}
+							onClick={() =>
+								downloadExport(
+									"csv",
+									notify,
+									query.trim() ? { q: query.trim() } : {},
+								)
+							}
 						>
 							<Download size={16} /> CSV出力
 						</button>
@@ -307,6 +314,16 @@ export function Catalog({ api, refresh, notify, role }: any) {
 		filePath += `&publication=${encodeURIComponent(publicationFilter)}`;
 	if (linkedArtifactID)
 		filePath += `&artifact_id=${encodeURIComponent(linkedArtifactID)}`;
+
+	function exportFilters() {
+		const filters: Record<string, string> = {};
+		if (query.trim()) filters.q = query.trim();
+		if (preservationFilter) filters.preservation_status = preservationFilter;
+		if (policyFilter) filters.redistribution_policy = policyFilter;
+		if (publicationFilter) filters.publication = publicationFilter;
+		if (linkedArtifactID) filters.artifact_id = linkedArtifactID;
+		return filters;
+	}
 
 	const f = useData(api, filePath, refresh + unused);
 	const files: Obj[] = f.data.items || [];
@@ -755,7 +772,7 @@ export function Catalog({ api, refresh, notify, role }: any) {
 							<button
 								type="button"
 								className="secondary"
-								onClick={() => downloadExport("csv", notify)}
+								onClick={() => downloadExport("csv", notify, exportFilters())}
 							>
 								<Download size={16} /> CSV出力
 							</button>
@@ -800,9 +817,12 @@ export function Catalog({ api, refresh, notify, role }: any) {
 						className="panel related-requests-panel"
 						aria-labelledby="related-preservation-requests"
 					>
-						<div className="panel-heading">
-							<h2 id="related-preservation-requests">関連するリクエスト</h2>
-							<span className="muted">
+						<div className="panel-head">
+							<div>
+								<h2 id="related-preservation-requests">関連するリクエスト</h2>
+								<p>この作品に対して届いた保全リクエスト</p>
+							</div>
+							<span className="related-request-count">
 								{(artifactData.data.related_requests || []).length} 件
 							</span>
 						</div>
@@ -814,18 +834,39 @@ export function Catalog({ api, refresh, notify, role }: any) {
 											<a
 												href={`/admin/requests/${encodeURIComponent(request.id)}`}
 											>
-												<strong>{request.title || "タイトル未設定"}</strong>
-												<span>
-													{request.status} ·{" "}
-													{new Date(request.created_at).toLocaleString("ja-JP")}
+												<span className="related-request-body">
+													<strong>{request.title || "タイトル未設定"}</strong>
+													<span className="related-request-meta">
+														<Status value={request.status} />
+														<span className="related-request-date">
+															受付{" "}
+															{new Date(request.created_at).toLocaleString(
+																"ja-JP",
+																{
+																	year: "numeric",
+																	month: "2-digit",
+																	day: "2-digit",
+																	hour: "2-digit",
+																	minute: "2-digit",
+																},
+															)}
+														</span>
+													</span>
 												</span>
+												<ArrowUpRight
+													className="related-request-chevron"
+													size={14}
+													aria-hidden="true"
+												/>
 											</a>
 										</li>
 									),
 								)}
 							</ul>
 						) : (
-							<p className="muted">関連する保全リクエストはありません。</p>
+							<p className="related-request-empty">
+								関連する保全リクエストはありません。
+							</p>
 						)}
 					</section>
 				)}

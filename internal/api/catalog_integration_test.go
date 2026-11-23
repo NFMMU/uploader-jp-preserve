@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -265,7 +267,10 @@ func splitSQLStatements(sql string) []string {
 		}
 		if quote != 0 {
 			if sql[i] == quote {
-				if i+1 < len(sql) && sql[i+1] == quote { i++; continue }
+				if i+1 < len(sql) && sql[i+1] == quote {
+					i++
+					continue
+				}
 				quote = 0
 			}
 			continue
@@ -274,13 +279,20 @@ func splitSQLStatements(sql string) []string {
 		case 39, 34:
 			quote = sql[i]
 		case 36:
-			if strings.HasPrefix(sql[i:], "$guard$") { inDollarQuote = true; i += len("$guard$") - 1 }
+			if strings.HasPrefix(sql[i:], "$guard$") {
+				inDollarQuote = true
+				i += len("$guard$") - 1
+			}
 		case ';':
-			if statement := strings.TrimSpace(sql[start:i]); statement != "" { statements = append(statements, statement) }
+			if statement := strings.TrimSpace(sql[start:i]); statement != "" {
+				statements = append(statements, statement)
+			}
 			start = i + 1
 		}
 	}
-	if statement := strings.TrimSpace(sql[start:]); statement != "" { statements = append(statements, statement) }
+	if statement := strings.TrimSpace(sql[start:]); statement != "" {
+		statements = append(statements, statement)
+	}
 	return statements
 }
 func TestGetUploaderArtifactMergeRejectsDifferentAuthorAssignmentsIntegration(t *testing.T) {
@@ -291,14 +303,22 @@ func TestGetUploaderArtifactMergeRejectsDifferentAuthorAssignmentsIntegration(t 
 	catalogExec(t, db, "INSERT INTO getuploader_artifact_merge (duplicate_id, keep_id) VALUES (?, ?)", duplicateID, keepID)
 	catalogExec(t, db, "INSERT INTO author_artifact (user_id, artifact_id) VALUES (?, ?)", authorID, duplicateID)
 	migration, err := os.ReadFile("../../atlas/migrations/20261118090000_normalize_getuploader_source_paths.sql")
-	if err != nil { t.Fatalf("read GetUploader migration: %v", err) }
+	if err != nil {
+		t.Fatalf("read GetUploader migration: %v", err)
+	}
 	sql := string(migration)
 	start := strings.Index(sql, "DO $guard$")
-	if start < 0 { t.Fatal("author-assignment guard not found in migration") }
+	if start < 0 {
+		t.Fatal("author-assignment guard not found in migration")
+	}
 	end := strings.Index(sql[start:], "$guard$;")
-	if end < 0 { t.Fatal("author-assignment guard terminator not found in migration") }
+	if end < 0 {
+		t.Fatal("author-assignment guard terminator not found in migration")
+	}
 	err = db.Exec(sql[start : start+end+len("$guard$;")]).Error
-	if err == nil || !strings.Contains(err.Error(), "different author assignments") { t.Fatalf("guard error=%v, want author-assignment mismatch error", err) }
+	if err == nil || !strings.Contains(err.Error(), "different author assignments") {
+		t.Fatalf("guard error=%v, want author-assignment mismatch error", err)
+	}
 }
 func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 	db, _ := catalogTestDB(t)
@@ -478,5 +498,70 @@ func TestGetUploaderSourcePathMigrationIntegration(t *testing.T) {
 		if count != 1 {
 			t.Errorf("registry key %q count=%d, want 1", key, count)
 		}
+	}
+}
+
+func TestExportCatalogFiltersIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	verified := model.Artifact{Title: "verified artifact", SourceURL: "https://example.invalid/verified"}
+	uncollected := model.Artifact{Title: "uncollected artifact", SourceURL: "https://example.invalid/uncollected"}
+	for _, record := range []*model.Artifact{&verified, &uncollected} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := []model.FileObject{
+		{ArtifactID: verified.ID, OriginalFilename: "verified.bin", SizeBytes: 1, PreservationStatus: "verified", RedistributionPolicy: "allowed"},
+		{ArtifactID: uncollected.ID, OriginalFilename: "uncollected.bin", SizeBytes: 2, PreservationStatus: "uncollected", RedistributionPolicy: "unknown"},
+	}
+	for i := range files {
+		if err := db.Create(&files[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{db: db, logger: slog.Default()}
+
+	export := func(path string) *httptest.ResponseRecorder {
+		router := gin.New()
+		router.GET("/", s.exportCatalog)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder
+	}
+
+	response := export("/?format=csv&preservation_status=verified")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	rows, err := csv.NewReader(strings.NewReader(response.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("decode csv: %v", err)
+	}
+	var fileRows, artifactRows int
+	for _, row := range rows[1:] {
+		switch row[0] {
+		case "file":
+			fileRows++
+			if row[6] != "verified.bin" || row[9] != "verified" {
+				t.Fatalf("unexpected file row: %v", row)
+			}
+		case "artifact":
+			artifactRows++
+			if row[3] != "verified artifact" {
+				t.Fatalf("unexpected artifact row: %v", row)
+			}
+		default:
+			t.Fatalf("unexpected record type: %v", row)
+		}
+	}
+	if fileRows != 1 || artifactRows != 1 {
+		t.Fatalf("file rows=%d artifact rows=%d, want 1 and 1", fileRows, artifactRows)
+	}
+	if body := response.Body.String(); strings.Contains(body, "uncollected.bin") || strings.Contains(body, uncollected.ID) {
+		t.Fatalf("export leaked filtered-out rows: %s", body)
+	}
+
+	if response := export("/?format=csv&preservation_status=bogus"); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid filter status = %d, want 400", response.Code)
 	}
 }

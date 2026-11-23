@@ -36,8 +36,9 @@ func isUnconfirmedRedistributionPolicy(policy string) bool {
 	return policy == "pending"
 }
 
-func (s *Server) listArtifacts(c *gin.Context) {
-	page, limit, isAll := pagination(c)
+// artifactCatalogQuery builds the artifact query shared by the catalog list
+// and the export endpoint, including role scoping and the free-text filter.
+func (s *Server) artifactCatalogQuery(c *gin.Context) *gorm.DB {
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
 	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
 		query = authorArtifactScope(query, user.ID)
@@ -55,6 +56,21 @@ func (s *Server) listArtifacts(c *gin.Context) {
 			)
 		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
+	return query
+}
+
+// catalogFileFiltersActive reports whether the request narrows the file list
+// beyond the free-text query.
+func catalogFileFiltersActive(c *gin.Context) bool {
+	return strings.TrimSpace(c.Query("artifact_id")) != "" ||
+		c.Query("preservation_status") != "" ||
+		c.Query("redistribution_policy") != "" ||
+		c.Query("publication") != ""
+}
+
+func (s *Server) listArtifacts(c *gin.Context) {
+	page, limit, isAll := pagination(c)
+	query := s.artifactCatalogQuery(c)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
@@ -138,9 +154,9 @@ func (s *Server) createArtifact(c *gin.Context) {
 		}
 		if artifact.ID == "" {
 			artifact = model.Artifact{
-				Title: strings.TrimSpace(req.Title),
+				Title:       strings.TrimSpace(req.Title),
 				CreatorName: trimOptional(req.CreatorName),
-				SourceURL: source,
+				SourceURL:   source,
 				Description: trimOptional(req.Description),
 			}
 			if err := tx.Create(&artifact).Error; err != nil {
@@ -331,10 +347,11 @@ type fileListItem struct {
 	ArtifactDescription *string `json:"artifact_description,omitempty"`
 }
 
-func (s *Server) listFiles(c *gin.Context) {
-	page, limit, isAll := pagination(c)
-	db := s.db.WithContext(c.Request.Context())
-	query := db.Model(&model.FileObject{})
+// fileCatalogQuery builds the file query shared by the catalog list and the
+// export endpoint. Validation failures are returned as errors whose message is
+// safe to send back to the client.
+func (s *Server) fileCatalogQuery(c *gin.Context) (*gorm.DB, error) {
+	query := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{})
 	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
 		query = query.Where("artifact_id IN (SELECT artifact_id FROM author_artifact WHERE user_id = ?)", user.ID)
 	}
@@ -361,33 +378,28 @@ func (s *Server) listFiles(c *gin.Context) {
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact_id"})
-			return
+			return nil, errors.New("invalid artifact_id")
 		}
 		query = query.Where("artifact_id = ?", artifactID)
 	}
 	if status := c.Query("preservation_status"); status != "" {
 		if !preservationStatuses[status] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid preservation_status"})
-			return
+			return nil, errors.New("invalid preservation_status")
 		}
 		query = query.Where("preservation_status = ?", status)
 	}
 	if policy := c.Query("redistribution_policy"); policy != "" {
 		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && policy != "allowed" && policy != "restricted" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only allowed or restricted redistribution policies"})
-			return
+			return nil, errors.New("authors may filter only allowed or restricted redistribution policies")
 		}
 		if !redistributionPolicies[policy] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
-			return
+			return nil, errors.New("invalid redistribution_policy")
 		}
 		query = query.Where("redistribution_policy = ?", policy)
 	}
 	if publication := c.Query("publication"); publication != "" {
 		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && publication != "public" && publication != "private" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only public or private files"})
-			return
+			return nil, errors.New("authors may filter only public or private files")
 		}
 		switch publication {
 		case "public":
@@ -405,9 +417,19 @@ func (s *Server) listFiles(c *gin.Context) {
 		case "unknown":
 			query = query.Where("redistribution_policy = 'unknown'")
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid publication filter"})
-			return
+			return nil, errors.New("invalid publication filter")
 		}
+	}
+	return query, nil
+}
+
+func (s *Server) listFiles(c *gin.Context) {
+	page, limit, isAll := pagination(c)
+	db := s.db.WithContext(c.Request.Context())
+	query, err := s.fileCatalogQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -613,24 +635,47 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 
 func (s *Server) exportCatalog(c *gin.Context) {
 	format := strings.ToLower(c.DefaultQuery("format", "json"))
-	var artifacts []model.Artifact
-	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&artifacts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+	if format != "json" && format != "csv" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
+		return
+	}
+	fileQuery, err := s.fileCatalogQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	var files []model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).Where("deleted_at IS NULL").Order("created_at ASC").Find(&files).Error; err != nil {
+	if err := fileQuery.Order("created_at ASC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
+		return
+	}
+	artifactQuery := s.artifactCatalogQuery(c)
+	if catalogFileFiltersActive(c) {
+		// When the file list is narrowed, export only the artifacts that still
+		// have at least one matching file.
+		matchedArtifactIDs := make([]string, 0, len(files))
+		seen := make(map[string]bool, len(files))
+		for _, file := range files {
+			if !seen[file.ArtifactID] {
+				seen[file.ArtifactID] = true
+				matchedArtifactIDs = append(matchedArtifactIDs, file.ArtifactID)
+			}
+		}
+		if len(matchedArtifactIDs) == 0 {
+			artifactQuery = artifactQuery.Where("1 = 0")
+		} else {
+			artifactQuery = artifactQuery.Where("id IN ?", matchedArtifactIDs)
+		}
+	}
+	var artifacts []model.Artifact
+	if err := artifactQuery.Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
 	if format == "json" {
 		c.JSON(http.StatusOK, gin.H{"artifacts": artifacts, "files": files, "exported_at": time.Now().UTC()})
-		return
-	}
-	if format != "csv" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
 		return
 	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")

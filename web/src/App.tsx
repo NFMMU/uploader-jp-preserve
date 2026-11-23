@@ -323,9 +323,10 @@ function App() {
 									.toUpperCase()}
 							</div>
 							<div className="user-meta">
-								<b>{user.display_name || user.email}</b>
-								<NavLink to="/admin/preference">個人設定</NavLink>
-								<small>
+								<b title={user.display_name || user.email}>
+									{user.display_name || user.email}
+								</b>
+								<span className="user-role">
 									{user.role === "admin"
 										? "管理者"
 										: user.role === "reviewer"
@@ -333,16 +334,27 @@ function App() {
 											: user.role === "author"
 												? "Author"
 												: "閲覧者"}
-								</small>
+								</span>
 							</div>
-							<button
-								className="icon-btn"
-								title="ログアウト"
-								onClick={async () => await logout()}
-								type="button"
-							>
-								<LogOut size={16} />
-							</button>
+							<div className="user-card-actions">
+								<NavLink
+									className="icon-btn"
+									to="/admin/preference"
+									title="個人設定"
+									aria-label="個人設定"
+								>
+									<UserCog size={16} />
+								</NavLink>
+								<button
+									className="icon-btn"
+									title="ログアウト"
+									aria-label="ログアウト"
+									onClick={async () => await logout()}
+									type="button"
+								>
+									<LogOut size={16} />
+								</button>
+							</div>
 						</div>
 					</div>
 				</aside>
