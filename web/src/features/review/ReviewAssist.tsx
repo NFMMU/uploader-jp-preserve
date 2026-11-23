@@ -9,40 +9,48 @@ function stepClass(state: StepState) {
 
 export function ReviewAssist({
 	request,
-	files,
+	allFiles,
 	filesLoading,
+	filesError,
+	role,
 	artifactID,
 	navigate,
 }: {
 	request: Obj;
-	files: Obj[];
+	allFiles: Obj[];
 	filesLoading: boolean;
+	filesError: string;
+	role: string;
 	artifactID: string;
 	navigate: (path: string) => void;
 }) {
-	const verified = files.filter(
+	const verified = allFiles.filter(
 		(file) => file.preservation_status === "verified",
 	);
-	const unfinished = files.filter(
+	const unfinished = allFiles.filter(
 		(file) =>
 			!file.preservation_status || file.preservation_status !== "verified",
 	);
-	const unchecked = files.filter(
+	const unchecked = allFiles.filter(
 		(file) => (file.redistribution_policy || "unchecked") === "unchecked",
 	);
-	const allowed = files.filter(
+	const inProgress = allFiles.filter(
+		(file) => file.redistribution_policy === "in_progress",
+	);
+	const allowed = allFiles.filter(
 		(file) => file.redistribution_policy === "allowed",
 	);
-	const restricted = files.filter(
+	const restricted = allFiles.filter(
 		(file) => file.redistribution_policy === "restricted",
 	);
-	const unknown = files.filter(
+	const unknown = allFiles.filter(
 		(file) => file.redistribution_policy === "unknown",
 	);
 
-	const started = files.length > 0;
+	const started = allFiles.length > 0;
 	const preservationComplete = started && unfinished.length === 0;
-	const reviewComplete = preservationComplete && unchecked.length === 0;
+	const reviewComplete =
+		preservationComplete && unchecked.length === 0 && inProgress.length === 0;
 	const hasAllowed = allowed.length > 0;
 	const hasRestricted = restricted.length > 0;
 
@@ -70,6 +78,25 @@ export function ReviewAssist({
 	};
 
 	if (request.status === "closed") return null;
+
+	if (filesLoading || filesError) {
+		return (
+			<section className="panel review-assist">
+				<div className="panel-head">
+					<div>
+						<h2>
+							<ListChecks size={16} /> レビューアシスト
+						</h2>
+						<p>
+							{filesLoading
+								? "関連ファイルをすべて読み込んでいます。集計が終わるまで完了判定は表示しません。"
+								: `関連ファイルを集計できませんでした：${filesError}`}
+						</p>
+					</div>
+				</div>
+			</section>
+		);
+	}
 
 	const openFiles = () => {
 		if (!artifactID) return;
@@ -117,15 +144,22 @@ export function ReviewAssist({
 					<div className="assist-step-number">1</div>
 					<div className="assist-step-body">
 						<b>保全処理（ダウンロード）を開始する</b>
-						<p>
-							右の「保全を実行」で利用規約を確認し、
-							<strong>「URLを調査・取得タスク登録」</strong>
-							を押します。一覧ページの場合は、候補を選んで取得タスクを登録します。
-						</p>
+						{role === "admin" ? (
+							<p>
+								右の「保全を実行」で利用規約を確認し、
+								<strong>「URLを調査・取得タスク登録」</strong>
+								を押します。一覧ページの場合は、候補を選んで取得タスクを登録します。
+							</p>
+						) : (
+							<p>
+								保全の開始は管理者の操作です。管理者に「保全を実行」からの
+								取得タスク登録を依頼してください。依頼後、この画面で進捗を確認できます。
+							</p>
+						)}
 						{started && (
 							<small>
 								検証済み {verified.length} 件 / 保全未完了 {unfinished.length}{" "}
-								件{filesLoading ? "（読み込み中）" : ""}
+								件
 							</small>
 						)}
 					</div>
@@ -139,10 +173,12 @@ export function ReviewAssist({
 							申請を「確認中」にしたうえで、関連ファイルを一つずつダウンロードし、
 							README などから再配布条件を確認します。確認後、「ファイル操作」で
 							再配布ポリシーを<strong>「制限付き」「再配布可」「不明」</strong>
-							のいずれかに設定します。「未確認」が残っている間は次の手順に進みません。
+							のいずれかに設定します。「未確認」または「確認中」が残っている間は
+							次の手順に進みません。
 						</p>
 						<div className="assist-counts">
 							<span>未確認 {unchecked.length}</span>
+							<span>確認中 {inProgress.length}</span>
 							<span>再配布可 {allowed.length}</span>
 							<span>制限付き {restricted.length}</span>
 							<span>不明 {unknown.length}</span>
@@ -156,10 +192,10 @@ export function ReviewAssist({
 						<b>メールを送り、公開と承認を判断する</b>
 						{!preservationComplete ? (
 							<p>すべてのファイルの保全が完了すると、この手順に進みます。</p>
-						) : unchecked.length > 0 ? (
+						) : unchecked.length > 0 || inProgress.length > 0 ? (
 							<p>
-								未確認のファイルが {unchecked.length}{" "}
-								件残っています。先に手順2を完了してください。
+								未確認 {unchecked.length} 件、確認中 {inProgress.length}{" "}
+								件が残っています。先に手順2を完了してください。
 							</p>
 						) : mailTemplate ? (
 							<>

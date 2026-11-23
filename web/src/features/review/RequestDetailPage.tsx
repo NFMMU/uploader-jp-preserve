@@ -12,13 +12,45 @@ import { includeSelectedAuthor } from "./authorSelection.js";
 import { ConversationLinks } from "./ConversationLinks";
 import { ReviewAssist } from "./ReviewAssist";
 
+type ApiClient = (path: string, options?: RequestInit) => Promise<Obj>;
+
 type RequestDetailPageProps = {
-	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	api: ApiClient;
 	refresh: number;
 	notify: (message: string) => void;
 	role: string;
 	bumpRefresh?: () => void;
 };
+
+async function fetchAllArtifactFiles(
+	api: ApiClient,
+	aid: string,
+): Promise<Obj[]> {
+	const limit = 100;
+	const allFiles: Obj[] = [];
+	let page = 1;
+	let total: number | undefined;
+
+	while (total === undefined || allFiles.length < total) {
+		const result = await api(
+			`/catalog/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
+		);
+		const items: Obj[] = result.items || [];
+
+		allFiles.push(...items);
+
+		if (typeof result.total === "number") {
+			total = result.total;
+		} else if (items.length < limit) {
+			break;
+		}
+
+		if (items.length === 0) break;
+		page++;
+	}
+
+	return allFiles;
+}
 
 export function RequestDetailPage({
 	api,
@@ -50,32 +82,36 @@ export function RequestDetailPage({
 	const [filesLoading, setFilesLoading] = useState(false);
 	const [filesError, setFilesError] = useState("");
 
-	async function fetchAllArtifactFiles(aid: string): Promise<Obj[]> {
-		const limit = 100;
-		const allFiles: Obj[] = [];
-		let page = 1;
-		let total: number | undefined;
+	// アシストの進捗判定は表示ページではなく全関連ファイルで行う。
+	const [assistFiles, setAssistFiles] = useState<Obj[]>([]);
+	const [assistFilesLoading, setAssistFilesLoading] = useState(false);
+	const [assistFilesError, setAssistFilesError] = useState("");
 
-		while (total === undefined || allFiles.length < total) {
-			const result = await api(
-				`/catalog/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
-			);
-			const items: Obj[] = result.items || [];
-
-			allFiles.push(...items);
-
-			if (typeof result.total === "number") {
-				total = result.total;
-			} else if (items.length < limit) {
-				break;
-			}
-
-			if (items.length === 0) break;
-			page++;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh は全件を再集計するための意図的な依存
+	useEffect(() => {
+		if (!artifactID) {
+			setAssistFiles([]);
+			setAssistFilesError("");
+			setAssistFilesLoading(false);
+			return;
 		}
-
-		return allFiles;
-	}
+		let cancelled = false;
+		setAssistFilesLoading(true);
+		setAssistFilesError("");
+		fetchAllArtifactFiles(api, artifactID)
+			.then((all) => {
+				if (!cancelled) setAssistFiles(all);
+			})
+			.catch((e: Error) => {
+				if (!cancelled) setAssistFilesError(e.message);
+			})
+			.finally(() => {
+				if (!cancelled) setAssistFilesLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [api, artifactID, refresh, localRefresh]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh はファイル一覧を再取得するための意図的な依存
 	useEffect(() => {
@@ -422,7 +458,7 @@ export function RequestDetailPage({
 					}
 				}
 				if (!file) {
-					const current = await fetchAllArtifactFiles(aid);
+					const current = await fetchAllArtifactFiles(api, aid);
 					file = current.find((x: Obj) => x.source_url === request.source_url);
 				}
 
@@ -504,7 +540,7 @@ export function RequestDetailPage({
 			skipped = 0;
 		const errors: string[] = [];
 		try {
-			const existing = await fetchAllArtifactFiles(aid);
+			const existing = await fetchAllArtifactFiles(api, aid);
 			let linked = String(request.file_object_id || "");
 			for (const item of candidates.filter((x: Obj) =>
 				selectedURLs.includes(x.url),
@@ -701,8 +737,10 @@ export function RequestDetailPage({
 				(role === "admin" || role === "reviewer") && (
 					<ReviewAssist
 						request={request}
-						files={files}
-						filesLoading={filesLoading}
+						allFiles={assistFiles}
+						filesLoading={assistFilesLoading}
+						filesError={assistFilesError}
+						role={role}
 						artifactID={artifactID}
 						navigate={nav}
 					/>
