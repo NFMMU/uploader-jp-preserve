@@ -17,7 +17,7 @@ import {
 	X,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FaOpenid } from "react-icons/fa";
 import {
 	Navigate,
@@ -44,8 +44,9 @@ import { AuthorAssignmentsPage } from "@/features/users/AuthorAssignmentsPage";
 import { UsersPage } from "@/features/users/UsersPage";
 import type { Obj } from "@/types/common";
 
+const apiBase = "/api/v1";
+
 function App() {
-	const apiBase = "/api/v1";
 	const [user, setUser] = useState<Obj | null>();
 	const [toast, setToast] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -54,41 +55,45 @@ function App() {
 	const nav = useNavigate();
 	const loc = useLocation();
 	const [refresh, setRefresh] = useState(0);
-	async function api(path: string, opts: RequestInit = {}) {
-		const headers = new Headers(opts.headers);
-		if (opts.body && !(opts.body instanceof FormData))
-			headers.set("Content-Type", "application/json");
-		const r = await fetch(apiBase + path, {
-			...opts,
-			headers,
-			credentials: "same-origin",
-		});
-		const text = await r.text();
-		let data: Obj = {};
-		try {
-			data = text ? JSON.parse(text) : {};
-		} catch {
-			data = { message: text };
-		}
-		if (!r.ok)
-			if (r.status === 401) {
-				try {
-					await api("/delete-cookie");
-				} finally {
-					setUser(null);
-					if (window.location.pathname !== "/admin/login") {
-						nav("/admin/login");
+	const api = useCallback(
+		async function api(path: string, opts: RequestInit = {}) {
+			const headers = new Headers(opts.headers);
+			if (opts.body && !(opts.body instanceof FormData))
+				headers.set("Content-Type", "application/json");
+			const r = await fetch(apiBase + path, {
+				...opts,
+				headers,
+				credentials: "same-origin",
+			});
+			const text = await r.text();
+			let data: Obj = {};
+			try {
+				data = text ? JSON.parse(text) : {};
+			} catch {
+				data = { message: text };
+			}
+			if (!r.ok)
+				if (r.status === 401) {
+					try {
+						await api("/delete-cookie");
+					} finally {
+						setUser(null);
+						if (window.location.pathname !== "/admin/login") {
+							nav("/admin/login");
+						}
+						// biome-ignore lint/correctness/noUnsafeFinally: 意図した動作
+						throw new Error(data.error || data.message || `HTTP ${r.status}`);
 					}
-					// biome-ignore lint/correctness/noUnsafeFinally: 意図した動作
+				} else
 					throw new Error(data.error || data.message || `HTTP ${r.status}`);
-				}
-			} else throw new Error(data.error || data.message || `HTTP ${r.status}`);
-		return data;
-	}
-	function notify(s: string) {
+			return data;
+		},
+		[nav],
+	);
+	const notify = useCallback((s: string) => {
 		setToast(s);
 		setTimeout(() => setToast(""), 3500);
-	}
+	}, []);
 	async function login(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
 		setBusy(true);
@@ -342,6 +347,7 @@ function App() {
 									to="/admin/preference"
 									title="個人設定"
 									aria-label="個人設定"
+									onClick={() => setMobile(false)}
 								>
 									<UserCog size={16} />
 								</NavLink>

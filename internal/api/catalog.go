@@ -43,12 +43,12 @@ func (s *Server) artifactCatalogQuery(c *gin.Context) *gorm.DB {
 		pattern := "%" + q + "%"
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
-			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
+			CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ? OR title COLLATE public."case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE public."case_insensitive" LIKE ? OR source_url COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND source_url = ?)
 			OR id IN (
 				SELECT artifact_id FROM file_objects
 				WHERE deleted_at IS NULL
-				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
+				AND (CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ? OR original_filename COLLATE public."case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE public."case_insensitive" LIKE ?)
 			)
 		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
@@ -358,16 +358,16 @@ func (s *Server) fileCatalogQuery(c *gin.Context) (*gorm.DB, error) {
 		pattern := "%" + q + "%"
 		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
-			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
-			OR original_filename COLLATE "case_insensitive" LIKE ?
-			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
+			CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ?
+			OR original_filename COLLATE public."case_insensitive" LIKE ?
+			OR COALESCE(sha256, '') COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND file_objects.source_url = ?)
 			OR artifact_id IN (
 				SELECT id FROM artifacts
-				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
-				OR title COLLATE "case_insensitive" LIKE ?
-				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
-				OR source_url COLLATE "case_insensitive" LIKE ?
+				WHERE CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ?
+				OR title COLLATE public."case_insensitive" LIKE ?
+				OR COALESCE(creator_name, '') COLLATE public."case_insensitive" LIKE ?
+				OR source_url COLLATE public."case_insensitive" LIKE ?
 				OR (? <> '' AND source_url = ?)
 			)
 		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
@@ -646,27 +646,45 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		return
 	}
 	artifactQuery := s.artifactCatalogQuery(c)
-	if catalogFileFiltersActive(c) {
-		// When the file list is narrowed, export only the artifacts that still
-		// have at least one matching file.
-		matchedArtifactIDs := make([]string, 0, len(files))
-		seen := make(map[string]bool, len(files))
-		for _, file := range files {
-			if !seen[file.ArtifactID] {
-				seen[file.ArtifactID] = true
-				matchedArtifactIDs = append(matchedArtifactIDs, file.ArtifactID)
-			}
-		}
-		if len(matchedArtifactIDs) == 0 {
-			artifactQuery = artifactQuery.Where("1 = 0")
-		} else {
-			artifactQuery = artifactQuery.Where("id IN ?", matchedArtifactIDs)
-		}
-	}
 	var artifacts []model.Artifact
 	if err := artifactQuery.Order("created_at ASC").Find(&artifacts).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
 		return
+	}
+	if catalogFileFiltersActive(c) {
+		// File-level filters can match files whose parent artifact does not
+		// match the artifact-only search (for example, q matches a child file
+		// URL). Keep the artifact-only result and union in those parents. Fetch
+		// the extra IDs in bounded batches so a single query never carries more
+		// parameters than the extended protocol allows.
+		seen := make(map[string]struct{}, len(artifacts))
+		for _, artifact := range artifacts {
+			seen[artifact.ID] = struct{}{}
+		}
+		matched := make(map[string]struct{}, len(files))
+		missing := make([]string, 0, len(files))
+		for _, file := range files {
+			if _, ok := matched[file.ArtifactID]; ok {
+				continue
+			}
+			matched[file.ArtifactID] = struct{}{}
+			if _, ok := seen[file.ArtifactID]; !ok {
+				missing = append(missing, file.ArtifactID)
+			}
+		}
+		const artifactBatchSize = 1000
+		for start := 0; start < len(missing); start += artifactBatchSize {
+			end := min(start+artifactBatchSize, len(missing))
+			var batch []model.Artifact
+			if err := s.db.WithContext(c.Request.Context()).Where("id IN ?", missing[start:end]).Find(&batch).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+				return
+			}
+			artifacts = append(artifacts, batch...)
+		}
+		sort.SliceStable(artifacts, func(i, j int) bool {
+			return artifacts[i].CreatedAt.Before(artifacts[j].CreatedAt)
+		})
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)

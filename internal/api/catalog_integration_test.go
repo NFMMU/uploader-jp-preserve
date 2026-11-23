@@ -537,7 +537,8 @@ func TestExportCatalogFiltersIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode csv: %v", err)
 	}
-	var fileRows, artifactRows int
+	var fileRows int
+	artifactTitles := map[string]bool{}
 	for _, row := range rows[1:] {
 		switch row[0] {
 		case "file":
@@ -546,22 +547,64 @@ func TestExportCatalogFiltersIntegration(t *testing.T) {
 				t.Fatalf("unexpected file row: %v", row)
 			}
 		case "artifact":
-			artifactRows++
-			if row[3] != "verified artifact" {
-				t.Fatalf("unexpected artifact row: %v", row)
-			}
+			artifactTitles[row[3]] = true
 		default:
 			t.Fatalf("unexpected record type: %v", row)
 		}
 	}
-	if fileRows != 1 || artifactRows != 1 {
-		t.Fatalf("file rows=%d artifact rows=%d, want 1 and 1", fileRows, artifactRows)
+	if fileRows != 1 {
+		t.Fatalf("file rows=%d, want 1", fileRows)
 	}
-	if body := response.Body.String(); strings.Contains(body, "uncollected.bin") || strings.Contains(body, uncollected.ID) {
-		t.Fatalf("export leaked filtered-out rows: %s", body)
+	// The artifact-only search is not narrowed by file filters, so both
+	// artifacts remain in the export.
+	if !artifactTitles["verified artifact"] || !artifactTitles["uncollected artifact"] {
+		t.Fatalf("artifact rows=%v, want both artifacts", artifactTitles)
+	}
+	if body := response.Body.String(); strings.Contains(body, "uncollected.bin") {
+		t.Fatalf("export leaked filtered-out file: %s", body)
 	}
 
 	if response := export("/?format=csv&preservation_status=bogus"); response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid filter status = %d, want 400", response.Code)
+	}
+}
+
+func TestExportCatalogIncludesParentOfMatchingFileIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	alpha := model.Artifact{Title: "alpha artifact", SourceURL: "/alpha"}
+	beta := model.Artifact{Title: "beta artifact", SourceURL: "/gamma"}
+	for _, record := range []*model.Artifact{&alpha, &beta} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	alphaChildSource := "/beta/download/1"
+	betaChildSource := "/beta/download/2"
+	files := []model.FileObject{
+		{ArtifactID: alpha.ID, SourceURL: &alphaChildSource, OriginalFilename: "alpha-child.bin", SizeBytes: 1, PreservationStatus: "verified", RedistributionPolicy: "allowed"},
+		{ArtifactID: beta.ID, SourceURL: &betaChildSource, OriginalFilename: "beta-child.bin", SizeBytes: 2, PreservationStatus: "verified", RedistributionPolicy: "allowed"},
+	}
+	for i := range files {
+		if err := db.Create(&files[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{db: db, logger: slog.Default()}
+	router := gin.New()
+	router.GET("/", s.exportCatalog)
+	query := url.QueryEscape("https://uu.getuploader.com/beta/download/1")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/?format=csv&q="+query, nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "alpha-child.bin") || strings.Contains(body, "beta-child.bin") {
+		t.Fatalf("unexpected file rows: %s", body)
+	}
+	// The artifact-only search matches no artifact, so alpha appears only
+	// because its matched child file references it.
+	if !strings.Contains(body, alpha.ID) || strings.Contains(body, beta.ID) {
+		t.Fatalf("parent artifact of matching file missing from export: %s", body)
 	}
 }
