@@ -52,9 +52,20 @@ jobs:
               exit 1
             fi
           fi
-          if ! base_commit=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}"); then
-            echo "::error::The Biome comparison base is not an available commit."
-            exit 1
+          if ! base_commit=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}" 2>/dev/null); then
+            echo "::warning::Comparison base ${base_ref} is not available; falling back to the default branch merge base."
+            if ! base_ref=$(git merge-base HEAD "refs/remotes/origin/$DEFAULT_BRANCH"); then
+              echo "::error::Cannot determine the Biome comparison base from the default branch."
+              exit 1
+            fi
+            if [ "$base_ref" = "$(git rev-parse HEAD)" ]; then
+              echo "::error::The initial push has no comparison range against the default branch."
+              exit 1
+            fi
+            if ! base_commit=$(git rev-parse --verify --end-of-options "${base_ref}^{commit}"); then
+              echo "::error::The Biome comparison base is not an available commit."
+              exit 1
+            fi
           fi
           echo "BIOME_BASE_REF=$base_commit" >> "$GITHUB_ENV"
       - name: Set up Node.js

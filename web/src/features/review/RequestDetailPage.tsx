@@ -20,13 +20,21 @@ import type { Obj } from "@/types/common";
 import { includeSelectedAuthor } from "./authorSelection.js";
 import { ConversationLinks } from "./ConversationLinks";
 
+type RequestDetailPageProps = {
+	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	refresh: number;
+	notify: (message: string) => void;
+	role: string;
+	bumpRefresh?: () => void;
+};
+
 export function RequestDetailPage({
 	api,
 	refresh,
 	notify,
 	role,
 	bumpRefresh,
-}: any) {
+}: RequestDetailPageProps) {
 	const { id = "" } = useParams();
 	const nav = useNavigate();
 	const [localRefresh, setLocalRefresh] = useState(0);
@@ -190,9 +198,10 @@ export function RequestDetailPage({
 		setSelectedAuthor(null);
 		setAuthorEmail("");
 	}, [request?.id]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったらタイトルを同期する
 	useEffect(() => {
 		setTitle(request?.title || "");
-	}, [request?.title]);
+	}, [request?.id, request?.title]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったときだけ author 候補を読み直す
 	useEffect(() => {
 		if (request?.request_type !== "preservation") return;
@@ -398,7 +407,7 @@ export function RequestDetailPage({
 		}
 	}
 	async function beginPreservation() {
-		if (!request || !request.source_url || !terms) return;
+		if (!request?.source_url || !terms) return;
 		setPreserving(true);
 		setPreserveMessage("保全対象を準備しています…");
 		setCandidates([]);
@@ -436,7 +445,7 @@ export function RequestDetailPage({
 							size_bytes: 0,
 							media_type: "application/octet-stream",
 							source_url: request.source_url,
-							redistribution_policy: "unknown",
+							redistribution_policy: "unchecked",
 						}),
 					});
 				}
@@ -521,7 +530,7 @@ export function RequestDetailPage({
 								size_bytes: 0,
 								media_type: "application/octet-stream",
 								source_url: item.url,
-								redistribution_policy: "unknown",
+								redistribution_policy: "unchecked",
 							}),
 						});
 						file = created;
@@ -605,25 +614,23 @@ export function RequestDetailPage({
 		);
 	if (requestData.error || !request)
 		return (
-			<>
-				<Heading
-					eyebrow="申請詳細"
-					title="申請が見つかりません"
-					desc={
-						requestData.error ||
-						"一覧から削除されたか、表示権限がない可能性があります。"
-					}
-					actions={
-						<button
-							type="button"
-							className="secondary"
-							onClick={() => nav("/admin/requests")}
-						>
-							申請一覧へ戻る
-						</button>
-					}
-				/>
-			</>
+			<Heading
+				eyebrow="申請詳細"
+				title="申請が見つかりません"
+				desc={
+					requestData.error ||
+					"一覧から削除されたか、表示権限がない可能性があります。"
+				}
+				actions={
+					<button
+						type="button"
+						className="secondary"
+						onClick={() => nav("/admin/requests")}
+					>
+						申請一覧へ戻る
+					</button>
+				}
+			/>
 		);
 	return (
 		<div className="request-page">
@@ -653,53 +660,45 @@ export function RequestDetailPage({
 			<Heading
 				eyebrow="申請詳細"
 				title={
-					<>
-						<div
-							style={{
-								display: "flex",
-								flexDirection: "row",
-								justifyContent: "flex-start",
-								alignItems: "center",
-								gap: "4px",
+					<div
+						style={{
+							display: "flex",
+							flexDirection: "row",
+							justifyContent: "flex-start",
+							alignItems: "center",
+							gap: "4px",
+						}}
+					>
+						{isTitleEditing ? (
+							<input
+								maxLength={500}
+								value={title}
+								onChange={(v) => setTitle(v.target.value)}
+								placeholder="アップローダー・ファイル名"
+								aria-label="申請のタイトル(アップローダー・ファイル名)"
+							/>
+						) : (
+							title ||
+							request.linked_file_name ||
+							request.linked_artifact_title ||
+							"タイトル未入力の申請"
+						)}
+						<button
+							type="button"
+							aria-label={isTitleEditing ? "タイトルを保存" : "タイトルを編集"}
+							className="small-btn"
+							disabled={saving}
+							onClick={() => {
+								if (isTitleEditing) {
+									saveTitle(title);
+								} else {
+									setIsTitleEditing(true);
+								}
 							}}
 						>
-							{isTitleEditing ? (
-								<input
-									maxLength={500}
-									value={title}
-									onChange={(v) => setTitle(v.target.value)}
-									placeholder="アップローダー・ファイル名"
-									aria-label="申請のタイトル(アップローダー・ファイル名)"
-								/>
-							) : (
-								title ||
-								request.linked_file_name ||
-								request.linked_artifact_title ||
-								"タイトル未入力の申請"
-							)}
-							<button
-								type="button"
-								aria-label={
-									isTitleEditing ? "タイトルを保存" : "タイトルを編集"
-								}
-								className="small-btn"
-								disabled={saving}
-								onClick={() => {
-									if (isTitleEditing) {
-										saveTitle(title);
-									} else {
-										setIsTitleEditing(true);
-									}
-								}}
-							>
-								{isTitleEditing ? (
-									<SaveCheck size={12} />
-								) : (
-									<Pencil size={12} />
-								)}
-							</button>
-						</div>
-					</>
+							{isTitleEditing ? <SaveCheck size={12} /> : <Pencil size={12} />}
+						</button>
+					</div>
 				}
 				desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
 			/>

@@ -19,6 +19,7 @@ export function Status({ value }: { value: string }) {
 		in_review: ["確認中", "blue"],
 		allowed: ["再配布可", "green"],
 		restricted: ["制限あり", "red"],
+		unchecked: ["未確認", "amber"],
 		unknown: ["不明", "amber"],
 		in_progress: ["確認中", "blue"],
 		uncollected: ["未取得", "gray"],
@@ -30,7 +31,7 @@ export function Status({ value }: { value: string }) {
 	};
 	const [label, tone] = map[value] || [value || "—", "gray"];
 	return (
-		<span className={"badge " + tone}>
+		<span className={`badge ${tone}`}>
 			<i />
 			{label}
 		</span>

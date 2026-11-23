@@ -1,5 +1,6 @@
 -- Canonicalize GetUploader URLs, merge uploader Artifacts, and retain independent registries.
-BEGIN;
+-- Note: Atlas wraps each migration file in a transaction (--tx-mode file); do not
+-- add BEGIN/COMMIT here or Atlas fails with "pq: unexpected transaction status idle".
 
 -- Drain and block request transactions before acquiring locks on tables they
 -- may write later. ACCESS EXCLUSIVE conflicts with SELECT ... FOR UPDATE's
@@ -167,5 +168,3 @@ WHERE r.normalized_url = n.normalized_url;
 
 CREATE UNIQUE INDEX IF NOT EXISTS artifacts_getuploader_source_path_uidx
   ON artifacts (source_url) WHERE source_url LIKE '/%';
-
-COMMIT;

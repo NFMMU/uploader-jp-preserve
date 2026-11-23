@@ -25,15 +25,11 @@ var preservationStatuses = map[string]bool{
 	"degraded": true, "missing": true, "error": true,
 }
 
+// unchecked is the default state before a reviewer has examined the file.
+// Every policy state may be preserved; public redistribution still requires
+// the separate allowed policy and publication checks.
 var redistributionPolicies = map[string]bool{
-	"allowed": true, "restricted": true, "in_progress": true, "pending": true, "unknown": true,
-}
-
-// pending is the explicit "unconfirmed" state. Other policy states may be
-// preserved, but public redistribution still requires the separate allowed
-// policy and publication checks.
-func isUnconfirmedRedistributionPolicy(policy string) bool {
-	return policy == "pending"
+	"allowed": true, "restricted": true, "in_progress": true, "unchecked": true, "unknown": true,
 }
 
 // artifactCatalogQuery builds the artifact query shared by the catalog list
@@ -256,7 +252,7 @@ type fileObjectPayload struct {
 func (s *Server) validateFileObjectPayload(ctx context.Context, req *fileObjectPayload) (string, error) {
 	policy := strings.TrimSpace(req.RedistributionPolicy)
 	if policy == "" {
-		policy = "unknown"
+		policy = "unchecked"
 	}
 	if !redistributionPolicies[policy] {
 		return "", errors.New("invalid redistribution_policy")
@@ -412,8 +408,8 @@ func (s *Server) fileCatalogQuery(c *gin.Context) (*gorm.DB, error) {
 			query = query.Where("public_download_enabled = FALSE")
 		case "restricted":
 			query = query.Where("redistribution_policy = 'restricted'")
-		case "pending":
-			query = query.Where("redistribution_policy = 'pending'")
+		case "unchecked":
+			query = query.Where("redistribution_policy = 'unchecked'")
 		case "unknown":
 			query = query.Where("redistribution_policy = 'unknown'")
 		default:

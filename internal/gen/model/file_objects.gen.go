@@ -21,7 +21,7 @@ type FileObject struct {
 	Sha256                  *string        `gorm:"column:sha256;type:character varying(64)" json:"sha256"`
 	MediaType               *string        `gorm:"column:media_type;type:character varying(255)" json:"media_type"`
 	PreservationStatus      string         `gorm:"column:preservation_status;type:character varying(32);not null;default:uncollected" json:"preservation_status"`
-	RedistributionPolicy    string         `gorm:"column:redistribution_policy;type:character varying(32);not null;index:file_objects_redistribution_policy_idx,priority:1;default:unknown" json:"redistribution_policy"`
+	RedistributionPolicy    string         `gorm:"column:redistribution_policy;type:character varying(32);not null;index:file_objects_redistribution_policy_idx,priority:1;default:unchecked" json:"redistribution_policy"`
 	Representative          *string        `gorm:"column:representative;type:uuid" json:"representative"`
 	PublicDownloadEnabled   bool           `gorm:"column:public_download_enabled;type:boolean;not null" json:"public_download_enabled"`
 	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamp with time zone;not null;default:now()" json:"created_at"`
