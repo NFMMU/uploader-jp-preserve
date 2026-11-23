@@ -8,3 +8,5 @@ ALTER TABLE file_objects
   ADD CONSTRAINT file_objects_redistribution_policy_check
   CHECK (redistribution_policy IN ('allowed', 'restricted', 'in_progress', 'unchecked', 'unknown'))
   NOT VALID;
+
+DROP TABLE redistribution_unchecked_cutover;

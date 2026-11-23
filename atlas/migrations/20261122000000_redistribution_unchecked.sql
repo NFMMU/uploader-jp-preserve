@@ -6,6 +6,15 @@
 -- pending is kept in this interim CHECK: NOT VALID still enforces the CHECK on
 -- updated rows, and pending rows must remain updatable until the backfill in
 -- 20261122000100 finishes. The final CHECK removes pending afterwards.
+--
+-- The cutover marker lets the backfill tell pre-migration rows apart from rows
+-- written by the new application version while the migration is running.
+CREATE TABLE redistribution_unchecked_cutover (
+  cutover_at timestamptz NOT NULL
+);
+
+INSERT INTO redistribution_unchecked_cutover (cutover_at) VALUES (now());
+
 ALTER TABLE file_objects
   DROP CONSTRAINT IF EXISTS file_objects_redistribution_policy_check;
 
