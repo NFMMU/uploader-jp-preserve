@@ -26,30 +26,12 @@ async function fetchAllArtifactFiles(
 	api: ApiClient,
 	aid: string,
 ): Promise<Obj[]> {
-	const limit = 100;
-	const allFiles: Obj[] = [];
-	let page = 1;
-	let total: number | undefined;
-
-	while (total === undefined || allFiles.length < total) {
-		const result = await api(
-			`/catalog/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
-		);
-		const items: Obj[] = result.items || [];
-
-		allFiles.push(...items);
-
-		if (typeof result.total === "number") {
-			total = result.total;
-		} else if (items.length < limit) {
-			break;
-		}
-
-		if (items.length === 0) break;
-		page++;
-	}
-
-	return allFiles;
+	// all=true returns the artifact's files in one query, avoiding offset
+	// pagination drift and duplicate/missing rows while files are being added.
+	const result = await api(
+		`/catalog/files?artifact_id=${encodeURIComponent(aid)}&all=true`,
+	);
+	return (result.items || []) as Obj[];
 }
 
 export function RequestDetailPage({
