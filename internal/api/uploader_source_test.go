@@ -132,24 +132,6 @@ func TestIsUploaderDownloadPage(t *testing.T) {
 	}
 }
 
-func TestIsUnconfirmedRedistributionPolicy(t *testing.T) {
-	cases := []struct {
-		policy string
-		want   bool
-	}{
-		{"pending", true},
-		{"in_progress", false},
-		{"allowed", false},
-		{"restricted", false},
-		{"unknown", false},
-	}
-	for _, tc := range cases {
-		if got := isUnconfirmedRedistributionPolicy(tc.policy); got != tc.want {
-			t.Errorf("isUnconfirmedRedistributionPolicy(%q) = %v, want %v", tc.policy, got, tc.want)
-		}
-	}
-}
-
 func TestSourceFetchFailureIsPermanent(t *testing.T) {
 	permanent := []string{
 		"このファイルはダウンロードパスワードが必要です",

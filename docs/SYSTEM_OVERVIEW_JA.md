@@ -53,7 +53,7 @@ AND 正常な保存先が1つ以上ある
 主な状態：
 
 - `preservation_status`：未取得、保存待ち、保存済み、検証済み、劣化、欠損、エラーなど
-- `redistribution_policy`：許可、制限、確認中、保留、未確認など
+- `redistribution_policy`：許可、制限、確認中、未確認、不明
 - `public_download_enabled`：管理者が設定する公開フラグ
 - `representative`：再配布条件の確認担当者
 

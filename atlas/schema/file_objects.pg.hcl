@@ -47,7 +47,7 @@ table "file_objects" {
   column "redistribution_policy" {
     type = varchar(32)
     null = false
-    default = "unknown"
+    default = "unchecked"
   }
   column "representative" {
     type = uuid
@@ -123,7 +123,7 @@ table "file_objects" {
     expr = "preservation_status IN ('uncollected', 'queued', 'stored', 'verified', 'degraded', 'missing', 'error')"
   }
   check "file_objects_redistribution_policy_check" {
-    expr = "redistribution_policy IN ('allowed', 'restricted', 'in_progress', 'pending', 'unknown')"
+    expr = "redistribution_policy IN ('allowed', 'restricted', 'in_progress', 'unchecked', 'unknown')"
   }
   check "file_objects_size_bytes_check" {
     expr = "size_bytes >= 0"

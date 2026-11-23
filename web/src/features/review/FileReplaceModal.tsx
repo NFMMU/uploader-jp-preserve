@@ -19,7 +19,7 @@ export function FileReplaceModal({
 		media_type: file.media_type || "",
 		source_url: file.source_url || "",
 		description: "",
-		redistribution_policy: file.redistribution_policy || "unknown",
+		redistribution_policy: file.redistribution_policy || "unchecked",
 	});
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState("");
@@ -112,8 +112,8 @@ export function FileReplaceModal({
 							setForm({ ...form, redistribution_policy: e.target.value })
 						}
 					>
-						<option value="unknown">未確認</option>
-						<option value="pending">確認待ち</option>
+						<option value="unchecked">未確認</option>
+						<option value="unknown">不明</option>
 						<option value="in_progress">確認中</option>
 						<option value="allowed">許可</option>
 						<option value="restricted">制限付き許可</option>
