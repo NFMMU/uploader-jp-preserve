@@ -251,7 +251,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 		searchTerm, hostOnly := uploaderSourceSearchTerms(search)
 		requestSourceURL, _ := uploaderArtifactSearchKeys(search)
 		sourceURLMatch := gorm.Expr(`(strpos(COALESCE(public_requests.source_url, '') COLLATE public."case_insensitive", ?) > 0 OR
-			(? <> '' AND public_requests.source_url = ?))`, searchTerm, requestSourceURL, requestSourceURL)
+			(? <> '' AND public_requests.source_url COLLATE public."case_insensitive" = ?))`, searchTerm, requestSourceURL, requestSourceURL)
 		if hostOnly {
 			searchTerm = search
 			sourceURLMatch = gorm.Expr("public_requests.source_url LIKE '/%'")
