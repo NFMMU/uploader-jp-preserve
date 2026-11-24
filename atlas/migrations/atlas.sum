@@ -1,4 +1,4 @@
-h1:+SLRDyzv82IowctHzG4X31N2PoZQX76Bl+YJcLwSNAk=
+h1:wO9da/zTrVqYBcbBAcO4udSNv+FPtfg1Y+wjhWGJo20=
 20261023000000_initial.sql h1:Y6/tsH5XjbWC/RHVyTzBBcUvJUnghkptH5qhp0wHavk=
 20261023010000_mvp2_node_agent.sql h1:IFrAtyvLVhZZW0yT0gBuL0m7AyX0WSbnLT9+/CX0Ax8=
 20261023020000_mvp3_replication.sql h1:w/fesKmj/1CDPIOCM0BM4+CV659OrM7t7E/ef/FRqa8=
@@ -29,3 +29,4 @@ h1:+SLRDyzv82IowctHzG4X31N2PoZQX76Bl+YJcLwSNAk=
 20261122000300_redistribution_unchecked_pending_cleanup.sql h1:v2gAmZRsyELJiNr2Q6XNNzZ/EJ2GkVxIG3izi5Sa51w=
 20261122000400_redistribution_unchecked_validate.sql h1:AMJXcRkfizHAuIFmqV3qHYFixs1bm/p9eZjQHVlXzXs=
 20261124000000_placement_retire_marker.sql h1:XfytCvk7MM2q8QmpQwjs5Z3vcHNxhNHbEwSxeDOq9k0=
+20261124000100_task_first_claimed_at.sql h1:PojCu8X6R4swL5p9jiyTWkQalFPP0ohst2b4vkw7aeg=

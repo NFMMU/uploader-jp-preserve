@@ -430,9 +430,9 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 		}
 		perNode := 0
 		// Eligibility is filtered in SQL so a page full of ineligible files does
-		// not hide movable candidates further down the list. Additional pages are
-		// walked only while no move has been queued yet.
-		for page := 0; page < 5; page++ {
+		// not hide movable candidates further down the list. Pages are walked
+		// until the candidates are exhausted or the per-run move caps are hit.
+		for page := 0; ; page++ {
 			if moves >= maxRebalanceMovesPerRun || perNode >= maxRebalanceMovesPerNode {
 				break
 			}

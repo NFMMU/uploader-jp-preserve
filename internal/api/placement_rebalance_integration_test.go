@@ -281,3 +281,35 @@ func TestReconcileEndpointIsAsynchronous(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// TestClaimDoesNotRestoreRetriedRebalanceDelete covers an admin retry: the
+// retry resets attempt_count, but the task was claimed before and may already
+// have deleted the file. Such a copy must not be counted as verified again.
+func TestClaimDoesNotRestoreRetriedRebalanceDelete(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, hot, cold, _ := rebalanceFixture(t, db)
+	now := time.Now().UTC()
+	retryExec(t, db, "UPDATE nodes SET status = 'offline' WHERE id = ?", cold.ID)
+	retryExec(t, db, "UPDATE placements SET status = 'deleting', retire_requested_at = ? WHERE file_object_id = ? AND node_id = ?", now.Add(-10*time.Minute), file.ID, hot.ID)
+	claimedAt := now.Add(-20 * time.Minute)
+	task := model.Task{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &hot.ID, Status: "queued", AttemptCount: 0}
+	task.FirstClaimedAt = &claimedAt
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create retried delete task: %v", err)
+	}
+
+	response := replicaClaim(s, hot)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("unsafe retried claim = %d %s, want 204", response.Code, response.Body)
+	}
+	var restored struct {
+		Status string
+		Marker *time.Time
+	}
+	if err := db.Raw("SELECT status, retire_requested_at AS marker FROM placements WHERE file_object_id = ? AND node_id = ?", file.ID, hot.ID).Scan(&restored).Error; err != nil {
+		t.Fatalf("read placement: %v", err)
+	}
+	if restored.Status != "error" || restored.Marker != nil {
+		t.Fatalf("placement = %+v, want error with no marker", restored)
+	}
+}

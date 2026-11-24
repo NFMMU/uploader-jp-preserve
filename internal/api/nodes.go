@@ -1329,7 +1329,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 					// deleted it and lost the result, so it must not be counted as
 					// a healthy copy; reconciliation will repair it instead.
 					restored := map[string]any{"status": "error", "retire_requested_at": nil, "verified_at": nil}
-					if claimed.Task.Status == "queued" && claimed.Task.AttemptCount == 0 {
+					if claimed.Task.FirstClaimedAt == nil {
 						restored = map[string]any{"status": "verified", "retire_requested_at": nil}
 					}
 					if err := tx.Model(&model.Placement{}).Where("id = ?", targetPlacement.ID).Updates(restored).Error; err != nil {
@@ -1346,6 +1346,7 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 			claimed.Task.TargetNodeID = &node.ID
 		}
 		if err := tx.Exec(`UPDATE tasks SET status = 'running', attempt_count = attempt_count + 1,
+    first_claimed_at = COALESCE(first_claimed_at, now()),
     target_node_id = CASE WHEN task_type = 'source_fetch' AND target_node_id IS NULL THEN ? ELSE target_node_id END,
     lease_until = ?, lease_token = ?, last_error = NULL, updated_at = now() WHERE id = ?`,
 			node.ID, time.Now().UTC().Add(nodeLeaseDuration), leaseToken, claimed.Task.ID).Error; err != nil {
