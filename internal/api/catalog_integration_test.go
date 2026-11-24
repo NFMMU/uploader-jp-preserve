@@ -596,12 +596,35 @@ func TestExportCatalogIncludesParentOfMatchingFileIntegration(t *testing.T) {
 		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, "alpha-child.bin") || strings.Contains(body, "beta-child.bin") {
-		t.Fatalf("unexpected file rows: %s", body)
+	rows, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	if err != nil {
+		t.Fatalf("decode csv: %v", err)
+	}
+	var hasAlphaArtifact bool
+	var fileRows int
+	for _, row := range rows[1:] {
+		switch row[0] {
+		case "file":
+			fileRows++
+			if row[6] == "beta-child.bin" {
+				t.Fatalf("unexpected file row: %v", row)
+			}
+		case "artifact":
+			switch row[1] {
+			case alpha.ID:
+				hasAlphaArtifact = true
+			case beta.ID:
+				t.Fatalf("unrelated artifact leaked into export: %v", row)
+			}
+		}
+	}
+	if fileRows != 1 {
+		t.Fatalf("file rows=%d, want 1: %s", fileRows, body)
 	}
 	// The artifact-only search matches no artifact, so alpha appears only
-	// because its matched child file references it.
-	if !strings.Contains(body, alpha.ID) || strings.Contains(body, beta.ID) {
+	// because its matched child file references it. Checking the artifact row
+	// itself (not the file row's artifact_id) proves the parent was exported.
+	if !hasAlphaArtifact {
 		t.Fatalf("parent artifact of matching file missing from export: %s", body)
 	}
 }
