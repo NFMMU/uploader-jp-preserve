@@ -537,8 +537,7 @@ func TestExportCatalogFiltersIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode csv: %v", err)
 	}
-	var fileRows int
-	artifactTitles := map[string]bool{}
+	var fileRows, artifactRows int
 	for _, row := range rows[1:] {
 		switch row[0] {
 		case "file":
@@ -547,21 +546,19 @@ func TestExportCatalogFiltersIntegration(t *testing.T) {
 				t.Fatalf("unexpected file row: %v", row)
 			}
 		case "artifact":
-			artifactTitles[row[3]] = true
+			artifactRows++
+			if row[3] != "verified artifact" {
+				t.Fatalf("unexpected artifact row: %v", row)
+			}
 		default:
 			t.Fatalf("unexpected record type: %v", row)
 		}
 	}
-	if fileRows != 1 {
-		t.Fatalf("file rows=%d, want 1", fileRows)
+	if fileRows != 1 || artifactRows != 1 {
+		t.Fatalf("file rows=%d artifact rows=%d, want 1 and 1", fileRows, artifactRows)
 	}
-	// The artifact-only search is not narrowed by file filters, so both
-	// artifacts remain in the export.
-	if !artifactTitles["verified artifact"] || !artifactTitles["uncollected artifact"] {
-		t.Fatalf("artifact rows=%v, want both artifacts", artifactTitles)
-	}
-	if body := response.Body.String(); strings.Contains(body, "uncollected.bin") {
-		t.Fatalf("export leaked filtered-out file: %s", body)
+	if body := response.Body.String(); strings.Contains(body, "uncollected.bin") || strings.Contains(body, uncollected.ID) {
+		t.Fatalf("export leaked filtered-out rows: %s", body)
 	}
 
 	if response := export("/?format=csv&preservation_status=bogus"); response.Code != http.StatusBadRequest {

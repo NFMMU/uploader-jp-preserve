@@ -645,38 +645,27 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
 		return
 	}
-	artifactQuery := s.artifactCatalogQuery(c)
 	var artifacts []model.Artifact
-	if err := artifactQuery.Order("created_at ASC").Find(&artifacts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
-		return
-	}
-	if catalogFileFiltersActive(c) {
-		// File-level filters can match files whose parent artifact does not
-		// match the artifact-only search (for example, q matches a child file
-		// URL). Keep the artifact-only result and union in those parents. Fetch
-		// the extra IDs in bounded batches so a single query never carries more
-		// parameters than the extended protocol allows.
-		seen := make(map[string]struct{}, len(artifacts))
-		for _, artifact := range artifacts {
-			seen[artifact.ID] = struct{}{}
-		}
-		matched := make(map[string]struct{}, len(files))
-		missing := make([]string, 0, len(files))
+	if strings.TrimSpace(c.Query("q")) != "" || catalogFileFiltersActive(c) {
+		// When the file list is narrowed, export only the parent artifacts of
+		// the files that survived the filters. This also covers files matched
+		// through their own URL, whose parent artifact the artifact-only search
+		// may not match. Fetch IDs in bounded batches so a single query never
+		// carries more parameters than the extended protocol allows.
+		seen := make(map[string]struct{}, len(files))
+		matchedArtifactIDs := make([]string, 0, len(files))
 		for _, file := range files {
-			if _, ok := matched[file.ArtifactID]; ok {
+			if _, ok := seen[file.ArtifactID]; ok {
 				continue
 			}
-			matched[file.ArtifactID] = struct{}{}
-			if _, ok := seen[file.ArtifactID]; !ok {
-				missing = append(missing, file.ArtifactID)
-			}
+			seen[file.ArtifactID] = struct{}{}
+			matchedArtifactIDs = append(matchedArtifactIDs, file.ArtifactID)
 		}
 		const artifactBatchSize = 1000
-		for start := 0; start < len(missing); start += artifactBatchSize {
-			end := min(start+artifactBatchSize, len(missing))
+		for start := 0; start < len(matchedArtifactIDs); start += artifactBatchSize {
+			end := min(start+artifactBatchSize, len(matchedArtifactIDs))
 			var batch []model.Artifact
-			if err := s.db.WithContext(c.Request.Context()).Where("id IN ?", missing[start:end]).Find(&batch).Error; err != nil {
+			if err := s.db.WithContext(c.Request.Context()).Where("id IN ?", matchedArtifactIDs[start:end]).Find(&batch).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
 				return
 			}
@@ -685,6 +674,9 @@ func (s *Server) exportCatalog(c *gin.Context) {
 		sort.SliceStable(artifacts, func(i, j int) bool {
 			return artifacts[i].CreatedAt.Before(artifacts[j].CreatedAt)
 		})
+	} else if err := s.artifactCatalogQuery(c).Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+		return
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
