@@ -232,7 +232,8 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 		// online for five minutes. This prevents cleanup immediately after a node recovers.
 		stableCutoff := time.Now().UTC().Add(-surplusReplicaCooldown)
 		for _, placement := range healthy {
-			if placement.OnlineSince == nil || placement.OnlineSince.After(stableCutoff) {
+			if placement.OnlineSince == nil || placement.OnlineSince.After(stableCutoff) ||
+				placement.VerifiedAt == nil || placement.VerifiedAt.After(stableCutoff) {
 				return nil
 			}
 		}
@@ -254,10 +255,6 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 				break
 			}
 		}
-		if candidateToDelete.VerifiedAt == nil || candidateToDelete.VerifiedAt.After(stableCutoff) {
-			return nil
-		}
-
 		result := tx.Model(&model.Placement{}).Where("id = ? AND status = 'verified'", candidateToDelete.PlacementID).Update("status", "deleting")
 		if result.Error != nil {
 			return result.Error

@@ -29,6 +29,9 @@ type Server struct {
 	placementReconcileMu    sync.Mutex
 	placementReconcileGate  chan struct{}
 	placementReconcileState placementReconcileSnapshot
+	// lastManualReconcile keeps the admin-triggered result so a periodic run
+	// cannot overwrite what the screen is waiting for.
+	lastManualReconcile placementReconcileSnapshot
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {

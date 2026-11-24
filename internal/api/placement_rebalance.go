@@ -247,9 +247,15 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 		if err := tx.Where("file_object_id = ?", fileID).Find(&placements).Error; err != nil {
 			return err
 		}
+		placementByNode := make(map[string]model.Placement, len(placements))
 		occupied := make(map[string]bool, len(placements))
 		for _, placement := range placements {
-			occupied[placement.NodeID] = true
+			placementByNode[placement.NodeID] = placement
+			// A deleted placement no longer holds data, so its node is a valid
+			// destination again; the row will be reused rather than recreated.
+			if placement.Status != "deleted" {
+				occupied[placement.NodeID] = true
+			}
 		}
 
 		var healthy []struct {
@@ -341,7 +347,16 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 			return err
 		}
 		storageKey := "objects/" + fileID + "/" + taskID
-		if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: targetNodeID, StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
+		if existing, ok := placementByNode[target.ID]; ok {
+			// Reuse the row (for example a deleted placement) so the
+			// placements_file_node_key unique index is not violated.
+			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
+				"storage_key": storageKey, "sha256": file.Sha256, "status": "queued",
+				"verified_at": nil, "retire_requested_at": nil,
+			}).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: targetNodeID, StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
 			return err
 		}
 		result := tx.Model(&model.Placement{}).
@@ -372,7 +387,7 @@ func reservedBytesByNode(tx *gorm.DB) (map[string]int64, error) {
 		SELECT t.target_node_id AS node_id, COALESCE(SUM(f.size_bytes), 0) AS reserved
 		FROM tasks AS t
 		JOIN file_objects AS f ON f.id = t.file_object_id
-		WHERE t.status IN ('queued','running') AND t.target_node_id IS NOT NULL
+		WHERE t.status IN ('queued','running') AND t.task_type <> 'delete' AND t.target_node_id IS NOT NULL
 		GROUP BY t.target_node_id
 	`).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -414,48 +429,66 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 			break
 		}
 		perNode := 0
-		var candidates []struct {
-			FileObjectID string
-			SizeBytes    int64
-		}
-		if err := s.db.WithContext(ctx).Raw(`
-			SELECT p.file_object_id, f.size_bytes
-			FROM placements AS p
-			JOIN file_objects AS f ON f.id = p.file_object_id
-			WHERE p.node_id = ? AND p.status = 'verified' AND p.retire_requested_at IS NULL
-			  AND f.deleted_at IS NULL AND f.deletion_requested_at IS NULL
-			  AND NOT EXISTS (
-			    SELECT 1 FROM tasks AS t
-			    WHERE t.file_object_id = f.id AND t.status IN ('queued','running')
-			  )
-			ORDER BY f.size_bytes DESC, p.created_at ASC
-			LIMIT ?
-		`, node.ID, rebalanceCandidateLimit).Scan(&candidates).Error; err != nil {
-			return err
-		}
-		for _, candidate := range candidates {
+		// Eligibility is filtered in SQL so a page full of ineligible files does
+		// not hide movable candidates further down the list. Additional pages are
+		// walked only while no move has been queued yet.
+		for page := 0; page < 5; page++ {
 			if moves >= maxRebalanceMovesPerRun || perNode >= maxRebalanceMovesPerNode {
 				break
 			}
-			reason, scheduled, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID)
-			if err != nil {
-				if stats != nil {
-					stats.Errors++
-				}
-				if s.logger != nil {
-					s.logger.Warn("placement_rebalance_failed", "file_object_id", candidate.FileObjectID, "error", err)
-				}
-				continue
+			var candidates []struct {
+				FileObjectID string
+				SizeBytes    int64
 			}
-			if scheduled {
-				moves++
-				perNode++
-				if stats != nil {
-					stats.RebalanceMoves++
-				}
-				continue
+			if err := s.db.WithContext(ctx).Raw(`
+				SELECT p.file_object_id, f.size_bytes
+				FROM placements AS p
+				JOIN file_objects AS f ON f.id = p.file_object_id
+				WHERE p.node_id = ? AND p.status = 'verified' AND p.retire_requested_at IS NULL
+				  AND f.deleted_at IS NULL AND f.deletion_requested_at IS NULL
+				  AND NOT EXISTS (
+				    SELECT 1 FROM tasks AS t
+				    WHERE t.file_object_id = f.id AND t.status IN ('queued','running')
+				  )
+				  AND (
+				    SELECT count(*) FROM placements AS p2
+				    JOIN nodes AS n2 ON n2.id = p2.node_id
+				    WHERE p2.file_object_id = f.id AND p2.status = 'verified'
+				      AND p2.retire_requested_at IS NULL
+				      AND n2.status = 'online' AND n2.last_seen_at >= ?
+				  ) = ?
+				ORDER BY f.size_bytes DESC, p.created_at ASC
+				LIMIT ? OFFSET ?
+			`, node.ID, freshCutoff, requiredReplicaCount, rebalanceCandidateLimit, page*rebalanceCandidateLimit).Scan(&candidates).Error; err != nil {
+				return err
 			}
-			stats.skip(reason)
+			for _, candidate := range candidates {
+				if moves >= maxRebalanceMovesPerRun || perNode >= maxRebalanceMovesPerNode {
+					break
+				}
+				reason, scheduled, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID)
+				if err != nil {
+					if stats != nil {
+						stats.Errors++
+					}
+					if s.logger != nil {
+						s.logger.Warn("placement_rebalance_failed", "file_object_id", candidate.FileObjectID, "error", err)
+					}
+					continue
+				}
+				if scheduled {
+					moves++
+					perNode++
+					if stats != nil {
+						stats.RebalanceMoves++
+					}
+					continue
+				}
+				stats.skip(reason)
+			}
+			if len(candidates) < rebalanceCandidateLimit {
+				break
+			}
 		}
 	}
 	return nil
@@ -551,7 +584,21 @@ func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, no
 				Count(&pending).Error; err != nil {
 				return err
 			}
-			if pending == 0 {
+			// A replication task that failed for good leaves its target placement
+			// queued forever. Treat the move as finished so the marker is not
+			// stuck and the stale placement cannot block a later repair.
+			var failedReplicate int64
+			if err := tx.Model(&model.Task{}).
+				Where("file_object_id = ? AND task_type = 'replicate' AND status = 'failed' AND created_at >= ?", fileID, requestedAt).
+				Count(&failedReplicate).Error; err != nil {
+				return err
+			}
+			if pending == 0 || failedReplicate > 0 {
+				if err := tx.Model(&model.Placement{}).
+					Where("file_object_id = ? AND node_id <> ? AND status IN ('queued','running','stored')", fileID, nodeID).
+					Update("status", "error").Error; err != nil {
+					return err
+				}
 				reason := "Rebalance move was abandoned before a replacement copy was verified"
 				if err := tx.Model(&model.Placement{}).Where("id = ?", placementID).Update("retire_requested_at", nil).Error; err != nil {
 					return err
@@ -700,6 +747,9 @@ func (s *Server) finishReconcile(runID string, counts placementReconcileStats, e
 	if err != nil {
 		s.placementReconcileState.Error = err.Error()
 	}
+	if s.placementReconcileState.Trigger == "manual" {
+		s.lastManualReconcile = s.placementReconcileState
+	}
 }
 
 func (s *Server) currentReconcileRunID() string {
@@ -727,7 +777,14 @@ func (s *Server) executeReconcile(runID string, timeout time.Duration, allowReba
 func (s *Server) reconcileSnapshot() gin.H {
 	s.placementReconcileMu.Lock()
 	state := s.placementReconcileState
+	lastManual := s.lastManualReconcile
 	s.placementReconcileMu.Unlock()
+
+	// The screen polls after an admin click, so expose that run's result even
+	// when a periodic run starts or finishes before the next poll.
+	if !(state.Running && state.Trigger == "manual") && lastManual.RunID != "" {
+		state = lastManual
+	}
 
 	counts := state.Counts
 	if counts.Reasons == nil {

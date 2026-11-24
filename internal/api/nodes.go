@@ -1026,7 +1026,6 @@ func (s *Server) retryFailedTask(
 	})
 }
 
-
 // surplusDeletionSafeTx checks the same safety threshold for retrying and
 // claiming a surplus-replica deletion. When lockPlacements is true, it locks
 // the currently qualifying placements and nodes before counting them, so the
@@ -1040,7 +1039,7 @@ func surplusDeletionSafeTx(tx *gorm.DB, fileID, targetNodeID string, now time.Ti
 	}
 	if lockPlacements {
 		var locked []struct {
-			ID         string
+			ID          string
 			OnlineSince *time.Time
 			VerifiedAt  *time.Time
 			LastSeenAt  *time.Time
@@ -1325,11 +1324,15 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 					return err
 				}
 				if rebalanceDelete {
-					// The replacement copy is not safe to rely on yet. Keep the
-					// original replica and cancel the move instead of deleting data.
-					if err := tx.Model(&model.Placement{}).Where("id = ?", targetPlacement.ID).Updates(map[string]any{
-						"status": "verified", "retire_requested_at": nil,
-					}).Error; err != nil {
+					// Only a task that was never claimed can be trusted to have
+					// left the file in place. A previously claimed task may have
+					// deleted it and lost the result, so it must not be counted as
+					// a healthy copy; reconciliation will repair it instead.
+					restored := map[string]any{"status": "error", "retire_requested_at": nil, "verified_at": nil}
+					if claimed.Task.Status == "queued" && claimed.Task.AttemptCount == 0 {
+						restored = map[string]any{"status": "verified", "retire_requested_at": nil}
+					}
+					if err := tx.Model(&model.Placement{}).Where("id = ?", targetPlacement.ID).Updates(restored).Error; err != nil {
 						return err
 					}
 				} else if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, *claimed.Task.TargetNodeID).Update("status", "error").Error; err != nil {

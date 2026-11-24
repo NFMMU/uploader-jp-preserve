@@ -66,10 +66,11 @@ export function summarizeReconcile(status: ReconcileStatus | null): string {
 	const detail = top
 		? `（主な見送り理由: ${reasonLabels[top[0]] || top[0]} ×${top[1]}）`
 		: "";
+	const errorDetail = counts.errors ? `（エラー ${counts.errors}件）` : "";
 	if (parts.length === 0) {
-		return `保存先の変更はありません${detail}`;
+		return `保存先の変更はありません${detail}${errorDetail}`;
 	}
-	return `調整しました: ${parts.join(" / ")}${detail}`;
+	return `調整しました: ${parts.join(" / ")}${detail}${errorDetail}`;
 }
 
 // useReconcile starts an asynchronous placement reconciliation and polls its
