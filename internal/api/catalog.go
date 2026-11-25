@@ -370,7 +370,7 @@ func (s *Server) fileCatalogQuery(c *gin.Context) (*gorm.DB, error) {
 			OR original_filename COLLATE public."case_insensitive" LIKE ?
 			OR COALESCE(sha256, '') COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND file_objects.source_url = ?)
-			OR file_objects.source_url COLLATE "case_insensitive" LIKE ?
+			OR file_objects.source_url COLLATE public."case_insensitive" LIKE ?
 			OR artifact_id IN (
 				SELECT id FROM artifacts
 				WHERE CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ?

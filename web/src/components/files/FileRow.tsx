@@ -1,15 +1,12 @@
 import { Files } from "lucide-react";
 import React, { useState } from "react";
 import { publicAPI } from "@/api/admin";
+import { saveCatalogFileContent } from "@/api/download";
 import { Modal } from "@/components/common/Modal";
 import { Status } from "@/components/common/Status";
 import { FileReplaceModal } from "@/features/review/FileReplaceModal";
 import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
-
-type SaveFilePicker = (options: { suggestedName: string }) => Promise<{
-	createWritable: () => Promise<WritableStream<Uint8Array>>;
-}>;
 
 export function FileRow({
 	x,
@@ -50,81 +47,13 @@ export function FileRow({
 	async function download() {
 		setBusy(true);
 		setMessage("準備中…");
-		let writable: WritableStream<Uint8Array> | undefined;
 		try {
-			const pickerWindow = window as Window & {
-				showSaveFilePicker?: SaveFilePicker;
-			};
-			if (!pickerWindow.showSaveFilePicker)
-				throw new Error(
-					"このブラウザーはストリーム保存に対応していません。HTTPS接続でChromeまたはEdgeをご利用ください。",
-				);
-			// The picker requires a user gesture, so open it before preparing the job.
-			const handle = await pickerWindow.showSaveFilePicker({
-				suggestedName: x.original_filename,
-			});
-			const created = await publicAPI<{
-				job: { id: string };
-				access_token: string;
-			}>(`/catalog/files/${x.id}/downloads`, { method: "POST" });
-			let ready = false;
-			for (let attempt = 0; attempt < 90; attempt += 1) {
-				await new Promise((resolve) => window.setTimeout(resolve, 2000));
-				const status = await publicAPI<{ status: string; last_error?: string }>(
-					`/catalog/downloads/${created.job.id}`,
-					{
-						headers: {
-							"Download-Authorization": `Bearer ${created.access_token}`,
-						},
-					},
-				);
-				if (status.status === "ready") {
-					ready = true;
-					break;
-				}
-				if (status.status === "failed" || status.status === "expired")
-					throw new Error(
-						"ダウンロードを準備できませんでした。時間をおいて再度お試しください。",
-					);
-				setMessage("準備中…");
-			}
-			if (!ready)
-				throw new Error(
-					"準備に時間がかかっています。時間をおいて再度お試しください。",
-				);
-			writable = await handle.createWritable();
-			const response = await fetch(
-				`/api/v1/catalog/downloads/${created.job.id}/content`,
-				{
-					headers: {
-						"Download-Authorization": `Bearer ${created.access_token}`,
-					},
-					credentials: "same-origin",
-				},
+			await saveCatalogFileContent(
+				{ id: String(x.id), original_filename: x.original_filename },
+				setMessage,
 			);
-			if (!response.ok) {
-				let detail = "";
-				try {
-					detail = (await response.json()).error || "";
-				} catch {
-					/* no body */
-				}
-				throw new Error(detail || "ダウンロードに失敗しました。");
-			}
-			if (!response.body)
-				throw new Error("ダウンロードの内容を取得できませんでした。");
-			setMessage("保存中…");
-			await response.body.pipeTo(writable);
-			setMessage("ファイルを保存しました");
-		} catch (e) {
-			if (writable) await writable.abort().catch(() => {});
-			setMessage(
-				e instanceof DOMException && e.name === "AbortError"
-					? "ダウンロードをキャンセルしました"
-					: e instanceof Error
-						? e.message
-						: "エラーが発生しました",
-			);
+		} catch {
+			/* saveCatalogFileContent reports a user-facing message */
 		} finally {
 			setBusy(false);
 		}

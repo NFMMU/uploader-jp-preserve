@@ -12,6 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { downloadRequestIntakeFile } from "@/api/admin";
+import { saveCatalogFileContent } from "@/api/download";
 import { Heading } from "@/components/common/Heading";
 import { Status } from "@/components/common/Status";
 import { useData } from "@/hooks/useData";
@@ -19,14 +20,29 @@ import { bytes, date } from "@/lib/format";
 import type { Obj } from "@/types/common";
 import { includeSelectedAuthor } from "./authorSelection.js";
 import { ConversationLinks } from "./ConversationLinks";
+import { ReviewAssist } from "./ReviewAssist";
+
+type ApiClient = (path: string, options?: RequestInit) => Promise<Obj>;
 
 type RequestDetailPageProps = {
-	api: (path: string, options?: RequestInit) => Promise<Obj>;
+	api: ApiClient;
 	refresh: number;
 	notify: (message: string) => void;
 	role: string;
 	bumpRefresh?: () => void;
 };
+
+async function fetchAllArtifactFiles(
+	api: ApiClient,
+	aid: string,
+): Promise<Obj[]> {
+	// all=true returns the artifact's files in one query, avoiding offset
+	// pagination drift and duplicate/missing rows while files are being added.
+	const result = await api(
+		`/catalog/files?artifact_id=${encodeURIComponent(aid)}&all=true`,
+	);
+	return (result.items || []) as Obj[];
+}
 
 export function RequestDetailPage({
 	api,
@@ -58,32 +74,36 @@ export function RequestDetailPage({
 	const [filesLoading, setFilesLoading] = useState(false);
 	const [filesError, setFilesError] = useState("");
 
-	async function fetchAllArtifactFiles(aid: string): Promise<Obj[]> {
-		const limit = 100;
-		const allFiles: Obj[] = [];
-		let page = 1;
-		let total: number | undefined;
+	// アシストの進捗判定は表示ページではなく全関連ファイルで行う。
+	const [assistFiles, setAssistFiles] = useState<Obj[]>([]);
+	const [assistFilesLoading, setAssistFilesLoading] = useState(false);
+	const [assistFilesError, setAssistFilesError] = useState("");
 
-		while (total === undefined || allFiles.length < total) {
-			const result = await api(
-				`/catalog/files?artifact_id=${encodeURIComponent(aid)}&page=${page}&limit=${limit}`,
-			);
-			const items: Obj[] = result.items || [];
-
-			allFiles.push(...items);
-
-			if (typeof result.total === "number") {
-				total = result.total;
-			} else if (items.length < limit) {
-				break;
-			}
-
-			if (items.length === 0) break;
-			page++;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh は全件を再集計するための意図的な依存
+	useEffect(() => {
+		if (!artifactID) {
+			setAssistFiles([]);
+			setAssistFilesError("");
+			setAssistFilesLoading(false);
+			return;
 		}
-
-		return allFiles;
-	}
+		let cancelled = false;
+		setAssistFilesLoading(true);
+		setAssistFilesError("");
+		fetchAllArtifactFiles(api, artifactID)
+			.then((all) => {
+				if (!cancelled) setAssistFiles(all);
+			})
+			.catch((e: Error) => {
+				if (!cancelled) setAssistFilesError(e.message);
+			})
+			.finally(() => {
+				if (!cancelled) setAssistFilesLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [api, artifactID, refresh, localRefresh]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh は再取得のトリガー、linked_file_name は申請切替の検知用
 	useEffect(() => {
@@ -178,6 +198,7 @@ export function RequestDetailPage({
 	const [terms, setTerms] = useState(false);
 	const [preserving, setPreserving] = useState(false);
 	const [preserveMessage, setPreserveMessage] = useState("");
+	const [downloadingFileID, setDownloadingFileID] = useState("");
 	const [intakeIngesting, setIntakeIngesting] = useState(false);
 	const [intakeIngestMessage, setIntakeIngestMessage] = useState("");
 	const [candidates, setCandidates] = useState<Obj[]>([]);
@@ -241,6 +262,25 @@ export function RequestDetailPage({
 			notify((e as Error).message);
 		} finally {
 			setAuthorsLoadingMore(false);
+		}
+	}
+
+	async function downloadRelatedFile(file: Obj) {
+		if (downloadingFileID) return;
+		setDownloadingFileID(String(file.id));
+		let message = "";
+		try {
+			await saveCatalogFileContent(
+				{ id: String(file.id), original_filename: file.original_filename },
+				(next) => {
+					message = next;
+				},
+			);
+			notify(message || "ファイルを保存しました");
+		} catch (e) {
+			notify(message || (e as Error).message);
+		} finally {
+			setDownloadingFileID("");
 		}
 	}
 
@@ -427,7 +467,7 @@ export function RequestDetailPage({
 					}
 				}
 				if (!file) {
-					const current = await fetchAllArtifactFiles(aid);
+					const current = await fetchAllArtifactFiles(api, aid);
 					file = current.find((x: Obj) => x.source_url === request.source_url);
 				}
 
@@ -509,7 +549,7 @@ export function RequestDetailPage({
 			skipped = 0;
 		const errors: string[] = [];
 		try {
-			const existing = await fetchAllArtifactFiles(aid);
+			const existing = await fetchAllArtifactFiles(api, aid);
 			let linked = String(request.file_object_id || "");
 			for (const item of candidates.filter((x: Obj) =>
 				selectedURLs.includes(x.url),
@@ -702,6 +742,18 @@ export function RequestDetailPage({
 				}
 				desc={`受付日時：${date(request.created_at)}　／　申請ID：${request.id}`}
 			/>
+			{request.request_type === "preservation" &&
+				(role === "admin" || role === "reviewer") && (
+					<ReviewAssist
+						request={request}
+						allFiles={assistFiles}
+						filesLoading={assistFilesLoading}
+						filesError={assistFilesError}
+						role={role}
+						artifactID={artifactID}
+						navigate={nav}
+					/>
+				)}
 			<div className="request-page-grid">
 				<div className="request-page-main">
 					<section className="panel request-info-panel">
@@ -868,6 +920,18 @@ export function RequestDetailPage({
 												</span>
 											</div>
 										</div>
+										{file.preservation_status === "verified" && (
+											<button
+												type="button"
+												className="secondary"
+												disabled={!!downloadingFileID}
+												onClick={() => downloadRelatedFile(file)}
+											>
+												{downloadingFileID === String(file.id)
+													? "準備中…"
+													: "ダウンロード"}
+											</button>
+										)}
 										<button
 											type="button"
 											className="secondary"
