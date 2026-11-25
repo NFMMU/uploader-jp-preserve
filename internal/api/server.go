@@ -32,8 +32,8 @@ type Server struct {
 	// lastManualReconcile keeps the admin-triggered result so a periodic run
 	// cannot overwrite what the screen is waiting for.
 	lastManualReconcile placementReconcileSnapshot
-	// reconcileHistory answers a poll for a specific run_id even after a later
-	// run has started.
+	// reconcileHistory keeps recent admin-triggered results so a poll for a
+	// specific run_id survives later runs. Scheduled runs are not stored.
 	reconcileHistory []placementReconcileSnapshot
 	// reconcileRunHook lets tests hold a run at a known point. Nil in production.
 	reconcileRunHook func()

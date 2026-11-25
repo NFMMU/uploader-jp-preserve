@@ -868,12 +868,14 @@ func (s *Server) finishReconcile(runID string, counts placementReconcileStats, e
 	if err != nil {
 		s.placementReconcileState.Error = err.Error()
 	}
+	// Only admin-triggered runs are kept for later polling. Scheduled runs must
+	// not push a result the screen is waiting for out of the bounded history.
 	if s.placementReconcileState.Trigger == "manual" {
 		s.lastManualReconcile = s.placementReconcileState
-	}
-	s.reconcileHistory = append(s.reconcileHistory, s.placementReconcileState)
-	if len(s.reconcileHistory) > 10 {
-		s.reconcileHistory = s.reconcileHistory[len(s.reconcileHistory)-10:]
+		s.reconcileHistory = append(s.reconcileHistory, s.placementReconcileState)
+		if len(s.reconcileHistory) > 20 {
+			s.reconcileHistory = s.reconcileHistory[len(s.reconcileHistory)-20:]
+		}
 	}
 }
 
@@ -911,6 +913,11 @@ func (s *Server) reconcileSnapshot(runID string) gin.H {
 					state, found = entry, true
 					break
 				}
+			}
+			if !found && lastManual.RunID == runID {
+				// Keep answering for the admin's own run even after the bounded
+				// history has been overwritten by later periodic runs.
+				state, found = lastManual, true
 			}
 			if !found {
 				return gin.H{"status": "unknown", "run_id": runID}

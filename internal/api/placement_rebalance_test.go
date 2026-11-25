@@ -139,3 +139,46 @@ func TestRankRebalanceTargetsExactTwentyPointGap(t *testing.T) {
 		t.Fatalf("ranked = %+v, want only the exact 20-point target", ranked)
 	}
 }
+
+// TestReconcileRunIDLookupSurvivesLaterRuns covers a poll that arrives after
+// another run has started and after many runs have pushed the result out of the
+// bounded history.
+func TestReconcileRunIDLookupSurvivesLaterRuns(t *testing.T) {
+	s := &Server{}
+	first, ok := s.reserveManualReconcile("admin@example.invalid")
+	if !ok {
+		t.Fatal("manual run was not reserved")
+	}
+	s.finishReconcile(first, newPlacementReconcileStats(), nil)
+
+	// A periodic run starts before the screen polls.
+	scheduled, ok := s.reserveScheduledReconcile()
+	if !ok {
+		t.Fatal("scheduled run was not reserved")
+	}
+	if status := s.reconcileSnapshot(first)["status"]; status != "completed" {
+		t.Fatalf("status while a later run is in progress = %v, want completed", status)
+	}
+	s.finishReconcile(scheduled, newPlacementReconcileStats(), nil)
+
+	// A second manual run starts while the screen still polls for the first.
+	second, ok := s.reserveManualReconcile("admin@example.invalid")
+	if !ok {
+		t.Fatal("second manual run was not reserved")
+	}
+	if status := s.reconcileSnapshot(first)["status"]; status != "completed" {
+		t.Fatalf("status while a later manual run is in progress = %v, want completed", status)
+	}
+	s.finishReconcile(second, newPlacementReconcileStats(), nil)
+	// Many periodic runs then push the bounded history past its limit.
+	for range 12 {
+		id, ok := s.reserveScheduledReconcile()
+		if !ok {
+			continue
+		}
+		s.finishReconcile(id, newPlacementReconcileStats(), nil)
+	}
+	if status := s.reconcileSnapshot(first)["status"]; status != "completed" {
+		t.Fatalf("status after history overflow = %v, want completed", status)
+	}
+}
