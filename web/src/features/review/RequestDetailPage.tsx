@@ -1,4 +1,14 @@
-import { ExternalLink, Files, Pencil, SaveCheck } from "lucide-react";
+import {
+	Check,
+	Copy,
+	ExternalLink,
+	Eye,
+	EyeOff,
+	Files,
+	KeyRound,
+	Pencil,
+	SaveCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { downloadRequestIntakeFile } from "@/api/admin";
@@ -75,7 +85,7 @@ export function RequestDetailPage({
 		return allFiles;
 	}
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh はファイル一覧を再取得するための意図的な依存
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh/localRefresh は再取得のトリガー、linked_file_name は申請切替の検知用
 	useEffect(() => {
 		let cancelled = false;
 
@@ -137,7 +147,7 @@ export function RequestDetailPage({
 		localRefresh,
 	]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったらページを先頭に戻す
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 対象の作品・ファイルが変わったらページを先頭へ戻す
 	useEffect(() => {
 		setFilesPage(1);
 	}, [artifactID, request?.file_object_id, request?.linked_file_name]);
@@ -159,6 +169,8 @@ export function RequestDetailPage({
 	const createdCredentials = request
 		? createdCredentialsByRequestID[request.id]
 		: undefined;
+	const [showCreatedPassword, setShowCreatedPassword] = useState(false);
+	const [copiedCredentialField, setCopiedCredentialField] = useState("");
 	const [reason, setReason] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [password, setPassword] = useState("");
@@ -172,14 +184,14 @@ export function RequestDetailPage({
 	const [selectedURLs, setSelectedURLs] = useState<string[]>([]);
 	const [isTitleEditing, setIsTitleEditing] = useState<boolean>(false);
 	const [title, setTitle] = useState<string>("タイトル未入力の申請");
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請の状態が変わった時だけ入力欄を初期化する
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請の id/status が変わったときだけ対応状態を同期する
 	useEffect(() => {
 		if (request) {
 			setStatus(request.status === "pending" ? "in_review" : request.status);
 			setReason("");
 		}
 	}, [request?.id, request?.status]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったら author 選択を初期化する
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 別の申請を開いたら author 入力を初期化する
 	useEffect(() => {
 		setAuthorMode("existing");
 		setAuthorUserID("");
@@ -190,7 +202,7 @@ export function RequestDetailPage({
 	useEffect(() => {
 		setTitle(request?.title || "");
 	}, [request?.id, request?.title]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が切り替わった時だけ author 候補を再取得する
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 申請が変わったときだけ author 候補を読み直す
 	useEffect(() => {
 		if (request?.request_type !== "preservation") return;
 		let cancelled = false;
@@ -213,7 +225,7 @@ export function RequestDetailPage({
 		return () => {
 			cancelled = true;
 		};
-	}, [request?.id, request?.request_type]);
+	}, [api, notify, request?.id, request?.request_type]);
 
 	async function loadMoreAuthors() {
 		if (authorsLoadingMore || !authorsHasMore) return;
@@ -321,6 +333,8 @@ export function RequestDetailPage({
 				}),
 			});
 			if (result.initial_password) {
+				setShowCreatedPassword(false);
+				setCopiedCredentialField("");
 				setCreatedCredentialsByRequestID((current) => ({
 					...current,
 					[requestID]: {
@@ -337,6 +351,19 @@ export function RequestDetailPage({
 			notify((e as Error).message);
 		} finally {
 			setSaving(false);
+		}
+	}
+	async function copyCredential(value: string, field: string) {
+		try {
+			await navigator.clipboard.writeText(value);
+			setCopiedCredentialField(field);
+			window.setTimeout(() => {
+				setCopiedCredentialField((current) =>
+					current === field ? "" : current,
+				);
+			}, 1600);
+		} catch {
+			notify("クリップボードにコピーできませんでした");
 		}
 	}
 	async function ensureArtifact(req: Obj) {
@@ -910,43 +937,127 @@ export function RequestDetailPage({
 					)}
 				</div>
 				{createdCredentials && (
-					<section className="panel request-action-panel">
-						<h2>Authorアカウントを作成しました</h2>
-						<p>
-							初期パスワードはこの画面でのみ表示されます。安全な方法で本人に共有してください。
+					<section
+						className="panel author-credentials"
+						aria-labelledby="author-credentials-title"
+					>
+						<div className="author-credentials-head">
+							<span className="author-credentials-icon" aria-hidden="true">
+								<KeyRound size={18} />
+							</span>
+							<div>
+								<h2 id="author-credentials-title">
+									Authorアカウントを作成しました
+								</h2>
+								<p>
+									初期パスワードはこの画面でのみ表示されます。安全な方法で本人に共有してください。
+								</p>
+							</div>
+						</div>
+						<div className="author-credentials-fields">
+							<div className="author-credential-field">
+								<span className="author-credential-label">メールアドレス</span>
+								<div className="author-credential-value">
+									<code>{createdCredentials.email}</code>
+									<button
+										type="button"
+										className="credential-btn"
+										onClick={() =>
+											copyCredential(createdCredentials.email, "email")
+										}
+									>
+										{copiedCredentialField === "email" ? (
+											<Check size={13} aria-hidden="true" />
+										) : (
+											<Copy size={13} aria-hidden="true" />
+										)}
+										{copiedCredentialField === "email"
+											? "コピー済み"
+											: "コピー"}
+									</button>
+								</div>
+							</div>
+							<div className="author-credential-field">
+								<span className="author-credential-label">初期パスワード</span>
+								<div className="author-credential-value">
+									<code className={showCreatedPassword ? "" : "masked"}>
+										{showCreatedPassword
+											? createdCredentials.password
+											: "••••••••••••"}
+									</code>
+									<div className="author-credential-buttons">
+										<button
+											type="button"
+											className="credential-btn"
+											onClick={() => setShowCreatedPassword((value) => !value)}
+											aria-pressed={showCreatedPassword}
+										>
+											{showCreatedPassword ? (
+												<EyeOff size={13} aria-hidden="true" />
+											) : (
+												<Eye size={13} aria-hidden="true" />
+											)}
+											{showCreatedPassword ? "隠す" : "表示"}
+										</button>
+										<button
+											type="button"
+											className="credential-btn"
+											onClick={() =>
+												copyCredential(createdCredentials.password, "password")
+											}
+										>
+											{copiedCredentialField === "password" ? (
+												<Check size={13} aria-hidden="true" />
+											) : (
+												<Copy size={13} aria-hidden="true" />
+											)}
+											{copiedCredentialField === "password"
+												? "コピー済み"
+												: "コピー"}
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div className="author-credentials-footer">
+							<button
+								type="button"
+								className="primary"
+								onClick={() =>
+									copyCredential(
+										`メールアドレス: ${createdCredentials.email}\n初期パスワード: ${createdCredentials.password}`,
+										"all",
+									)
+								}
+							>
+								{copiedCredentialField === "all" ? (
+									<Check size={13} aria-hidden="true" />
+								) : (
+									<Copy size={13} aria-hidden="true" />
+								)}
+								{copiedCredentialField === "all"
+									? "コピーしました"
+									: "認証情報をまとめてコピー"}
+							</button>
+							<button
+								type="button"
+								className="secondary"
+								onClick={() => {
+									setShowCreatedPassword(false);
+									setCopiedCredentialField("");
+									setCreatedCredentialsByRequestID((current) => {
+										const next = { ...current };
+										delete next[request.id];
+										return next;
+									});
+								}}
+							>
+								表示を閉じる
+							</button>
+						</div>
+						<p className="author-credentials-note">
+							このパネルを閉じると、初期パスワードは再表示できません。
 						</p>
-						<label>
-							メールアドレス
-							<input readOnly value={createdCredentials.email} />
-						</label>
-						<label>
-							初期パスワード
-							<input readOnly value={createdCredentials.password} />
-						</label>
-						<button
-							type="button"
-							className="secondary"
-							onClick={() =>
-								navigator.clipboard.writeText(
-									`メールアドレス: ${createdCredentials.email}\n初期パスワード: ${createdCredentials.password}`,
-								)
-							}
-						>
-							認証情報をコピー
-						</button>
-						<button
-							type="button"
-							className="small-btn"
-							onClick={() =>
-								setCreatedCredentialsByRequestID((current) => {
-									const next = { ...current };
-									delete next[request.id];
-									return next;
-								})
-							}
-						>
-							表示を閉じる
-						</button>
 					</section>
 				)}
 
