@@ -33,9 +33,14 @@ export async function publicAPI<T>(
 export async function downloadExport(
 	format: string,
 	notify: (s: string) => void,
+	filters: Record<string, string> = {},
 ) {
+	const params = new URLSearchParams({ format });
+	for (const [key, value] of Object.entries(filters)) {
+		if (value) params.set(key, value);
+	}
 	try {
-		const r = await fetch(`${apiBase}/catalog/export?format=${format}`, {
+		const r = await fetch(`${apiBase}/catalog/export?${params.toString()}`, {
 			credentials: "same-origin",
 		});
 		if (!r.ok) throw new Error("エクスポートに失敗しました");

@@ -32,25 +32,45 @@ var redistributionPolicies = map[string]bool{
 	"allowed": true, "restricted": true, "in_progress": true, "unchecked": true, "unknown": true,
 }
 
-func (s *Server) listArtifacts(c *gin.Context) {
-	page, limit, isAll := pagination(c)
+// artifactCatalogQuery builds the artifact query shared by the catalog list
+// and the export endpoint, including role scoping and the free-text filter.
+func (s *Server) artifactCatalogQuery(c *gin.Context) *gorm.DB {
 	query := s.db.WithContext(c.Request.Context()).Model(&model.Artifact{})
 	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
 		query = authorArtifactScope(query, user.ID)
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
-			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR title COLLATE "case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ? OR source_url COLLATE "case_insensitive" LIKE ?
+			CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ? OR title COLLATE public."case_insensitive" LIKE ? OR COALESCE(creator_name, '') COLLATE public."case_insensitive" LIKE ? OR source_url COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND source_url = ?)
 			OR id IN (
 				SELECT artifact_id FROM file_objects
 				WHERE deleted_at IS NULL
-				AND (CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ? OR original_filename COLLATE "case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?)
+				AND (CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ? OR original_filename COLLATE public."case_insensitive" LIKE ? OR COALESCE(sha256, '') COLLATE public."case_insensitive" LIKE ?)
 			)
-		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
+		)`, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL, pattern, pattern, pattern)
 	}
+	return query
+}
+
+// catalogFileFiltersActive reports whether the request narrows the file list
+// beyond the free-text query.
+func catalogFileFiltersActive(c *gin.Context) bool {
+	return strings.TrimSpace(c.Query("artifact_id")) != "" ||
+		c.Query("preservation_status") != "" ||
+		c.Query("redistribution_policy") != "" ||
+		c.Query("publication") != ""
+}
+
+func (s *Server) listArtifacts(c *gin.Context) {
+	page, limit, isAll := pagination(c)
+	query := s.artifactCatalogQuery(c)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not search catalog"})
@@ -134,9 +154,9 @@ func (s *Server) createArtifact(c *gin.Context) {
 		}
 		if artifact.ID == "" {
 			artifact = model.Artifact{
-				Title: strings.TrimSpace(req.Title),
+				Title:       strings.TrimSpace(req.Title),
 				CreatorName: trimOptional(req.CreatorName),
-				SourceURL: source,
+				SourceURL:   source,
 				Description: trimOptional(req.Description),
 			}
 			if err := tx.Create(&artifact).Error; err != nil {
@@ -327,10 +347,11 @@ type fileListItem struct {
 	ArtifactDescription *string `json:"artifact_description,omitempty"`
 }
 
-func (s *Server) listFiles(c *gin.Context) {
-	page, limit, isAll := pagination(c)
-	db := s.db.WithContext(c.Request.Context())
-	query := db.Model(&model.FileObject{})
+// fileCatalogQuery builds the file query shared by the catalog list and the
+// export endpoint. Validation failures are returned as errors whose message is
+// safe to send back to the client.
+func (s *Server) fileCatalogQuery(c *gin.Context) (*gorm.DB, error) {
+	query := s.db.WithContext(c.Request.Context()).Model(&model.FileObject{})
 	if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" {
 		query = query.Where("artifact_id IN (SELECT artifact_id FROM author_artifact WHERE user_id = ?)", user.ID)
 	}
@@ -338,52 +359,52 @@ func (s *Server) listFiles(c *gin.Context) {
 		query = query.Where("deleted_at IS NULL")
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		fileSourceURL, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
-			CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
-			OR original_filename COLLATE "case_insensitive" LIKE ?
-			OR COALESCE(sha256, '') COLLATE "case_insensitive" LIKE ?
+			CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ?
+			OR original_filename COLLATE public."case_insensitive" LIKE ?
+			OR COALESCE(sha256, '') COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND file_objects.source_url = ?)
+			OR file_objects.source_url COLLATE "case_insensitive" LIKE ?
 			OR artifact_id IN (
 				SELECT id FROM artifacts
-				WHERE CAST(id AS TEXT) COLLATE "case_insensitive" LIKE ?
-				OR title COLLATE "case_insensitive" LIKE ?
-				OR COALESCE(creator_name, '') COLLATE "case_insensitive" LIKE ?
-				OR source_url COLLATE "case_insensitive" LIKE ?
+				WHERE CAST(id AS TEXT) COLLATE public."case_insensitive" LIKE ?
+				OR title COLLATE public."case_insensitive" LIKE ?
+				OR COALESCE(creator_name, '') COLLATE public."case_insensitive" LIKE ?
+				OR source_url COLLATE public."case_insensitive" LIKE ?
 				OR (? <> '' AND source_url = ?)
 			)
-		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL)
+		)`, pattern, pattern, pattern, fileSourceURL, fileSourceURL, sourceURLPattern, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL)
 	}
 	if artifactID := strings.TrimSpace(c.Query("artifact_id")); artifactID != "" {
 		if _, err := uuid.Parse(artifactID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid artifact_id"})
-			return
+			return nil, errors.New("invalid artifact_id")
 		}
 		query = query.Where("artifact_id = ?", artifactID)
 	}
 	if status := c.Query("preservation_status"); status != "" {
 		if !preservationStatuses[status] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid preservation_status"})
-			return
+			return nil, errors.New("invalid preservation_status")
 		}
 		query = query.Where("preservation_status = ?", status)
 	}
 	if policy := c.Query("redistribution_policy"); policy != "" {
 		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && policy != "allowed" && policy != "restricted" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only allowed or restricted redistribution policies"})
-			return
+			return nil, errors.New("authors may filter only allowed or restricted redistribution policies")
 		}
 		if !redistributionPolicies[policy] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid redistribution_policy"})
-			return
+			return nil, errors.New("invalid redistribution_policy")
 		}
 		query = query.Where("redistribution_policy = ?", policy)
 	}
 	if publication := c.Query("publication"); publication != "" {
 		if user, ok := hooks.CurrentUser(c); ok && user.Role == "author" && publication != "public" && publication != "private" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "authors may filter only public or private files"})
-			return
+			return nil, errors.New("authors may filter only public or private files")
 		}
 		switch publication {
 		case "public":
@@ -401,9 +422,19 @@ func (s *Server) listFiles(c *gin.Context) {
 		case "unknown":
 			query = query.Where("redistribution_policy = 'unknown'")
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid publication filter"})
-			return
+			return nil, errors.New("invalid publication filter")
 		}
+	}
+	return query, nil
+}
+
+func (s *Server) listFiles(c *gin.Context) {
+	page, limit, isAll := pagination(c)
+	db := s.db.WithContext(c.Request.Context())
+	query, err := s.fileCatalogQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -609,24 +640,57 @@ func (s *Server) updatePublicationFlag(c *gin.Context) {
 
 func (s *Server) exportCatalog(c *gin.Context) {
 	format := strings.ToLower(c.DefaultQuery("format", "json"))
-	var artifacts []model.Artifact
-	if err := s.db.WithContext(c.Request.Context()).Order("created_at ASC").Find(&artifacts).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+	if format != "json" && format != "csv" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
+		return
+	}
+	fileQuery, err := s.fileCatalogQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	var files []model.FileObject
-	if err := s.db.WithContext(c.Request.Context()).Where("deleted_at IS NULL").Order("created_at ASC").Find(&files).Error; err != nil {
+	if err := fileQuery.Order("created_at ASC").Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export files"})
+		return
+	}
+	var artifacts []model.Artifact
+	if strings.TrimSpace(c.Query("q")) != "" || catalogFileFiltersActive(c) {
+		// When the file list is narrowed, export only the parent artifacts of
+		// the files that survived the filters. This also covers files matched
+		// through their own URL, whose parent artifact the artifact-only search
+		// may not match. Fetch IDs in bounded batches so a single query never
+		// carries more parameters than the extended protocol allows.
+		seen := make(map[string]struct{}, len(files))
+		matchedArtifactIDs := make([]string, 0, len(files))
+		for _, file := range files {
+			if _, ok := seen[file.ArtifactID]; ok {
+				continue
+			}
+			seen[file.ArtifactID] = struct{}{}
+			matchedArtifactIDs = append(matchedArtifactIDs, file.ArtifactID)
+		}
+		const artifactBatchSize = 1000
+		for start := 0; start < len(matchedArtifactIDs); start += artifactBatchSize {
+			end := min(start+artifactBatchSize, len(matchedArtifactIDs))
+			var batch []model.Artifact
+			if err := s.db.WithContext(c.Request.Context()).Where("id IN ?", matchedArtifactIDs[start:end]).Find(&batch).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
+				return
+			}
+			artifacts = append(artifacts, batch...)
+		}
+		sort.SliceStable(artifacts, func(i, j int) bool {
+			return artifacts[i].CreatedAt.Before(artifacts[j].CreatedAt)
+		})
+	} else if err := s.artifactCatalogQuery(c).Order("created_at ASC").Find(&artifacts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not export artifacts"})
 		return
 	}
 	actor, _ := hooks.CurrentUser(c)
 	s.audit(c, &actor, "catalog", "all", "catalog.export", "success", nil)
 	if format == "json" {
 		c.JSON(http.StatusOK, gin.H{"artifacts": artifacts, "files": files, "exported_at": time.Now().UTC()})
-		return
-	}
-	if format != "csv" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "format must be json or csv"})
 		return
 	}
 	c.Header("Content-Type", "text/csv; charset=utf-8")
@@ -736,11 +800,62 @@ func uploaderSourceURLForAccess(stored string) string {
 // uploaderArtifactSearchKeys returns the normalized file and Artifact keys for
 // a URL pasted into a catalog search box.
 func uploaderArtifactSearchKeys(raw string) (string, string) {
-	stored, err := uploaderSourceURLForStorage(raw)
+	trimmed := strings.TrimSpace(raw)
+	lower := strings.ToLower(trimmed)
+	if !strings.Contains(lower, "://") &&
+		(strings.HasPrefix(lower, "ux.getuploader.com") || strings.HasPrefix(lower, "uu.getuploader.com")) {
+		trimmed = "https://" + trimmed
+	}
+	stored, err := uploaderSourceURLForStorage(trimmed)
 	if err != nil {
 		return "", ""
 	}
 	return stored, uploaderArtifactSourceURL(stored)
+}
+
+// uploaderSourceSearchTerm rewrites a GetUploader URL pasted into a search box
+// to the host-independent path we store, so text search matches normalized rows.
+// Inputs that are not ux/uu GetUploader URLs are returned unchanged.
+func uploaderSourceSearchTerm(raw string) string {
+	term, _ := uploaderSourceSearchTerms(raw)
+	return term
+}
+
+// uploaderSourceSearchTerms also reports hostOnly when the input is just a
+// GetUploader host. Callers then match only stored paths ("/" prefix) for
+// source_url, and keep the original words for every other column.
+func uploaderSourceSearchTerms(raw string) (term string, hostOnly bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return trimmed, false
+	}
+	rest := trimmed
+	// Locate the scheme in the original string: lowercasing can change byte
+	// lengths for some runes, so an index from the folded copy would not be safe.
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+3:]
+	}
+	lower := strings.ToLower(rest)
+	for _, host := range []string{"ux.getuploader.com", "uu.getuploader.com"} {
+		if !strings.HasPrefix(lower, host) {
+			continue
+		}
+		rest, lower = rest[len(host):], lower[len(host):]
+		rest, lower = strings.TrimPrefix(rest, "."), strings.TrimPrefix(lower, ".")
+		if strings.HasPrefix(lower, ":443") {
+			rest, lower = rest[len(":443"):], lower[len(":443"):]
+		}
+		if rest == "" || rest == "/" {
+			// A bare uploader host means every stored uploader path.
+			return "/", true
+		}
+		if !strings.HasPrefix(rest, "/") {
+			// A look-alike domain such as ux.getuploader.com.example.
+			return trimmed, false
+		}
+		return rest, false
+	}
+	return trimmed, false
 }
 
 // lockUploaderArtifactRoots serializes GetUploader get-or-create operations.

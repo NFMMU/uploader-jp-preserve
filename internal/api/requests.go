@@ -248,13 +248,21 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "q must be at most 200 characters"})
 			return
 		}
+		searchTerm, hostOnly := uploaderSourceSearchTerms(search)
+		requestSourceURL, _ := uploaderArtifactSearchKeys(search)
+		sourceURLMatch := gorm.Expr(`(strpos(COALESCE(public_requests.source_url, '') COLLATE public."case_insensitive", ?) > 0 OR
+			(? <> '' AND public_requests.source_url COLLATE public."case_insensitive" = ?))`, searchTerm, requestSourceURL, requestSourceURL)
+		if hostOnly {
+			searchTerm = search
+			sourceURLMatch = gorm.Expr("public_requests.source_url LIKE '/%'")
+		}
 		query = query.Where(`(
 			strpos(COALESCE(public_requests.title, '') COLLATE public."case_insensitive", ?) > 0 OR
 			strpos(COALESCE(public_requests.creator_name, '') COLLATE public."case_insensitive", ?) > 0 OR
 			strpos(COALESCE(public_requests.submitter_name, '') COLLATE public."case_insensitive", ?) > 0 OR
 			strpos(COALESCE(public_requests.contact, '') COLLATE public."case_insensitive", ?) > 0 OR
 			strpos(COALESCE(public_requests.details, '') COLLATE public."case_insensitive", ?) > 0 OR
-			strpos(COALESCE(public_requests.source_url, '') COLLATE public."case_insensitive", ?) > 0 OR
+			? OR
 			strpos(COALESCE(public_requests.external_url, '') COLLATE public."case_insensitive", ?) > 0 OR
 			EXISTS (
 				SELECT 1 FROM file_objects f
@@ -267,7 +275,7 @@ func (s *Server) listPublicRequests(c *gin.Context) {
 				WHERE a.id = COALESCE(public_requests.artifact_id, f.artifact_id)
 				AND strpos(a.title COLLATE public."case_insensitive", ?) > 0
 			)
-		)`, search, search, search, search, search, search, search, search, search)
+		)`, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, sourceURLMatch, searchTerm, searchTerm, searchTerm)
 	}
 	createdAtOrder := c.Query("sort")
 	order := "CASE WHEN public_requests.status = 'pending' THEN 0 WHEN public_requests.status = 'in_review' THEN 1 ELSE 2 END, public_requests.created_at ASC, public_requests.id ASC"
