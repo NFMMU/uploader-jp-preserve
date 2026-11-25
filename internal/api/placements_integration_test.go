@@ -68,7 +68,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 			}
 
 			s := &Server{db: db}
-			if err := s.scheduleSurplusPlacementDeletion(context.Background(), fileID); err != nil {
+			if _, err := s.scheduleSurplusPlacementDeletion(context.Background(), fileID); err != nil {
 				t.Fatalf("schedule surplus deletion: %v", err)
 			}
 			var deleteCount int64
@@ -110,7 +110,7 @@ func TestScheduleSurplusPlacementDeletionIntegration(t *testing.T) {
 				if targetID != newestNodeID {
 					t.Fatalf("delete target = %s, want newest replica node %s", targetID, newestNodeID)
 				}
-				if err := s.scheduleSurplusPlacementDeletion(context.Background(), fileID); err != nil {
+				if _, err := s.scheduleSurplusPlacementDeletion(context.Background(), fileID); err != nil {
 					t.Fatalf("repeat surplus deletion scheduling: %v", err)
 				}
 				if err := db.Table("tasks").Where("file_object_id = ? AND task_type = 'delete'", fileID).Count(&deleteCount).Error; err != nil {

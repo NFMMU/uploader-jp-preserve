@@ -25,6 +25,8 @@ type Task struct {
 	UpdatedAt    time.Time  `gorm:"column:updated_at;type:timestamp with time zone;not null;default:now()" json:"updated_at"`
 	LeaseUntil   *time.Time `gorm:"column:lease_until;type:timestamp with time zone" json:"lease_until"`
 	LeaseToken   *string    `gorm:"column:lease_token;type:uuid;uniqueIndex:tasks_lease_token_key,priority:1" json:"lease_token"`
+	// FirstClaimedAt records the first claim and survives retries that reset attempt_count.
+	FirstClaimedAt *time.Time `gorm:"column:first_claimed_at;type:timestamp with time zone" json:"first_claimed_at"`
 }
 
 // TableName Task's table name

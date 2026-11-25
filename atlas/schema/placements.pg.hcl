@@ -36,6 +36,14 @@ table "placements" {
     null = false
     default = sql("now()")
   }
+  column "retire_requested_at" {
+    type = timestamptz
+    null = true
+  }
+  column "move_task_id" {
+    type = uuid
+    null = true
+  }
   primary_key {
     columns = [column.id]
   }
@@ -60,5 +68,9 @@ table "placements" {
   index "placements_file_node_key" {
     unique = true
     columns = [column.file_object_id, column.node_id]
+  }
+  index "placements_retire_requested_idx" {
+    columns = [column.retire_requested_at]
+    where   = "retire_requested_at IS NOT NULL"
   }
 }

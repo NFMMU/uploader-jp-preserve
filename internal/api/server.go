@@ -23,6 +23,20 @@ type Server struct {
 	enrollmentLimiterMu  sync.Mutex
 	enrollmentAttempts   map[string]enrollmentAttempt
 	publicIntakeAttempts map[string]enrollmentAttempt
+
+	// Placement reconciliation is single-flight: the periodic pass and the
+	// admin button share one gate and one status snapshot.
+	placementReconcileMu    sync.Mutex
+	placementReconcileGate  chan struct{}
+	placementReconcileState placementReconcileSnapshot
+	// lastManualReconcile keeps the admin-triggered result so a periodic run
+	// cannot overwrite what the screen is waiting for.
+	lastManualReconcile placementReconcileSnapshot
+	// reconcileHistory keeps recent admin-triggered results so a poll for a
+	// specific run_id survives later runs. Scheduled runs are not stored.
+	reconcileHistory []placementReconcileSnapshot
+	// reconcileRunHook lets tests hold a run at a known point. Nil in production.
+	reconcileRunHook func()
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
@@ -141,6 +155,7 @@ func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {
 	admin.POST("/url-collection/search", s.searchUploaderURLs)
 	admin.POST("/url-collection/scan", s.collectUploaderURLs)
 	admin.POST("/placements/reconcile", s.reconcileNow)
+	admin.GET("/placements/reconcile", s.reconcileStatus)
 	admin.GET("/audit-logs", s.listAuditLogs)
 	admin.GET("/oidc-providers", s.listOidcProviders)
 	admin.POST("/oidc-providers", s.createOidcProvider)
