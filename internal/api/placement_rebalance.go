@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math/big"
 	"sort"
 	"time"
 
@@ -20,18 +21,38 @@ import (
 // after the replacement has been verified and only while enough stable copies
 // remain. A move never reduces the live copy count below requiredReplicaCount.
 const (
-	rebalanceHotUtilization    = 0.80
-	rebalanceMinUtilizationGap = 0.20
-	// Tolerance for the floating-point utilization comparison so that a gap of
-	// exactly 20 points is not excluded by representation error.
-	utilizationEpsilon       = 1e-9
-	rebalancePerFileCooldown = 15 * time.Minute
-	maxRebalanceMovesPerRun  = 20
-	maxRebalanceMovesPerNode = 5
-	rebalanceSourceNodeLimit = 5
-	rebalanceCandidateLimit  = 20
-	rebalanceFinalizeLimit   = 500
+	rebalanceHotUtilization = 0.80
+	// Percentage points that a destination must be below the source.
+	rebalanceMinUtilizationGapPercent = int64(20)
+	rebalancePerFileCooldown          = 15 * time.Minute
+	maxRebalanceMovesPerRun           = 20
+	maxRebalanceMovesPerNode          = 5
+	rebalanceSourceNodeLimit          = 5
+	rebalanceCandidateLimit           = 20
+	rebalanceFinalizeLimit            = 500
 )
+
+// effectiveCapacityBytes is the quota a node allows itself: the declared
+// requested capacity when set, otherwise the reported disk capacity.
+func effectiveCapacityBytes(capacityBytes, requestedCapacityBytes int64) int64 {
+	if requestedCapacityBytes > 0 {
+		return requestedCapacityBytes
+	}
+	return capacityBytes
+}
+
+// utilizationGapAtLeast reports whether the target is at least the configured
+// number of percentage points below the source, using exact rational arithmetic
+// so a gap of exactly 20 points is not excluded by floating-point error.
+func utilizationGapAtLeast(targetUsed, targetCapacity, sourceUsed, sourceCapacity int64) bool {
+	if targetCapacity <= 0 || sourceCapacity <= 0 {
+		return false
+	}
+	target := new(big.Rat).SetFrac64(targetUsed, targetCapacity)
+	source := new(big.Rat).SetFrac64(sourceUsed, sourceCapacity)
+	source.Sub(source, big.NewRat(rebalanceMinUtilizationGapPercent, 100))
+	return target.Cmp(source) <= 0
+}
 
 // Stable reason codes shared by the reconciler and the admin UI.
 const (
@@ -150,13 +171,15 @@ func selectRebalanceSource(copies []rebalanceCopy) (rebalanceCopy, bool) {
 // rankRebalanceTargets returns nodes that may receive the moved copy, ordered
 // by ascending utilization. A target must be at least rebalanceMinUtilizationGap
 // below the source and have room for one more copy.
-func rankRebalanceTargets(nodes []rebalanceTarget, sourceID string, sourceUtil float64, occupied map[string]bool, sizeBytes int64) []rebalanceTarget {
+func rankRebalanceTargets(nodes []rebalanceTarget, sourceID string, sourceUsed, sourceCapacity int64, occupied map[string]bool, sizeBytes int64) []rebalanceTarget {
 	out := make([]rebalanceTarget, 0, len(nodes))
 	for _, node := range nodes {
 		if node.ID == sourceID || occupied[node.ID] || !node.Usable {
 			continue
 		}
-		if node.Utilization > sourceUtil-rebalanceMinUtilizationGap+utilizationEpsilon {
+		targetUsed := node.UsedBytes + node.ReservedBytes
+		targetCapacity := effectiveCapacityBytes(node.CapacityBytes, node.RequestedCapacityBytes)
+		if !utilizationGapAtLeast(targetUsed, targetCapacity, sourceUsed, sourceCapacity) {
 			continue
 		}
 		if node.AvailableBytes-node.ReservedBytes < sizeBytes {
@@ -343,7 +366,10 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSo
 			utilization, usable := usage.utilization()
 			targets = append(targets, rebalanceTarget{ID: node.ID, Name: node.Name, Utilization: utilization, Usable: usable, UsedBytes: usage.UsedBytes, ReservedBytes: usage.ReservedBytes, CapacityBytes: usage.CapacityBytes, RequestedCapacityBytes: usage.RequestedCapacityBytes, AvailableBytes: usage.AvailableBytes})
 		}
-		ranked := rankRebalanceTargets(targets, source.NodeID, source.Utilization, occupied, file.SizeBytes)
+		sourceNode := nodeByID[source.NodeID]
+		sourceUsed := sourceNode.UsedBytes + reserved[source.NodeID]
+		sourceCapacity := effectiveCapacityBytes(sourceNode.CapacityBytes, sourceNode.RequestedCapacityBytes)
+		ranked := rankRebalanceTargets(targets, source.NodeID, sourceUsed, sourceCapacity, occupied, file.SizeBytes)
 		if len(ranked) == 0 {
 			reason = reasonNoRebalanceTarget
 			return nil
@@ -366,11 +392,11 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSo
 			}
 			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
 				"storage_key": storageKey, "sha256": file.Sha256, "status": "queued",
-				"verified_at": nil, "retire_requested_at": nil,
+				"verified_at": nil, "retire_requested_at": nil, "move_task_id": taskID,
 			}).Error; err != nil {
 				return err
 			}
-		} else if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: targetNodeID, StorageKey: storageKey, Sha256: file.Sha256, Status: "queued"}).Error; err != nil {
+		} else if err := tx.Create(&model.Placement{FileObjectID: fileID, NodeID: targetNodeID, StorageKey: storageKey, Sha256: file.Sha256, Status: "queued", MoveTaskID: &taskID}).Error; err != nil {
 			return err
 		}
 		result := tx.Model(&model.Placement{}).
@@ -644,15 +670,14 @@ func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, no
 				return err
 			}
 			// A replication task that failed for good leaves its target placement
-			// queued forever. Identify this move's own task through the storage
-			// key (objects/<file>/<task id>) rather than relying on timestamps,
-			// which are taken before the marker is set.
+			// queued forever. Identify this move's own task through the explicit
+			// move_task_id link; timestamps and storage keys are not reliable.
 			var failedReplicate int64
 			if err := tx.Raw(`
-				SELECT count(*) FROM tasks AS t
-				JOIN placements AS p ON p.file_object_id = t.file_object_id AND p.node_id = t.target_node_id
-				WHERE t.file_object_id = ? AND t.status = 'failed'
-				  AND p.storage_key = 'objects/' || t.file_object_id::text || '/' || t.id::text
+				SELECT count(*) FROM placements AS p
+				JOIN tasks AS t ON t.id = p.move_task_id
+				WHERE p.file_object_id = ? AND p.status IN ('queued','running','stored')
+				  AND t.status = 'failed'
 			`, fileID).Scan(&failedReplicate).Error; err != nil {
 				return err
 			}

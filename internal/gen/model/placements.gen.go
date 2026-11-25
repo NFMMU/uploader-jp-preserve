@@ -23,6 +23,8 @@ type Placement struct {
 	// RetireRequestedAt marks a verified replica that a capacity rebalance will
 	// delete once a replacement copy has been verified on a less-used node.
 	RetireRequestedAt *time.Time `gorm:"column:retire_requested_at;type:timestamp with time zone" json:"retire_requested_at"`
+	// MoveTaskID is the replication task that fills this placement during a rebalance.
+	MoveTaskID *string `gorm:"column:move_task_id;type:uuid" json:"move_task_id"`
 }
 
 // TableName Placement's table name

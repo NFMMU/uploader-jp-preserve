@@ -49,27 +49,27 @@ func TestSelectRebalanceSourceRequiresHotNode(t *testing.T) {
 
 func TestRankRebalanceTargets(t *testing.T) {
 	nodes := []rebalanceTarget{
-		{ID: "hot", Utilization: 0.9, Usable: true, AvailableBytes: 100, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
-		{ID: "big-free", Utilization: 0.65, Usable: true, AvailableBytes: 700, CapacityBytes: 2000, RequestedCapacityBytes: 2000},
-		{ID: "small-free", Utilization: 0.3, Usable: true, AvailableBytes: 140, CapacityBytes: 200, RequestedCapacityBytes: 200},
-		{ID: "occupied", Utilization: 0.1, Usable: true, AvailableBytes: 900, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+		{ID: "hot", Utilization: 0.9, Usable: true, UsedBytes: 900, AvailableBytes: 100, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+		{ID: "big-free", Utilization: 0.65, Usable: true, UsedBytes: 1300, AvailableBytes: 700, CapacityBytes: 2000, RequestedCapacityBytes: 2000},
+		{ID: "small-free", Utilization: 0.3, Usable: true, UsedBytes: 60, AvailableBytes: 140, CapacityBytes: 200, RequestedCapacityBytes: 200},
+		{ID: "occupied", Utilization: 0.1, Usable: true, UsedBytes: 100, AvailableBytes: 900, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
 		{ID: "unknown", Utilization: 0, Usable: false, AvailableBytes: 1000},
-		{ID: "too-full", Utilization: 0.75, Usable: true, AvailableBytes: 500, CapacityBytes: 2000, RequestedCapacityBytes: 2000},
+		{ID: "too-full", Utilization: 0.75, Usable: true, UsedBytes: 1500, AvailableBytes: 500, CapacityBytes: 2000, RequestedCapacityBytes: 2000},
 	}
 	occupied := map[string]bool{"occupied": true}
-	ranked := rankRebalanceTargets(nodes, "hot", 0.9, occupied, 100)
+	ranked := rankRebalanceTargets(nodes, "hot", 900, 1000, occupied, 100)
 	if len(ranked) != 2 || ranked[0].ID != "small-free" || ranked[1].ID != "big-free" {
 		t.Fatalf("ranked = %+v, want small-free then big-free (both >= 20 points below the source)", ranked)
 	}
 
 	// A tighter gap excludes the node that is only 25 points below the source.
-	ranked = rankRebalanceTargets(nodes, "hot", 0.8, occupied, 100)
+	ranked = rankRebalanceTargets(nodes, "hot", 800, 1000, occupied, 100)
 	if len(ranked) != 1 || ranked[0].ID != "small-free" {
 		t.Fatalf("ranked = %+v, want only small-free", ranked)
 	}
 
 	// A node that cannot fit the file is never a target.
-	for _, target := range rankRebalanceTargets(nodes, "hot", 0.9, nil, 500) {
+	for _, target := range rankRebalanceTargets(nodes, "hot", 900, 1000, nil, 500) {
 		if target.ID == "small-free" {
 			t.Fatal("selected a target without room for the file")
 		}
@@ -131,10 +131,10 @@ func TestReserveManualReconcileSingleFlight(t *testing.T) {
 
 func TestRankRebalanceTargetsExactTwentyPointGap(t *testing.T) {
 	nodes := []rebalanceTarget{
-		{ID: "exact", Utilization: 0.65, Usable: true, AvailableBytes: 350, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
-		{ID: "over", Utilization: 0.651, Usable: true, AvailableBytes: 349, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+		{ID: "exact", Utilization: 0.65, Usable: true, UsedBytes: 650, AvailableBytes: 350, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+		{ID: "over", Utilization: 0.651, Usable: true, UsedBytes: 651, AvailableBytes: 349, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
 	}
-	ranked := rankRebalanceTargets(nodes, "hot", 0.85, map[string]bool{}, 1)
+	ranked := rankRebalanceTargets(nodes, "hot", 850, 1000, map[string]bool{}, 1)
 	if len(ranked) != 1 || ranked[0].ID != "exact" {
 		t.Fatalf("ranked = %+v, want only the exact 20-point target", ranked)
 	}

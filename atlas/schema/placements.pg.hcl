@@ -40,6 +40,10 @@ table "placements" {
     type = timestamptz
     null = true
   }
+  column "move_task_id" {
+    type = uuid
+    null = true
+  }
   primary_key {
     columns = [column.id]
   }

@@ -345,3 +345,63 @@ func TestClaimDoesNotRestoreRetriedRebalanceDelete(t *testing.T) {
 		t.Fatalf("placement = %+v, want error with no marker", restored)
 	}
 }
+
+// TestRebalanceAbandonsReusedFailedTarget covers a move onto a node that still
+// has an old failed placement. The storage key is reused, so the terminal
+// failure must be recognised through move_task_id, not the key.
+func TestRebalanceAbandonsReusedFailedTarget(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, hot, _, spare := rebalanceFixture(t, db)
+	sha := strings.Repeat("e", 64)
+	oldTaskID := uuid.NewString()
+	retryExec(t, db, `INSERT INTO placements (id, file_object_id, node_id, storage_key, sha256, status)
+		VALUES (?, ?, ?, ?, ?, 'error')`, uuid.NewString(), file.ID, spare.ID, "objects/"+file.ID+"/"+oldTaskID, sha)
+
+	stats := newPlacementReconcileStats()
+	if err := s.reconcilePlacementsInto(context.Background(), &stats, true); err != nil {
+		t.Fatalf("reconcile with rebalance: %v", err)
+	}
+	var target struct {
+		Status     string
+		StorageKey string
+		MoveTaskID *string
+	}
+	if err := db.Raw("SELECT status, storage_key, move_task_id FROM placements WHERE file_object_id = ? AND node_id = ?", file.ID, spare.ID).Scan(&target).Error; err != nil {
+		t.Fatalf("read target placement: %v", err)
+	}
+	if target.Status != "queued" || target.MoveTaskID == nil {
+		t.Fatalf("target placement = %+v, want queued with a move task", target)
+	}
+	if target.StorageKey != "objects/"+file.ID+"/"+oldTaskID {
+		t.Fatalf("storage key = %q, want the reused key", target.StorageKey)
+	}
+
+	// The new replication task fails for good without producing a copy.
+	retryExec(t, db, "UPDATE tasks SET status = 'failed', attempt_count = 5 WHERE id = ?", *target.MoveTaskID)
+	stats = newPlacementReconcileStats()
+	if err := s.reconcilePlacementsInto(context.Background(), &stats, false); err != nil {
+		t.Fatalf("reconcile after failed move: %v", err)
+	}
+	if stats.MovesAbandoned != 1 {
+		t.Fatalf("moves abandoned = %d, want 1 (stats=%+v)", stats.MovesAbandoned, stats)
+	}
+	var abandoned struct {
+		Status string
+		Marker *time.Time
+	}
+	if err := db.Raw("SELECT status, retire_requested_at AS marker FROM placements WHERE file_object_id = ? AND node_id = ?", file.ID, spare.ID).Scan(&abandoned).Error; err != nil {
+		t.Fatalf("read abandoned placement: %v", err)
+	}
+	if abandoned.Status != "error" {
+		t.Fatalf("target status = %q, want error", abandoned.Status)
+	}
+	var source struct {
+		Marker *time.Time
+	}
+	if err := db.Raw("SELECT retire_requested_at AS marker FROM placements WHERE file_object_id = ? AND node_id = ?", file.ID, hot.ID).Scan(&source).Error; err != nil {
+		t.Fatalf("read source marker: %v", err)
+	}
+	if source.Marker != nil {
+		t.Fatal("source marker must be cleared when the move is abandoned")
+	}
+}
