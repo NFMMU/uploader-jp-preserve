@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -431,5 +432,36 @@ func TestRebalanceAbandonsReusedFailedTarget(t *testing.T) {
 	}
 	if source.Marker != nil {
 		t.Fatal("source marker must be cleared when the move is abandoned")
+	}
+}
+
+// TestRebalancePerSourceCapIntegration verifies the per-source move cap uses the
+// node actually chosen as the source, not an empty id from a shadowed return.
+func TestRebalancePerSourceCapIntegration(t *testing.T) {
+	db := retryTestDB(t)
+	s, file, hot, cold, _ := rebalanceFixture(t, db)
+	sha := strings.Repeat("f", 64)
+	verified := time.Now().UTC().Add(-10 * time.Minute)
+	for i := 0; i < 5; i++ {
+		extra := model.FileObject{ArtifactID: file.ArtifactID, OriginalFilename: fmt.Sprintf("extra-%d.bin", i), SizeBytes: 100, Sha256: &sha, PreservationStatus: "verified", RedistributionPolicy: "allowed"}
+		if err := db.Create(&extra).Error; err != nil {
+			t.Fatalf("create extra file: %v", err)
+		}
+		for _, node := range []model.Node{hot, cold} {
+			if err := db.Create(&model.Placement{FileObjectID: extra.ID, NodeID: node.ID, StorageKey: "objects/" + extra.ID + "/" + node.ID, Sha256: &sha, Status: "verified", VerifiedAt: &verified}).Error; err != nil {
+				t.Fatalf("create placement: %v", err)
+			}
+		}
+	}
+	stats := newPlacementReconcileStats()
+	if err := s.reconcilePlacementsInto(context.Background(), &stats, true); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var moves int64
+	if err := db.Table("tasks").Where("task_type = 'replicate' AND source_node_id = ?", hot.ID).Count(&moves).Error; err != nil {
+		t.Fatalf("count moves: %v", err)
+	}
+	if moves != maxRebalanceMovesPerNode {
+		t.Fatalf("moves from the hot node = %d, want the per-source cap %d", moves, maxRebalanceMovesPerNode)
 	}
 }

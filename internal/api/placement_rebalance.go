@@ -381,7 +381,7 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSo
 		target := ranked[0]
 
 		taskID := uuid.NewString()
-		sourceNodeID := source.NodeID
+		sourceNodeID = source.NodeID
 		targetNodeID := target.ID
 		if err := tx.Create(&model.Task{ID: taskID, TaskType: "replicate", FileObjectID: fileID, SourceNodeID: &sourceNodeID, TargetNodeID: &targetNodeID, Status: "queued", Priority: 1}).Error; err != nil {
 			return err
@@ -417,7 +417,6 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSo
 			return err
 		}
 		scheduled = true
-		sourceNodeID = source.NodeID
 		return nil
 	})
 	return
