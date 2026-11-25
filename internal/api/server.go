@@ -32,6 +32,9 @@ type Server struct {
 	// lastManualReconcile keeps the admin-triggered result so a periodic run
 	// cannot overwrite what the screen is waiting for.
 	lastManualReconcile placementReconcileSnapshot
+	// reconcileHistory answers a poll for a specific run_id even after a later
+	// run has started.
+	reconcileHistory []placementReconcileSnapshot
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {

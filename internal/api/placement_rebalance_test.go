@@ -124,7 +124,18 @@ func TestReserveManualReconcileSingleFlight(t *testing.T) {
 	if !ok || second == first {
 		t.Fatal("a new run must be allowed after the previous run finished")
 	}
-	if snapshot := s.reconcileSnapshot(); snapshot["status"] != "running" {
+	if snapshot := s.reconcileSnapshot(""); snapshot["status"] != "running" {
 		t.Fatalf("status = %v, want running", snapshot["status"])
+	}
+}
+
+func TestRankRebalanceTargetsExactTwentyPointGap(t *testing.T) {
+	nodes := []rebalanceTarget{
+		{ID: "exact", Utilization: 0.65, Usable: true, AvailableBytes: 350, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+		{ID: "over", Utilization: 0.651, Usable: true, AvailableBytes: 349, CapacityBytes: 1000, RequestedCapacityBytes: 1000},
+	}
+	ranked := rankRebalanceTargets(nodes, "hot", 0.85, map[string]bool{}, 1)
+	if len(ranked) != 1 || ranked[0].ID != "exact" {
+		t.Fatalf("ranked = %+v, want only the exact 20-point target", ranked)
 	}
 }

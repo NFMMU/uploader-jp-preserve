@@ -14,7 +14,7 @@ export type ReconcileCounts = {
 };
 
 export type ReconcileStatus = {
-	status: "idle" | "running" | "completed" | "failed";
+	status: "idle" | "running" | "completed" | "failed" | "unknown";
 	run_id?: string;
 	trigger?: string;
 	started_at?: string;
@@ -36,6 +36,7 @@ const reasonLabels: Record<string, string> = {
 	rebalance_no_hot_source: "逼迫したノードがない",
 	rebalance_no_target_capacity: "移動先の空き容量がない",
 	rebalance_cooldown: "直前に移動済み",
+	rebalance_source_limit: "移動元の上限に達した",
 };
 
 function topReason(reasons?: Record<string, number>): [string, number] | null {
@@ -83,6 +84,7 @@ export function useReconcile(
 ) {
 	const [running, setRunning] = useState(false);
 	const [status, setStatus] = useState<ReconcileStatus | null>(null);
+	const [note, setNote] = useState("");
 	const timer = useRef<number | undefined>(undefined);
 	const alive = useRef(true);
 
@@ -94,24 +96,33 @@ export function useReconcile(
 		};
 	}, []);
 
-	const poll = async (deadline: number) => {
+	const poll = async (runId: string, deadline: number) => {
+		const controller = new AbortController();
+		const requestTimeout = window.setTimeout(() => controller.abort(), 10_000);
 		try {
-			const next = (await api(
-				"/admin/placements/reconcile",
-			)) as ReconcileStatus;
+			const path = runId
+				? `/admin/placements/reconcile?run_id=${encodeURIComponent(runId)}`
+				: "/admin/placements/reconcile";
+			const next = (await api(path, {
+				signal: controller.signal,
+			})) as ReconcileStatus;
+			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
-			setStatus(next);
-			if (
-				next.status === "completed" ||
-				next.status === "failed" ||
-				next.status === "idle"
-			) {
-				setRunning(false);
-				notify(summarizeReconcile(next));
-				onFinished();
-				return;
+			if (next.status !== "unknown") {
+				setStatus(next);
+				if (
+					next.status === "completed" ||
+					next.status === "failed" ||
+					next.status === "idle"
+				) {
+					setRunning(false);
+					notify(summarizeReconcile(next));
+					onFinished();
+					return;
+				}
 			}
 		} catch (e) {
+			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
 			setRunning(false);
 			notify(e instanceof Error ? e.message : "状態を取得できませんでした");
@@ -119,31 +130,41 @@ export function useReconcile(
 		}
 		if (Date.now() > deadline) {
 			setRunning(false);
-			notify("調整の完了を確認できませんでした。再読み込みしてください。");
+			setNote("結果未確認（次回の実行で更新されます）");
+			notify("調整の完了を確認できませんでした。次回の実行で更新されます。");
 			return;
 		}
-		timer.current = window.setTimeout(() => poll(deadline), 1000);
+		timer.current = window.setTimeout(() => poll(runId, deadline), 1000);
 	};
 
 	const start = async () => {
 		if (running) return;
 		setRunning(true);
 		setStatus(null);
+		setNote("");
 		try {
 			const response = await api("/admin/placements/reconcile", {
 				method: "POST",
 			});
+			if (!alive.current) return;
+			const runId = typeof response.run_id === "string" ? response.run_id : "";
 			if (response.status === "already_running") {
 				notify("保存先の調整は実行中です（完了を待機します）");
 			} else {
 				notify("保存先の調整を開始しました");
 			}
-			poll(Date.now() + 10 * 60 * 1000);
+			poll(runId, Date.now() + 15 * 60 * 1000);
 		} catch (e) {
+			if (!alive.current) return;
 			setRunning(false);
 			notify(e instanceof Error ? e.message : "調整を開始できませんでした");
 		}
 	};
 
-	return { start, running, status, summary: summarizeReconcile(status) };
+	return {
+		start,
+		running,
+		status,
+		summary: note || summarizeReconcile(status),
+	};
 }

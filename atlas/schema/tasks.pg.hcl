@@ -36,6 +36,10 @@ table "tasks" {
     null = false
     default = 0
   }
+  column "first_claimed_at" {
+    type = timestamptz
+    null = true
+  }
   column "last_error" {
     type = text
     null = true

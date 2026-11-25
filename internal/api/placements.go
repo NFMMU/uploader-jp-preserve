@@ -109,7 +109,7 @@ func (s *Server) reconcileNow(c *gin.Context) {
 }
 
 func (s *Server) reconcileStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, s.reconcileSnapshot())
+	c.JSON(http.StatusOK, s.reconcileSnapshot(c.Query("run_id")))
 }
 
 func (s *Server) runPlacementReconciler() {
@@ -215,10 +215,11 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 			UsedBytes              int64
 			CapacityBytes          int64
 			RequestedCapacityBytes int64
+			RetireRequestedAt      *time.Time
 		}
 		var healthy []candidate
 		if err := tx.Table("placements AS p").
-			Select("p.id AS placement_id, p.node_id, n.name AS node_name, p.verified_at, n.online_since, n.used_bytes, n.capacity_bytes, n.requested_capacity_bytes").
+			Select("p.id AS placement_id, p.node_id, n.name AS node_name, p.verified_at, n.online_since, n.used_bytes, n.capacity_bytes, n.requested_capacity_bytes, p.retire_requested_at").
 			Joins("JOIN nodes AS n ON n.id = p.node_id").
 			Where("p.file_object_id = ? AND p.status = 'verified' AND n.status = 'online' AND n.last_seen_at >= ?", fileID, cutoff).
 			Order("p.verified_at DESC NULLS LAST, p.created_at DESC").Find(&healthy).Error; err != nil {
@@ -241,6 +242,11 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 		// skew. Copies on nodes with unknown capacity are never chosen.
 		usable := make([]rebalanceCopy, 0, len(healthy))
 		for _, placement := range healthy {
+			// A copy already scheduled for removal by a rebalance must not be
+			// picked again as a plain surplus deletion; its safety minimum is lower.
+			if placement.RetireRequestedAt != nil {
+				continue
+			}
 			utilization, ok := nodeUtilization(placement.UsedBytes, placement.CapacityBytes, placement.RequestedCapacityBytes)
 			usable = append(usable, rebalanceCopy{PlacementID: placement.PlacementID, NodeID: placement.NodeID, NodeName: placement.NodeName, Utilization: utilization, Usable: ok, VerifiedAt: placement.VerifiedAt, OnlineSince: placement.OnlineSince})
 		}

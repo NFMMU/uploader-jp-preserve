@@ -1338,6 +1338,11 @@ func (s *Server) claimNodeTask(c *gin.Context) {
 				} else if err := tx.Model(&model.Placement{}).Where("file_object_id = ? AND node_id = ?", file.ID, *claimed.Task.TargetNodeID).Update("status", "error").Error; err != nil {
 					return err
 				}
+				// Keep the file's preservation state consistent with the copy we
+				// just invalidated.
+				if err := recomputeFilePreservation(tx, file.ID); err != nil {
+					return err
+				}
 				noTask = true
 				return nil
 			}

@@ -22,12 +22,15 @@ import (
 const (
 	rebalanceHotUtilization    = 0.80
 	rebalanceMinUtilizationGap = 0.20
-	rebalancePerFileCooldown   = 15 * time.Minute
-	maxRebalanceMovesPerRun    = 20
-	maxRebalanceMovesPerNode   = 5
-	rebalanceSourceNodeLimit   = 5
-	rebalanceCandidateLimit    = 20
-	rebalanceFinalizeLimit     = 500
+	// Tolerance for the floating-point utilization comparison so that a gap of
+	// exactly 20 points is not excluded by representation error.
+	utilizationEpsilon       = 1e-9
+	rebalancePerFileCooldown = 15 * time.Minute
+	maxRebalanceMovesPerRun  = 20
+	maxRebalanceMovesPerNode = 5
+	rebalanceSourceNodeLimit = 5
+	rebalanceCandidateLimit  = 20
+	rebalanceFinalizeLimit   = 500
 )
 
 // Stable reason codes shared by the reconciler and the admin UI.
@@ -42,6 +45,7 @@ const (
 	reasonNoHotSource       = "rebalance_no_hot_source"
 	reasonNoRebalanceTarget = "rebalance_no_target_capacity"
 	reasonCooldown          = "rebalance_cooldown"
+	reasonPerSourceLimit    = "rebalance_source_limit"
 )
 
 // placementReconcileStats is the per-run summary returned to the admin UI.
@@ -152,7 +156,7 @@ func rankRebalanceTargets(nodes []rebalanceTarget, sourceID string, sourceUtil f
 		if node.ID == sourceID || occupied[node.ID] || !node.Usable {
 			continue
 		}
-		if node.Utilization > sourceUtil-rebalanceMinUtilizationGap {
+		if node.Utilization > sourceUtil-rebalanceMinUtilizationGap+utilizationEpsilon {
 			continue
 		}
 		if node.AvailableBytes-node.ReservedBytes < sizeBytes {
@@ -220,7 +224,7 @@ func verifiedLater(a, b *time.Time) bool {
 // scheduleRebalanceMove queues a replicate task from a hot node to a colder one
 // and marks the source replica for retirement. The marker alone deletes
 // nothing; finalizeRetireMoves waits for the replacement to be verified.
-func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reason string, scheduled bool, err error) {
+func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSource map[string]int) (reason string, scheduled bool, sourceNodeID string, err error) {
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
@@ -251,9 +255,9 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 		occupied := make(map[string]bool, len(placements))
 		for _, placement := range placements {
 			placementByNode[placement.NodeID] = placement
-			// A deleted placement no longer holds data, so its node is a valid
-			// destination again; the row will be reused rather than recreated.
-			if placement.Status != "deleted" {
+			// A deleted or failed placement no longer counts as a usable copy, so
+			// its node is a valid destination again; the row is reused below.
+			if placement.Status != "deleted" && placement.Status != "error" {
 				occupied[placement.NodeID] = true
 			}
 		}
@@ -326,6 +330,12 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 			reason = reasonNoHotSource
 			return nil
 		}
+		// The per-node cap must follow the node actually chosen as the source,
+		// which can differ from the node whose candidates are being scanned.
+		if perSource[source.NodeID] >= maxRebalanceMovesPerNode {
+			reason = reasonPerSourceLimit
+			return nil
+		}
 
 		targets := make([]rebalanceTarget, 0, len(nodes))
 		for _, node := range nodes {
@@ -348,8 +358,12 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 		}
 		storageKey := "objects/" + fileID + "/" + taskID
 		if existing, ok := placementByNode[target.ID]; ok {
-			// Reuse the row (for example a deleted placement) so the
-			// placements_file_node_key unique index is not violated.
+			// Reuse the row (deleted or failed) so the placements_file_node_key
+			// unique index is not violated. Keep an existing storage key so a
+			// failed copy is overwritten in place instead of orphaned.
+			if existing.StorageKey != "" {
+				storageKey = existing.StorageKey
+			}
 			if err := tx.Model(&model.Placement{}).Where("id = ?", existing.ID).Updates(map[string]any{
 				"storage_key": storageKey, "sha256": file.Sha256, "status": "queued",
 				"verified_at": nil, "retire_requested_at": nil,
@@ -373,6 +387,7 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string) (reas
 			return err
 		}
 		scheduled = true
+		sourceNodeID = source.NodeID
 		return nil
 	})
 	return
@@ -424,24 +439,27 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 	}
 
 	moves := 0
+	perSource := make(map[string]int)
 	for _, node := range hot {
 		if moves >= maxRebalanceMovesPerRun {
 			break
 		}
-		perNode := 0
 		// Eligibility is filtered in SQL so a page full of ineligible files does
-		// not hide movable candidates further down the list. Pages are walked
-		// until the candidates are exhausted or the per-run move caps are hit.
-		for page := 0; ; page++ {
-			if moves >= maxRebalanceMovesPerRun || perNode >= maxRebalanceMovesPerNode {
+		// not hide movable candidates further down the list. A keyset cursor is
+		// used instead of OFFSET because rows leave this result set as soon as
+		// they are moved.
+		var (
+			cursorSize    int64
+			cursorCreated time.Time
+			cursorID      string
+			hasCursor     bool
+		)
+		for {
+			if moves >= maxRebalanceMovesPerRun {
 				break
 			}
-			var candidates []struct {
-				FileObjectID string
-				SizeBytes    int64
-			}
-			if err := s.db.WithContext(ctx).Raw(`
-				SELECT p.file_object_id, f.size_bytes
+			query := `
+				SELECT p.file_object_id, f.size_bytes, p.created_at
 				FROM placements AS p
 				JOIN file_objects AS f ON f.id = p.file_object_id
 				WHERE p.node_id = ? AND p.status = 'verified' AND p.retire_requested_at IS NULL
@@ -456,17 +474,33 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 				    WHERE p2.file_object_id = f.id AND p2.status = 'verified'
 				      AND p2.retire_requested_at IS NULL
 				      AND n2.status = 'online' AND n2.last_seen_at >= ?
-				  ) = ?
-				ORDER BY f.size_bytes DESC, p.created_at ASC
-				LIMIT ? OFFSET ?
-			`, node.ID, freshCutoff, requiredReplicaCount, rebalanceCandidateLimit, page*rebalanceCandidateLimit).Scan(&candidates).Error; err != nil {
+				  ) = ?`
+			args := []any{node.ID, freshCutoff, requiredReplicaCount}
+			if hasCursor {
+				query += `
+				  AND (
+				    f.size_bytes < ?
+				    OR (f.size_bytes = ? AND p.created_at > ?)
+				    OR (f.size_bytes = ? AND p.created_at = ? AND f.id > ?)
+				  )`
+				args = append(args, cursorSize, cursorSize, cursorCreated, cursorSize, cursorCreated, cursorID)
+			}
+			query += " ORDER BY f.size_bytes DESC, p.created_at ASC, f.id ASC LIMIT ?"
+			args = append(args, rebalanceCandidateLimit)
+
+			var candidates []struct {
+				FileObjectID string
+				SizeBytes    int64
+				CreatedAt    time.Time
+			}
+			if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&candidates).Error; err != nil {
 				return err
 			}
 			for _, candidate := range candidates {
-				if moves >= maxRebalanceMovesPerRun || perNode >= maxRebalanceMovesPerNode {
+				if moves >= maxRebalanceMovesPerRun {
 					break
 				}
-				reason, scheduled, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID)
+				reason, scheduled, sourceID, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID, perSource)
 				if err != nil {
 					if stats != nil {
 						stats.Errors++
@@ -478,7 +512,7 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 				}
 				if scheduled {
 					moves++
-					perNode++
+					perSource[sourceID]++
 					if stats != nil {
 						stats.RebalanceMoves++
 					}
@@ -489,6 +523,8 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 			if len(candidates) < rebalanceCandidateLimit {
 				break
 			}
+			last := candidates[len(candidates)-1]
+			cursorSize, cursorCreated, cursorID, hasCursor = last.SizeBytes, last.CreatedAt, last.FileObjectID, true
 		}
 	}
 	return nil
@@ -513,20 +549,43 @@ func (s *Server) finalizeRetireMoves(ctx context.Context, stats *placementReconc
 		return err
 	}
 	for _, row := range rows {
-		if err := s.finalizeRetireMove(ctx, row.FileObjectID, row.PlacementID, row.NodeID, row.RetireRequestedAt, stats); err != nil {
+		outcome, err := s.finalizeRetireMove(ctx, row.FileObjectID, row.PlacementID, row.NodeID, row.RetireRequestedAt)
+		if err != nil {
 			if stats != nil {
 				stats.Errors++
 			}
 			if s.logger != nil {
 				s.logger.Warn("placement_retire_failed", "file_object_id", row.FileObjectID, "error", err)
 			}
+			continue
+		}
+		switch outcome {
+		case retireAbandoned:
+			if stats != nil {
+				stats.MovesAbandoned++
+			}
+		case retireDeletionQueued:
+			if stats != nil {
+				stats.DeletesQueued++
+			}
 		}
 	}
 	return nil
 }
 
-func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, nodeID string, requestedAt time.Time, stats *placementReconcileStats) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// retireOutcome is applied to the run counters only after the transaction
+// commits, so a rollback cannot inflate the numbers shown to the admin.
+type retireOutcome int
+
+const (
+	retireNone retireOutcome = iota
+	retireDeletionQueued
+	retireAbandoned
+)
+
+func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, nodeID string, requestedAt time.Time) (retireOutcome, error) {
+	outcome := retireNone
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -585,12 +644,16 @@ func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, no
 				return err
 			}
 			// A replication task that failed for good leaves its target placement
-			// queued forever. Treat the move as finished so the marker is not
-			// stuck and the stale placement cannot block a later repair.
+			// queued forever. Identify this move's own task through the storage
+			// key (objects/<file>/<task id>) rather than relying on timestamps,
+			// which are taken before the marker is set.
 			var failedReplicate int64
-			if err := tx.Model(&model.Task{}).
-				Where("file_object_id = ? AND task_type = 'replicate' AND status = 'failed' AND created_at >= ?", fileID, requestedAt).
-				Count(&failedReplicate).Error; err != nil {
+			if err := tx.Raw(`
+				SELECT count(*) FROM tasks AS t
+				JOIN placements AS p ON p.file_object_id = t.file_object_id AND p.node_id = t.target_node_id
+				WHERE t.file_object_id = ? AND t.status = 'failed'
+				  AND p.storage_key = 'objects/' || t.file_object_id::text || '/' || t.id::text
+			`, fileID).Scan(&failedReplicate).Error; err != nil {
 				return err
 			}
 			if pending == 0 || failedReplicate > 0 {
@@ -603,9 +666,7 @@ func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, no
 				if err := tx.Model(&model.Placement{}).Where("id = ?", placementID).Update("retire_requested_at", nil).Error; err != nil {
 					return err
 				}
-				if stats != nil {
-					stats.MovesAbandoned++
-				}
+				outcome = retireAbandoned
 				return tx.Create(&model.AuditLog{ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID, Action: "placement.rebalance.move.abandoned", Result: "success", Reason: &reason}).Error
 			}
 			return nil
@@ -637,11 +698,13 @@ func (s *Server) finalizeRetireMove(ctx context.Context, fileID, placementID, no
 			return err
 		}
 		reason := "Queued deletion of the relocated replica on node " + replacement.NodeName + " replacement"
-		if stats != nil {
-			stats.DeletesQueued++
-		}
+		outcome = retireDeletionQueued
 		return tx.Create(&model.AuditLog{ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID, Action: "placement.rebalance.replica.deletion_queued", Result: "success", Reason: &reason}).Error
 	})
+	if err != nil {
+		return retireNone, err
+	}
+	return outcome, nil
 }
 
 // sortNodesByAscendingUtilization orders repair targets so that the least used
@@ -750,6 +813,10 @@ func (s *Server) finishReconcile(runID string, counts placementReconcileStats, e
 	if s.placementReconcileState.Trigger == "manual" {
 		s.lastManualReconcile = s.placementReconcileState
 	}
+	s.reconcileHistory = append(s.reconcileHistory, s.placementReconcileState)
+	if len(s.reconcileHistory) > 10 {
+		s.reconcileHistory = s.reconcileHistory[len(s.reconcileHistory)-10:]
+	}
 }
 
 func (s *Server) currentReconcileRunID() string {
@@ -774,15 +841,29 @@ func (s *Server) executeReconcile(runID string, timeout time.Duration, allowReba
 	}
 }
 
-func (s *Server) reconcileSnapshot() gin.H {
+func (s *Server) reconcileSnapshot(runID string) gin.H {
 	s.placementReconcileMu.Lock()
 	state := s.placementReconcileState
 	lastManual := s.lastManualReconcile
+	history := append([]placementReconcileSnapshot(nil), s.reconcileHistory...)
 	s.placementReconcileMu.Unlock()
 
-	// The screen polls after an admin click, so expose that run's result even
-	// when a periodic run starts or finishes before the next poll.
-	if !(state.Running && state.Trigger == "manual") && lastManual.RunID != "" {
+	if runID != "" {
+		if state.RunID != runID {
+			found := false
+			for _, entry := range history {
+				if entry.RunID == runID {
+					state, found = entry, true
+					break
+				}
+			}
+			if !found {
+				return gin.H{"status": "unknown", "run_id": runID}
+			}
+		}
+	} else if !(state.Running && state.Trigger == "manual") && lastManual.RunID != "" {
+		// The screen polls after an admin click, so expose that run's result even
+		// when a periodic run starts or finishes before the next poll.
 		state = lastManual
 	}
 

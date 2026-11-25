@@ -260,7 +260,7 @@ func TestReconcileEndpointIsAsynchronous(t *testing.T) {
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		snapshot := s.reconcileSnapshot()
+		snapshot := s.reconcileSnapshot("")
 		status := snapshot["status"]
 		if status == "completed" || status == "failed" {
 			if status != "completed" {
@@ -282,22 +282,54 @@ func TestReconcileEndpointIsAsynchronous(t *testing.T) {
 	}
 }
 
-// TestClaimDoesNotRestoreRetriedRebalanceDelete covers an admin retry: the
-// retry resets attempt_count, but the task was claimed before and may already
-// have deleted the file. Such a copy must not be counted as verified again.
+// TestClaimDoesNotRestoreRetriedRebalanceDelete walks the real sequence:
+// first claim, lost lease, admin retry, another copy stopping, re-claim. The
+// retry resets attempt_count but the copy may already be gone, so it must not
+// be counted as verified again.
 func TestClaimDoesNotRestoreRetriedRebalanceDelete(t *testing.T) {
 	db := retryTestDB(t)
-	s, file, hot, cold, _ := rebalanceFixture(t, db)
+	s, file, hot, cold, spare := rebalanceFixture(t, db)
 	now := time.Now().UTC()
-	retryExec(t, db, "UPDATE nodes SET status = 'offline' WHERE id = ?", cold.ID)
+	sha := strings.Repeat("d", 64)
+	retryExec(t, db, `INSERT INTO placements (id, file_object_id, node_id, storage_key, sha256, status, verified_at, created_at)
+		VALUES (?, ?, ?, ?, ?, 'verified', ?, ?)`, uuid.NewString(), file.ID, spare.ID, "objects/"+file.ID+"/spare", sha, now.Add(-10*time.Minute), now.Add(-10*time.Minute))
 	retryExec(t, db, "UPDATE placements SET status = 'deleting', retire_requested_at = ? WHERE file_object_id = ? AND node_id = ?", now.Add(-10*time.Minute), file.ID, hot.ID)
-	claimedAt := now.Add(-20 * time.Minute)
-	task := model.Task{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &hot.ID, Status: "queued", AttemptCount: 0}
-	task.FirstClaimedAt = &claimedAt
+	task := model.Task{TaskType: "delete", FileObjectID: file.ID, TargetNodeID: &hot.ID, Status: "queued"}
 	if err := db.Create(&task).Error; err != nil {
-		t.Fatalf("create retried delete task: %v", err)
+		t.Fatalf("create delete task: %v", err)
 	}
 
+	// First claim records the claim history while two stable copies remain.
+	if response := replicaClaim(s, hot); response.Code != http.StatusOK {
+		t.Fatalf("initial deletion claim = %d %s, want 200", response.Code, response.Body)
+	}
+	var claimed model.Task
+	if err := db.First(&claimed, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("read claimed task: %v", err)
+	}
+	if claimed.FirstClaimedAt == nil {
+		t.Fatal("first claim must record first_claimed_at")
+	}
+	// The node ran the delete and its result was lost; the task is failed.
+	retryExec(t, db, "UPDATE tasks SET status = 'failed', attempt_count = 5, lease_until = NULL, lease_token = NULL WHERE id = ?", task.ID)
+
+	actor := model.User{ID: uuid.NewString(), Email: "admin@example.invalid"}
+	if err := s.retryFailedTask(context.Background(), task.ID, actor); err != nil {
+		t.Fatalf("retry failed deletion: %v", err)
+	}
+	var retried model.Task
+	if err := db.First(&retried, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("read retried task: %v", err)
+	}
+	if retried.Status != "queued" || retried.AttemptCount != 0 {
+		t.Fatalf("retried task = %+v, want queued with attempt_count 0", retried)
+	}
+	if retried.FirstClaimedAt == nil {
+		t.Fatal("retry must keep the claim history")
+	}
+
+	// Both other copies stop before the task is claimed again.
+	retryExec(t, db, "UPDATE nodes SET status = 'offline' WHERE id IN ?", []string{cold.ID, spare.ID})
 	response := replicaClaim(s, hot)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("unsafe retried claim = %d %s, want 204", response.Code, response.Body)
