@@ -169,8 +169,12 @@ func (s *Server) reconcilePlacementsInto(ctx context.Context, stats *placementRe
 		} else {
 			stats.skip(reason)
 		}
-		if err := s.scheduleSurplusPlacementDeletion(ctx, fileID); err != nil {
+		queued, err := s.scheduleSurplusPlacementDeletion(ctx, fileID)
+		if err != nil {
 			return err
+		}
+		if queued && stats != nil {
+			stats.DeletesQueued++
 		}
 	}
 	if allowRebalance {
@@ -187,8 +191,9 @@ func shouldQueueSurplusDeletion(healthyCount, activeTaskCount int64) bool {
 	return healthyCount > maxHealthyReplicaCount && activeTaskCount == 0
 }
 
-func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID string) (bool, error) {
+	queued := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var file model.FileObject
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&file, "id = ?", fileID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -275,12 +280,17 @@ func (s *Server) scheduleSurplusPlacementDeletion(ctx context.Context, fileID st
 		if err := tx.Create(&task).Error; err != nil {
 			return err
 		}
+		queued = true
 		return tx.Create(&model.AuditLog{
 			ActorLabel: "system:placement-reconciler", TargetType: "file_object", TargetID: &fileID,
 			Action: "placement.replica.deletion_queued", Result: "success",
 			Reason: new("Queued deletion of surplus verified replica on node " + candidateToDelete.NodeName + "; retaining at most one spare beyond the required replica count"),
 		}).Error
 	})
+	if err != nil {
+		return false, err
+	}
+	return queued, nil
 }
 
 func (s *Server) scheduleReplicaTask(ctx context.Context, fileID string) (taskID, sourceNodeID, targetNodeID string, scheduled bool, reason string, err error) {

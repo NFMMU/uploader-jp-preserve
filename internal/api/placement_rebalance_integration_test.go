@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -247,6 +249,15 @@ func rebalanceFixture(t *testing.T, db *gorm.DB) (s *Server, file model.FileObje
 func TestReconcileEndpointIsAsynchronous(t *testing.T) {
 	db := retryTestDB(t)
 	s := &Server{db: db}
+	// Hold the run at a known point so the test can prove the POST returns
+	// before any reconciliation work has happened.
+	release := make(chan struct{})
+	blocked := make(chan struct{})
+	var once sync.Once
+	s.reconcileRunHook = func() {
+		once.Do(func() { close(blocked) })
+		<-release
+	}
 	response := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(response)
 	c.Request = httptest.NewRequest(http.MethodPost, "/admin/placements/reconcile", nil)
@@ -254,13 +265,30 @@ func TestReconcileEndpointIsAsynchronous(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("reconcile POST = %d %s, want 202", response.Code, response.Body)
 	}
-	if !strings.Contains(response.Body.String(), `"status":"started"`) {
-		t.Fatalf("body = %s, want status started", response.Body)
+	var payload struct {
+		Status string `json:"status"`
+		RunID  string `json:"run_id"`
 	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Status != "started" || payload.RunID == "" {
+		t.Fatalf("body = %s, want a started run with an id", response.Body)
+	}
+	select {
+	case <-blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reconcile did not start")
+	}
+	// The run is still held here, so the admin response must already be out.
+	if status := s.reconcileSnapshot(payload.RunID)["status"]; status != "running" {
+		t.Fatalf("status while blocked = %v, want running", status)
+	}
+	close(release)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		snapshot := s.reconcileSnapshot("")
+		snapshot := s.reconcileSnapshot(payload.RunID)
 		status := snapshot["status"]
 		if status == "completed" || status == "failed" {
 			if status != "completed" {

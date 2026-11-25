@@ -35,6 +35,8 @@ type Server struct {
 	// reconcileHistory answers a poll for a specific run_id even after a later
 	// run has started.
 	reconcileHistory []placementReconcileSnapshot
+	// reconcileRunHook lets tests hold a run at a known point. Nil in production.
+	reconcileRunHook func()
 }
 
 func New(db *gorm.DB, cfg config.Config, logger *slog.Logger) *gin.Engine {

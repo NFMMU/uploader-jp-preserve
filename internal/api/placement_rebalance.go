@@ -27,7 +27,7 @@ const (
 	rebalancePerFileCooldown          = 15 * time.Minute
 	maxRebalanceMovesPerRun           = 20
 	maxRebalanceMovesPerNode          = 5
-	rebalanceSourceNodeLimit          = 5
+	rebalanceNodePageSize             = 50
 	rebalanceCandidateLimit           = 20
 	rebalanceFinalizeLimit            = 500
 )
@@ -446,45 +446,65 @@ func reservedBytesByNode(tx *gorm.DB) (map[string]int64, error) {
 func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconcileStats) error {
 	now := time.Now().UTC()
 	freshCutoff := now.Add(-2 * time.Minute)
-	var hot []struct {
-		ID   string
-		Name string
-	}
-	if err := s.db.WithContext(ctx).Raw(`
-		SELECT id, name FROM nodes
-		WHERE status = 'online' AND last_seen_at >= ?
-		  AND COALESCE(NULLIF(requested_capacity_bytes, 0), capacity_bytes) > 0
-		  AND used_bytes::float8 / COALESCE(NULLIF(requested_capacity_bytes, 0), capacity_bytes) >= ?
-		ORDER BY used_bytes::float8 / COALESCE(NULLIF(requested_capacity_bytes, 0), capacity_bytes) DESC, id
-		LIMIT ?
-	`, freshCutoff, rebalanceHotUtilization, rebalanceSourceNodeLimit).Scan(&hot).Error; err != nil {
-		return err
-	}
-	if len(hot) == 0 {
-		return nil
-	}
-
 	moves := 0
 	perSource := make(map[string]int)
-	for _, node := range hot {
+	// Walk the hot nodes by utilization with a keyset cursor so nodes below the
+	// first page are still examined when earlier ones have nothing movable.
+	var (
+		nodeCursorUtil float64
+		nodeCursorID   string
+		hasNodeCursor  bool
+	)
+	for {
 		if moves >= maxRebalanceMovesPerRun {
 			break
 		}
-		// Eligibility is filtered in SQL so a page full of ineligible files does
-		// not hide movable candidates further down the list. A keyset cursor is
-		// used instead of OFFSET because rows leave this result set as soon as
-		// they are moved.
-		var (
-			cursorSize    int64
-			cursorCreated time.Time
-			cursorID      string
-			hasCursor     bool
-		)
-		for {
+		var hot []struct {
+			ID          string
+			Name        string
+			Utilization float64
+		}
+		nodeQuery := `
+			SELECT id, name, utilization FROM (
+			  SELECT id, name,
+			    used_bytes::float8 / COALESCE(NULLIF(requested_capacity_bytes, 0), capacity_bytes) AS utilization
+			  FROM nodes
+			  WHERE status = 'online' AND last_seen_at >= ?
+			    AND COALESCE(NULLIF(requested_capacity_bytes, 0), capacity_bytes) > 0
+			) AS n
+			WHERE utilization >= ?`
+		nodeArgs := []any{freshCutoff, rebalanceHotUtilization}
+		if hasNodeCursor {
+			nodeQuery += " AND (utilization < ? OR (utilization = ? AND id > ?))"
+			nodeArgs = append(nodeArgs, nodeCursorUtil, nodeCursorUtil, nodeCursorID)
+		}
+		nodeQuery += " ORDER BY utilization DESC, id ASC LIMIT ?"
+		nodeArgs = append(nodeArgs, rebalanceNodePageSize)
+		if err := s.db.WithContext(ctx).Raw(nodeQuery, nodeArgs...).Scan(&hot).Error; err != nil {
+			return err
+		}
+		if len(hot) == 0 {
+			break
+		}
+		for _, node := range hot {
 			if moves >= maxRebalanceMovesPerRun {
 				break
 			}
-			query := `
+			// Eligibility is filtered in SQL so a page full of ineligible files does
+			// not hide movable candidates further down the list. A keyset cursor is
+			// used instead of OFFSET because rows leave this result set as soon as
+			// they are moved.
+			var (
+				cursorSize    int64
+				cursorCreated time.Time
+				cursorID      string
+				hasCursor     bool
+			)
+			for {
+				if moves >= maxRebalanceMovesPerRun {
+					break
+				}
+				query := `
 				SELECT p.file_object_id, f.size_bytes, p.created_at
 				FROM placements AS p
 				JOIN file_objects AS f ON f.id = p.file_object_id
@@ -501,56 +521,67 @@ func (s *Server) rebalancePlacements(ctx context.Context, stats *placementReconc
 				      AND p2.retire_requested_at IS NULL
 				      AND n2.status = 'online' AND n2.last_seen_at >= ?
 				  ) = ?`
-			args := []any{node.ID, freshCutoff, requiredReplicaCount}
-			if hasCursor {
-				query += `
+				args := []any{node.ID, freshCutoff, requiredReplicaCount}
+				if hasCursor {
+					query += `
 				  AND (
 				    f.size_bytes < ?
 				    OR (f.size_bytes = ? AND p.created_at > ?)
 				    OR (f.size_bytes = ? AND p.created_at = ? AND f.id > ?)
 				  )`
-				args = append(args, cursorSize, cursorSize, cursorCreated, cursorSize, cursorCreated, cursorID)
-			}
-			query += " ORDER BY f.size_bytes DESC, p.created_at ASC, f.id ASC LIMIT ?"
-			args = append(args, rebalanceCandidateLimit)
+					args = append(args, cursorSize, cursorSize, cursorCreated, cursorSize, cursorCreated, cursorID)
+				}
+				query += " ORDER BY f.size_bytes DESC, p.created_at ASC, f.id ASC LIMIT ?"
+				args = append(args, rebalanceCandidateLimit)
 
-			var candidates []struct {
-				FileObjectID string
-				SizeBytes    int64
-				CreatedAt    time.Time
-			}
-			if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&candidates).Error; err != nil {
-				return err
-			}
-			for _, candidate := range candidates {
-				if moves >= maxRebalanceMovesPerRun {
+				var candidates []struct {
+					FileObjectID string
+					SizeBytes    int64
+					CreatedAt    time.Time
+				}
+				if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&candidates).Error; err != nil {
+					return err
+				}
+				for _, candidate := range candidates {
+					if moves >= maxRebalanceMovesPerRun {
+						break
+					}
+					reason, scheduled, sourceID, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID, perSource)
+					if err != nil {
+						// A deadline that expires mid-pass is a failed run, not a
+						// per-candidate error, so the admin does not see "completed".
+						if ctxErr := ctx.Err(); ctxErr != nil {
+							return ctxErr
+						}
+						if stats != nil {
+							stats.Errors++
+						}
+						if s.logger != nil {
+							s.logger.Warn("placement_rebalance_failed", "file_object_id", candidate.FileObjectID, "error", err)
+						}
+						continue
+					}
+					if scheduled {
+						moves++
+						perSource[sourceID]++
+						if stats != nil {
+							stats.RebalanceMoves++
+						}
+						continue
+					}
+					stats.skip(reason)
+				}
+				if len(candidates) < rebalanceCandidateLimit {
 					break
 				}
-				reason, scheduled, sourceID, err := s.scheduleRebalanceMove(ctx, candidate.FileObjectID, perSource)
-				if err != nil {
-					if stats != nil {
-						stats.Errors++
-					}
-					if s.logger != nil {
-						s.logger.Warn("placement_rebalance_failed", "file_object_id", candidate.FileObjectID, "error", err)
-					}
-					continue
-				}
-				if scheduled {
-					moves++
-					perSource[sourceID]++
-					if stats != nil {
-						stats.RebalanceMoves++
-					}
-					continue
-				}
-				stats.skip(reason)
+				last := candidates[len(candidates)-1]
+				cursorSize, cursorCreated, cursorID, hasCursor = last.SizeBytes, last.CreatedAt, last.FileObjectID, true
 			}
-			if len(candidates) < rebalanceCandidateLimit {
-				break
-			}
-			last := candidates[len(candidates)-1]
-			cursorSize, cursorCreated, cursorID, hasCursor = last.SizeBytes, last.CreatedAt, last.FileObjectID, true
+		}
+		lastNode := hot[len(hot)-1]
+		nodeCursorUtil, nodeCursorID, hasNodeCursor = lastNode.Utilization, lastNode.ID, true
+		if len(hot) < rebalanceNodePageSize {
+			break
 		}
 	}
 	return nil
@@ -856,6 +887,9 @@ func (s *Server) executeReconcile(runID string, timeout time.Duration, allowReba
 	gate := s.reconcileSemaphore()
 	gate <- struct{}{}
 	defer func() { <-gate }()
+	if hook := s.reconcileRunHook; hook != nil {
+		hook()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	stats := newPlacementReconcileStats()

@@ -125,6 +125,7 @@ export function useReconcile(
 			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
 			setRunning(false);
+			setNote("結果未確認（次回の実行で更新されます）");
 			notify(e instanceof Error ? e.message : "状態を取得できませんでした");
 			return;
 		}
@@ -143,9 +144,16 @@ export function useReconcile(
 		setStatus(null);
 		setNote("");
 		try {
+			const controller = new AbortController();
+			const requestTimeout = window.setTimeout(
+				() => controller.abort(),
+				10_000,
+			);
 			const response = await api("/admin/placements/reconcile", {
 				method: "POST",
+				signal: controller.signal,
 			});
+			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
 			const runId = typeof response.run_id === "string" ? response.run_id : "";
 			if (response.status === "already_running") {
