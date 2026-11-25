@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -160,4 +161,47 @@ func TestListPublicRequestsSearchTypeAndSortIntegration(t *testing.T) {
 		t.Fatalf("invalid sort status = %d, want %d", status, http.StatusBadRequest)
 	}
 
+}
+
+func TestListPublicRequestsSearchSourceURLIntegration(t *testing.T) {
+	db, _ := catalogTestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	relative := "/mirror/download/42"
+	absolute := "https://uploader.jp/mirror"
+	requests := []model.PublicRequest{
+		{RequestType: "preservation", Status: "pending", SourceURL: &relative},
+		{RequestType: "preservation", Status: "pending", SourceURL: &absolute},
+	}
+	for i := range requests {
+		if err := db.Create(&requests[i]).Error; err != nil {
+			t.Fatalf("create request %d: %v", i, err)
+		}
+	}
+
+	server := &Server{db: db}
+	for _, tc := range []struct {
+		query string
+		want  int64
+	}{
+		{"uu.getuploader.com", 1},
+		{"https://ux.getuploader.com/", 1},
+		{"MIRROR", 2},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			var response struct {
+				Items []publicRequestListItem
+				Total int64
+			}
+			if status := catalogResponse(t, server.listPublicRequests, "/?q="+url.QueryEscape(tc.query), &response); status != http.StatusOK {
+				t.Fatalf("listPublicRequests status = %d, want %d", status, http.StatusOK)
+			}
+			if response.Total != tc.want || int64(len(response.Items)) != tc.want {
+				t.Fatalf("total/items = %d/%d, want %d/%d", response.Total, len(response.Items), tc.want, tc.want)
+			}
+			if tc.want == 1 && response.Items[0].ID != requests[0].ID {
+				t.Fatalf("matched request %s, want %s", response.Items[0].ID, requests[0].ID)
+			}
+		})
+	}
 }

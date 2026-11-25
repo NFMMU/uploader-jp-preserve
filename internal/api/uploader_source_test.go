@@ -194,6 +194,11 @@ func TestUploaderArtifactSearchKeys(t *testing.T) {
 			wantArtifact: "/MMDkaz",
 		},
 		{
+			raw:          "ux.getuploader.com/MMDkaz/download/7",
+			wantFile:     "/MMDkaz/download/7",
+			wantArtifact: "/MMDkaz",
+		},
+		{
 			raw:          "https://uploader.jp/",
 			wantFile:     "https://uploader.jp/",
 			wantArtifact: "https://uploader.jp/",
@@ -204,6 +209,42 @@ func TestUploaderArtifactSearchKeys(t *testing.T) {
 		if gotFile != tc.wantFile || gotArtifact != tc.wantArtifact {
 			t.Errorf("uploaderArtifactSearchKeys(%q) = (%q, %q), want (%q, %q)",
 				tc.raw, gotFile, gotArtifact, tc.wantFile, tc.wantArtifact)
+		}
+	}
+}
+
+func TestUploaderSourceSearchTerm(t *testing.T) {
+	cases := map[string]string{
+		"https://ux.getuploader.com/MMDkaz/download/7": "/MMDkaz/download/7",
+		"https://uu.getuploader.com/MMDkaz":            "/MMDkaz",
+		"ux.getuploader.com/MMDkaz":                    "/MMDkaz",
+		"UU.getuploader.com./MMDkaz?x=1":               "/MMDkaz?x=1",
+		"uu.getuploader.com:443/MMDkaz":                "/MMDkaz",
+		"İ://ux.getuploader.com/MMDkaz":                "/MMDkaz",
+		"uu.getuploader.com":                           "/",
+		"https://ux.getuploader.com/":                  "/",
+		"https://uploader.jp/account":                  "https://uploader.jp/account",
+		"ux.getuploader.com.example/foo":               "ux.getuploader.com.example/foo",
+		"MMDkaz":                                       "MMDkaz",
+	}
+	for raw, want := range cases {
+		if got := uploaderSourceSearchTerm(raw); got != want {
+			t.Errorf("uploaderSourceSearchTerm(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestUploaderSourceSearchTermsHostOnly(t *testing.T) {
+	cases := map[string]bool{
+		"uu.getuploader.com":                true,
+		"https://ux.getuploader.com/":       true,
+		"https://uu.getuploader.com/MMDkaz": false,
+		"https://uploader.jp/":              false,
+		"MMDkaz":                            false,
+	}
+	for raw, want := range cases {
+		if _, got := uploaderSourceSearchTerms(raw); got != want {
+			t.Errorf("uploaderSourceSearchTerms(%q) hostOnly = %v, want %v", raw, got, want)
 		}
 	}
 }

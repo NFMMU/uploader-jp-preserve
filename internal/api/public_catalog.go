@@ -55,15 +55,19 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		  )
 	)`, cutoff)
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
-			artifacts.title COLLATE "case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE "case_insensitive" LIKE ?
-			OR COALESCE(artifacts.description, '') COLLATE "case_insensitive" LIKE ? OR artifacts.source_url COLLATE "case_insensitive" LIKE ?
+			artifacts.title COLLATE public."case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE public."case_insensitive" LIKE ?
+			OR COALESCE(artifacts.description, '') COLLATE public."case_insensitive" LIKE ? OR artifacts.source_url COLLATE public."case_insensitive" LIKE ?
 			OR (? <> '' AND artifacts.source_url = ?)
 			OR EXISTS (
 				SELECT 1 FROM file_objects f
-				WHERE f.artifact_id = artifacts.id AND f.original_filename COLLATE "case_insensitive" LIKE ?
+				WHERE f.artifact_id = artifacts.id AND f.original_filename COLLATE public."case_insensitive" LIKE ?
 				  AND f.deleted_at IS NULL
 				  AND f.public_download_enabled = TRUE AND f.redistribution_policy = 'allowed'
 				  AND f.preservation_status = 'verified' AND f.sha256 ~ '^[0-9a-fA-F]{64}$'
@@ -74,7 +78,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 					  AND n.status = 'online' AND n.last_seen_at >= ?
 				  )
 			)
-		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, cutoff)
+		)`, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL, pattern, cutoff)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -278,14 +282,14 @@ func (s *Server) publicCatalogFileCount(
 }
 
 type publicFileDetail struct {
-	ID string `json:"id"`
-	ArtifactID string `json:"artifact_id"`
-	ArtifactTitle string `json:"artifact_title"`
-	OriginalFilename string `json:"original_filename"`
-	SizeBytes int64 `json:"size_bytes"`
-	MediaType *string `json:"media_type,omitempty"`
-	Description *string `json:"description,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	ArtifactID       string    `json:"artifact_id"`
+	ArtifactTitle    string    `json:"artifact_title"`
+	OriginalFilename string    `json:"original_filename"`
+	SizeBytes        int64     `json:"size_bytes"`
+	MediaType        *string   `json:"media_type,omitempty"`
+	Description      *string   `json:"description,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // getPublicFile returns metadata only for a file that is currently eligible for public distribution.
