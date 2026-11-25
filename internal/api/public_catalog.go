@@ -55,7 +55,11 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 		  )
 	)`, cutoff)
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		pattern := "%" + q + "%"
+		searchTerm, hostOnly := uploaderSourceSearchTerms(q)
+		pattern, sourceURLPattern := "%"+searchTerm+"%", "%"+searchTerm+"%"
+		if hostOnly {
+			pattern, sourceURLPattern = "%"+q+"%", "/%"
+		}
 		_, artifactSourceURL := uploaderArtifactSearchKeys(q)
 		query = query.Where(`(
 			artifacts.title COLLATE "case_insensitive" LIKE ? OR COALESCE(artifacts.creator_name, '') COLLATE "case_insensitive" LIKE ?
@@ -74,7 +78,7 @@ func (s *Server) listPublicArtifacts(c *gin.Context) {
 					  AND n.status = 'online' AND n.last_seen_at >= ?
 				  )
 			)
-		)`, pattern, pattern, pattern, pattern, artifactSourceURL, artifactSourceURL, pattern, cutoff)
+		)`, pattern, pattern, pattern, sourceURLPattern, artifactSourceURL, artifactSourceURL, pattern, cutoff)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
