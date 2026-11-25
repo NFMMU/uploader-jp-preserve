@@ -30,6 +30,8 @@ const (
 	rebalanceNodePageSize             = 50
 	rebalanceCandidateLimit           = 20
 	rebalanceFinalizeLimit            = 500
+	// How long an admin-triggered result stays available for polling.
+	reconcileResultRetention = 30 * time.Minute
 )
 
 // effectiveCapacityBytes is the quota a node allows itself: the declared
@@ -326,8 +328,10 @@ func (s *Server) scheduleRebalanceMove(ctx context.Context, fileID string, perSo
 			return nil
 		}
 
+		// Every online node is considered: a cap here would silently drop
+		// valid sources and destinations on larger deployments.
 		var nodes []model.Node
-		if err := tx.Where("status = 'online' AND last_seen_at >= ?", freshCutoff).Limit(500).Find(&nodes).Error; err != nil {
+		if err := tx.Where("status = 'online' AND last_seen_at >= ?", freshCutoff).Order("id").Find(&nodes).Error; err != nil {
 			return err
 		}
 		reserved, err := reservedBytesByNode(tx)
@@ -869,13 +873,21 @@ func (s *Server) finishReconcile(runID string, counts placementReconcileStats, e
 		s.placementReconcileState.Error = err.Error()
 	}
 	// Only admin-triggered runs are kept for later polling. Scheduled runs must
-	// not push a result the screen is waiting for out of the bounded history.
+	// not push a result the screen is waiting for out of the history.
 	if s.placementReconcileState.Trigger == "manual" {
 		s.lastManualReconcile = s.placementReconcileState
 		s.reconcileHistory = append(s.reconcileHistory, s.placementReconcileState)
-		if len(s.reconcileHistory) > 20 {
-			s.reconcileHistory = s.reconcileHistory[len(s.reconcileHistory)-20:]
+		// Retain by age rather than by count: a screen that polls for up to
+		// 15 minutes must find its result no matter how many later runs finish.
+		cutoff := time.Now().UTC().Add(-reconcileResultRetention)
+		kept := s.reconcileHistory[:0]
+		for _, entry := range s.reconcileHistory {
+			if entry.FinishedAt != nil && entry.FinishedAt.Before(cutoff) {
+				continue
+			}
+			kept = append(kept, entry)
 		}
+		s.reconcileHistory = kept
 	}
 }
 

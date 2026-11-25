@@ -179,6 +179,19 @@ func TestReconcileRunIDLookupSurvivesLaterRuns(t *testing.T) {
 		s.finishReconcile(id, newPlacementReconcileStats(), nil)
 	}
 	if status := s.reconcileSnapshot(first)["status"]; status != "completed" {
-		t.Fatalf("status after history overflow = %v, want completed", status)
+		t.Fatalf("status after scheduled history = %v, want completed", status)
+	}
+
+	// More than 20 later manual runs must not evict a result that is still
+	// inside the polling retention window.
+	for range 25 {
+		id, ok := s.reserveManualReconcile("admin@example.invalid")
+		if !ok {
+			t.Fatal("later manual run was not reserved")
+		}
+		s.finishReconcile(id, newPlacementReconcileStats(), nil)
+	}
+	if status := s.reconcileSnapshot(first)["status"]; status != "completed" {
+		t.Fatalf("status after many manual runs = %v, want completed", status)
 	}
 }
