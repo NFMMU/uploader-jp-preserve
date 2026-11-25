@@ -113,8 +113,8 @@ func TestReserveManualReconcileSingleFlight(t *testing.T) {
 	if !ok || first == "" {
 		t.Fatal("first manual run was not reserved")
 	}
-	if _, ok := s.reserveManualReconcile("admin@example.invalid"); ok {
-		t.Fatal("second manual run was reserved while one is pending")
+	if current, ok := s.reserveManualReconcile("admin@example.invalid"); ok || current != first {
+		t.Fatalf("second manual reservation = (%q, %v), want the running run %q and false", current, ok, first)
 	}
 	if _, ok := s.reserveScheduledReconcile(); ok {
 		t.Fatal("scheduled run was reserved while a manual run is pending")

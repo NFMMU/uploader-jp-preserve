@@ -99,7 +99,7 @@ func (s *Server) reconcileNow(c *gin.Context) {
 	actor, _ := hooks.CurrentUser(c)
 	runID, started := s.reserveManualReconcile(actor.Email)
 	if !started {
-		c.JSON(http.StatusAccepted, gin.H{"status": "already_running", "run_id": s.currentReconcileRunID()})
+		c.JSON(http.StatusAccepted, gin.H{"status": "already_running", "run_id": runID})
 		return
 	}
 	// The run must outlive this request: gin cancels the request context as soon

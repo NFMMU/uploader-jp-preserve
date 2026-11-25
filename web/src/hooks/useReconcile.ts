@@ -108,7 +108,7 @@ export function useReconcile(
 			})) as ReconcileStatus;
 			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
-			if (next.status !== "unknown") {
+			if (next.status !== "unknown" && next.run_id === runId) {
 				setStatus(next);
 				if (
 					next.status === "completed" ||
@@ -156,6 +156,12 @@ export function useReconcile(
 			window.clearTimeout(requestTimeout);
 			if (!alive.current) return;
 			const runId = typeof response.run_id === "string" ? response.run_id : "";
+			if (!runId) {
+				setRunning(false);
+				setNote("結果未確認（実行IDを取得できませんでした）");
+				notify("調整の実行IDを取得できませんでした");
+				return;
+			}
 			if (response.status === "already_running") {
 				notify("保存先の調整は実行中です（完了を待機します）");
 			} else {

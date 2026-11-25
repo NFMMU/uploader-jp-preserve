@@ -818,7 +818,9 @@ func (s *Server) reserveManualReconcile(actor string) (string, bool) {
 	s.placementReconcileMu.Lock()
 	defer s.placementReconcileMu.Unlock()
 	if s.placementReconcileState.Running && s.placementReconcileState.Trigger == "manual" {
-		return "", false
+		// Return the id of the run that is actually running, from the same lock,
+		// so the caller cannot observe a different run in between.
+		return s.placementReconcileState.RunID, false
 	}
 	runID := uuid.NewString()
 	s.placementReconcileState = placementReconcileSnapshot{
@@ -873,12 +875,6 @@ func (s *Server) finishReconcile(runID string, counts placementReconcileStats, e
 	if len(s.reconcileHistory) > 10 {
 		s.reconcileHistory = s.reconcileHistory[len(s.reconcileHistory)-10:]
 	}
-}
-
-func (s *Server) currentReconcileRunID() string {
-	s.placementReconcileMu.Lock()
-	defer s.placementReconcileMu.Unlock()
-	return s.placementReconcileState.RunID
 }
 
 // executeReconcile runs one reconciliation under the shared gate so that the
