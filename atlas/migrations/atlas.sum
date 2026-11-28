@@ -1,4 +1,4 @@
-h1:yoQcDxkerpblsDezqxACHQGK/nx9Ld/miNnGp3nYiWk=
+h1:tr2vjDRezkZQfjI+cgwm2pAw1XZKOlCOIlrHsMad8bM=
 20261023000000_initial.sql h1:Y6/tsH5XjbWC/RHVyTzBBcUvJUnghkptH5qhp0wHavk=
 20261023010000_mvp2_node_agent.sql h1:IFrAtyvLVhZZW0yT0gBuL0m7AyX0WSbnLT9+/CX0Ax8=
 20261023020000_mvp3_replication.sql h1:w/fesKmj/1CDPIOCM0BM4+CV659OrM7t7E/ef/FRqa8=
@@ -30,5 +30,5 @@ h1:yoQcDxkerpblsDezqxACHQGK/nx9Ld/miNnGp3nYiWk=
 20261122000400_redistribution_unchecked_validate.sql h1:AMJXcRkfizHAuIFmqV3qHYFixs1bm/p9eZjQHVlXzXs=
 20261124000000_placement_retire_marker.sql h1:O2FR3KT9/XwpfbVxYQY+xFniKkywqYRGlEnW+1ZYRHU=
 20261124000100_task_first_claimed_at.sql h1:CC9AlR5H/7VQaJveS8j3erhqO3DdPPmeKGBzC4af9UM=
-20261124000200_placement_retire_index.sql h1:8uaTklSxTE9ocHFxE4T9HUCvg8gGVQ3nXZ0MGLFf8U4=
-20261124000300_placement_move_task.sql h1:fstDi85vjaVPrrTKu7gz8ICs0W3dKnXIgcJCLV7wfpE=
+20261124000200_placement_retire_index.sql h1:5exdZY5m4ivcN0eAkqH1biJlHjsHM68qBSII8KjIYB4=
+20261124000300_placement_move_task.sql h1:9f93PXAkWWou2STmiRUOT3i0FznhdiDXXk3TrJTw+wQ=

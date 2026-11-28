@@ -23,5 +23,10 @@
     "editor.defaultFormatter": "biomejs.biome"
   },
   "biome.lsp.bin": "./web/node_modules/.bin/biome",
-  "biome.configurationPath": "web/biome.json"
+  "biome.configurationPath": "web/biome.json",
+  "[sql]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false
+  }
 }

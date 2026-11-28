@@ -1,4 +1,5 @@
 -- atlas:txmode none
+
 -- Build the marker index without blocking writes to placements.
 -- If a failed concurrent build leaves an invalid index behind, drop it and
 -- re-apply this migration:
